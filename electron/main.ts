@@ -117,9 +117,9 @@ async function chooseProject() {
 
 function createWindow() {
   window = new BrowserWindow({
-    width: 1360,
+    width: 1560,
     height: 860,
-    minWidth: 980,
+    minWidth: 1100,
     minHeight: 620,
     title: "turri",
     titleBarStyle: "hiddenInset",
@@ -187,6 +187,8 @@ function buildMenu() {
         { label: "Work", accelerator: "CmdOrCtrl+2", click: menuAction("view:work") },
         { label: "Code", accelerator: "CmdOrCtrl+3", click: menuAction("view:code") },
         { label: "History", accelerator: "CmdOrCtrl+4", click: menuAction("view:history") },
+        { type: "separator" },
+        { label: "Show or Hide the Chat", accelerator: "CmdOrCtrl+J", click: menuAction("chat") },
         { type: "separator" },
         { role: "reload" },
         { role: "toggleDevTools" },

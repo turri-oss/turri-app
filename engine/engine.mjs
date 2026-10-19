@@ -1,6 +1,9 @@
-// The turri engine: a plain Node process (>= 22.19, so it can run turri's TypeScript unbuilt) that hosts
-// turri's own job registry and work loop for one project, and talks to the Electron main process over IPC.
-// The app never shells out to `turri`: it drives the same objects the chat and `turri regenerate` drive.
+// The turri engine: a plain Node process (>= 22.19, so it can run turri's TypeScript unbuilt) that hosts turri's chat
+// for one project - pi's agent session with turri's extension - and talks to the Electron main process over IPC. The
+// chat's job registry and work loop are the project's one: the window's buttons go through the chat's slash commands,
+// and what its jobs do is sent to the window as they do it. The app never shells out to `turri`.
+import { onCapture, own } from "./capture.mjs";
+import { startChat } from "./chat.mjs";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, relative, resolve, sep } from "node:path";
@@ -9,7 +12,7 @@ import { pathToFileURL } from "node:url";
 const TURRI_HOME = resolve(process.env.TURRI_HOME ?? join(import.meta.dirname, "..", "..", "turri"));
 const load = (path) => import(pathToFileURL(join(TURRI_HOME, "src", path)).href);
 
-const [config, paths, check, parser, spec, highlight, loopMod, jobsMod, activity, shell, diagnose, chooser] = await Promise.all([
+const [config, paths, check, parser, spec, highlight, loopMod, jobsMod, activity, shell] = await Promise.all([
   load("config.ts"),
   load("regenerate/paths.ts"),
   load("plain/check.ts"),
@@ -20,10 +23,7 @@ const [config, paths, check, parser, spec, highlight, loopMod, jobsMod, activity
   load("regenerate/jobs.ts"),
   load("regenerate/activity.ts"),
   load("regenerate/shell.ts"),
-  load("regenerate/diagnose.ts"),
-  load("regenerate/choose-conformance.ts"),
 ]);
-const { PACKAGE_ROOT } = await load("environment.ts");
 
 // turri writes progress to the console as it would to a terminal; here it is only a log line for the app.
 for (const level of ["log", "info", "warn", "error"]) {
@@ -35,52 +35,69 @@ function emit(event, data) {
 }
 
 let projectDir;
+/** The chat's job registry and work loop, once its extension has made them - the loop only once work is first asked for. */
 let registry;
 let loop;
+/** A loop of the engine's own that starts nothing: what is left to regenerate, read without the chat's. */
+let looker;
+let chat;
+const questions = new Map();
+let nextQuestion = 0;
+
+onCapture({
+  wrapOptions: (options = {}) => ({
+    ...options,
+    onChange: (job) => {
+      options.onChange?.(job);
+      jobChanged(job);
+    },
+    onFinish: (job) => {
+      options.onFinish?.(job);
+      jobChanged(job, true);
+      if (job.replacedBy === undefined) emit("finished", { id: job.id, status: job.status, title: job.title ?? job.summary, module: job.module });
+      emit("status", statusNow());
+    },
+    onNotify: () => {
+      options.onNotify?.();
+      emit("status", statusNow());
+    },
+  }),
+  onRegistry: (made) => (registry = made),
+  onLoop: (made) => {
+    loop = made;
+    emit("status", statusNow());
+  },
+});
 
 // ---------- the project ----------
 
-function open({ dir }) {
+async function open({ dir }) {
   projectDir = resolve(dir);
   process.chdir(projectDir);
   const orphans = shell.sweepOrphanedGroups();
-  const project = config.readProjectConfig(projectDir);
-  const models = config.projectModels(project);
-  registry = jobsMod.createJobRegistry({
-    retries: 1,
-    maxRunning: project.parallelJobs ?? jobsMod.defaultParallelJobs(),
-    diagnose: async (job, failures, jobLog) => {
-      const found = await diagnose.diagnoseFailure({
-        job,
-        failures,
-        projectDir,
-        harnessDir: PACKAGE_ROOT,
-        jobLog,
-        model: config.modelSpec(config.modelOnly(job.model ?? config.modelSpec(models.coding))),
-      });
-      return found !== undefined ? diagnose.describeDiagnosis(found) : undefined;
-    },
-    onChange: (job) => jobChanged(job),
-    onFinish: (job) => {
-      jobChanged(job, true);
-      emit("finished", { id: job.id, status: job.status, title: job.title ?? job.summary, module: job.module });
-      emit("status", statusNow());
-    },
-    onNotify: () => emit("status", statusNow()),
-  });
-  const planner = config.modelSpec(models.harness);
-  loop = loopMod.createWorkLoop({
-    registry,
-    cwd: projectDir,
-    modelFor: (plainFile) => config.modelSpec(config.projectModels(config.configForSpec(plainFile)).coding) ?? config.modelSpec(models.coding),
-    ...(planner !== undefined ? { plannerModel: planner } : {}),
-    onChoose: chooser.conformanceChooser({ model: () => planner ?? config.modelSpec(models.coding) }),
-  });
+  looker = own(() => loopMod.createWorkLoop({ registry: jobsMod.createJobRegistry(), cwd: projectDir, dryRun: true }));
   activity.onModelEvent((event) => {
     const line = activity.describeTurnIncident(event);
     if (line !== undefined) emit("incident", { job: event.job, text: line });
   });
-  return { ...summary(), orphans };
+  const harnessModel = config.modelSpec(config.projectModels(config.readProjectConfig(projectDir)).harness);
+  chat = await startChat({ turriHome: TURRI_HOME, cwd: projectDir, harnessModel, emit, ask });
+  return { ...summary(), orphans, chatModel: chat.model() };
+}
+
+/** A question for the person, put in the window; answered through `answer`. */
+function ask(question) {
+  const id = ++nextQuestion;
+  return new Promise((resolve) => {
+    questions.set(id, resolve);
+    emit("chat:ask", { id, ...question });
+  });
+}
+
+function answer({ id, value }) {
+  questions.get(id)?.(value ?? undefined);
+  questions.delete(id);
+  return true;
 }
 
 function summary() {
@@ -153,7 +170,7 @@ function describeSpec(file) {
   // Whether its code is regenerated from the spec as it is now: what the Regenerate button would have to do.
   let drifted = false;
   try {
-    drifted = loop.drift(file).some((report) => report.code !== null);
+    drifted = looker.drift(file).some((report) => report.code !== null);
   } catch {
     drifted = true;
   }
@@ -167,8 +184,8 @@ function readSpec({ file }) {
 function writeSpec({ file, text }) {
   writeFileSync(file, text);
   const described = describeSpec(file);
-  // A spec that changes while the loop looks after its module is work: as the chat does, the loop is told.
-  if (described.ok && loop.status().some((status) => status.plainFile === file)) {
+  // A spec that changes while the chat's loop looks after its module is work: the loop is told, as the chat's watch does.
+  if (described.ok && loop !== undefined && loop.status().some((status) => status.plainFile === file)) {
     loop.bringUp(file, { specChange: true }).then(() => emit("status", statusNow())).catch((error) => emit("log", { level: "error", text: String(error) }));
   }
   return described;
@@ -182,11 +199,10 @@ function highlightSpec({ text }) {
 // ---------- the work ----------
 
 function statusNow() {
-  if (loop === undefined) return { modules: [], jobs: [], planned: [] };
   return {
-    modules: loop.status(),
-    jobs: registry.list().filter((job) => job.replacedBy === undefined).map(jobView),
-    planned: loop.planned().map(jobView),
+    modules: loop?.status() ?? [],
+    jobs: (registry?.list() ?? []).filter((job) => job.replacedBy === undefined).map(jobView),
+    planned: (loop?.planned() ?? []).map(jobView),
   };
 }
 
@@ -205,17 +221,31 @@ function jobChanged(job, now = false) {
   emit("job", jobView(job));
 }
 
-async function regenerate({ file, frids, guidance }) {
-  const options = guidance ? { guidance } : {};
-  const statuses = frids?.length ? await loop.regenerateAgain(file, frids, options) : await loop.bringUp(file, options);
-  emit("status", statusNow());
-  return { statuses, described: loopMod.describeModules(statuses) };
+// The buttons say what the person would type: the chat's own commands run them, on its one work loop.
+
+function regenerate({ file, frids }) {
+  chat.send(`/regenerate ${relative(projectDir, file)}${frids?.length ? ` ${frids.join(" ")}` : ""}`);
+  return true;
 }
 
-async function conform({ file, frids }) {
-  const statuses = await loop.conformance(file, frids?.length ? { frids } : {});
-  emit("status", statusNow());
-  return { statuses, described: loopMod.describeModules(statuses) };
+function conform({ file, frids }) {
+  const module = basename(file, ".plain");
+  chat.send(frids?.length ? `Write and run the conformance tests for ${module}'s functional spec${frids.length === 1 ? "" : "s"} ${frids.join(", ")}.` : `Write and run the conformance tests for ${module}.`);
+  return true;
+}
+
+function sendChat({ text }) {
+  chat.send(text);
+  return true;
+}
+
+function abortChat() {
+  void chat.abort();
+  return true;
+}
+
+function chatHistory() {
+  return { messages: chat.history(), model: chat.model() };
 }
 
 /** What regenerating would do, planned on a loop of its own that starts nothing - `turri glimpse`. */
@@ -223,13 +253,13 @@ async function glimpse({ file }) {
   const project = config.readProjectConfig(projectDir);
   const models = config.projectModels(project);
   const planner = config.modelSpec(models.harness);
-  const dry = loopMod.createWorkLoop({
+  const dry = own(() => loopMod.createWorkLoop({
     registry: jobsMod.createJobRegistry(),
     cwd: projectDir,
     dryRun: true,
     modelFor: () => config.modelSpec(models.coding),
     ...(planner !== undefined ? { plannerModel: planner } : {}),
-  });
+  }));
   const statuses = await dry.bringUp(file);
   const firsts = [];
   for (const first of dry.firsts()) {
@@ -239,17 +269,16 @@ async function glimpse({ file }) {
 }
 
 function stop({ id }) {
-  return registry.stop(id, "Stopped from the app.") !== undefined;
+  return registry?.stop(id) !== undefined;
 }
 
 function halt({ module }) {
-  const said = loop.halt(module, "Halted from the app.");
-  emit("status", statusNow());
-  return said ?? null;
+  chat.send(`/halt ${module}`);
+  return true;
 }
 
 function transcript({ id }) {
-  return registry.get(id)?.transcript ?? [];
+  return registry?.get(id)?.transcript ?? [];
 }
 
 // ---------- the code and its lineage ----------
@@ -300,7 +329,7 @@ function commitDiff({ module, hash }) {
 
 // ---------- the wire ----------
 
-const methods = { open, summary, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, glimpse, stop, halt, transcript, codeFiles, readCode, lineage, commitDiff };
+const methods = { open, summary, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, glimpse, stop, halt, transcript, codeFiles, readCode, lineage, commitDiff, sendChat, abortChat, chatHistory, answer };
 
 process.on("message", async ({ id, method, params }) => {
   try {

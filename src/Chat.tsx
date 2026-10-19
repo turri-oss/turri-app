@@ -1,0 +1,364 @@
+import { useEffect, useRef, useState } from "react";
+import { Icon, Spinner } from "./ui.tsx";
+
+export type ChatItem =
+  | { role: "user"; text: string }
+  | { role: "assistant"; text: string; thinking?: string; tools?: Array<{ id: string; name: string; args: unknown }>; error?: string }
+  | { role: "toolResult"; id: string; name: string; text: string; isError: boolean }
+  | { role: "note"; customType?: string; text: string; level?: string }
+  | { role: "command"; text: string }
+  | { role: "job"; id: string; summary: string; status: string; duration?: string; spent?: string; text: string };
+
+export type Question = {
+  id: number;
+  kind: "select" | "confirm" | "input" | "editor" | "question";
+  title: string;
+  message?: string;
+  options?: string[];
+  placeholder?: string;
+  prefill?: string;
+};
+
+const COMMANDS = [
+  ["/regenerate", "regenerate a module from its spec - /regenerate backend 2"],
+  ["/halt", "halt a pulse or a module's planned pulses"],
+  ["/pulses", "the pulses of this session"],
+  ["/lineage", "a module's history"],
+  ["/steer", "how to cut and order the work"],
+  ["/btw", "a side question, without stopping the work"],
+  ["/stdlib", "the stacks a spec can import"],
+];
+
+/** Talking to turri: the same conversation `turri` holds in the terminal - its tools, commands and questions - in the window. */
+export function Chat(props: {
+  items: ChatItem[];
+  streaming: ChatItem | null;
+  busy: boolean;
+  working: string | null;
+  running: Map<string, boolean>;
+  statuses: Record<string, string>;
+  model: string | null;
+  onSend: (text: string) => void;
+  onAbort: () => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const end = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
+  const input = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (stick.current) end.current?.scrollIntoView({ block: "end" });
+  }, [props.items, props.streaming]);
+
+  useEffect(() => input.current?.focus(), []);
+
+  // Results by the call they answer, shown under it.
+  const results = new Map<string, Extract<ChatItem, { role: "toolResult" }>>();
+  for (const item of props.items) if (item.role === "toolResult") results.set(item.id, item);
+
+  const send = () => {
+    const text = draft.trim();
+    if (text === "") return;
+    props.onSend(text);
+    setDraft("");
+    stick.current = true;
+  };
+
+  const suggestions = draft.startsWith("/") && !draft.includes(" ") ? COMMANDS.filter(([name]) => name.startsWith(draft)) : [];
+  const statusLine = Object.values(props.statuses).filter(Boolean).join(" · ");
+
+  return (
+    <aside className="chat">
+      <div className="titlebar-space chat-top">
+        <span className="chat-title">
+          <Icon name="spark" /> turri
+        </span>
+        {props.model && <span className="chat-model" title={props.model}>{props.model.split("/").at(-1)}</span>}
+        <button className="icon-button" onClick={props.onClose} title="Hide the chat (⌘J)">
+          <Icon name="x" />
+        </button>
+      </div>
+      <div
+        className="chat-body"
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+      >
+        {props.items.length === 0 && !props.streaming && (
+          <div className="chat-empty">
+            <p>Tell turri what you want to build, or what to change. It writes the spec with you, then regenerates the code from it.</p>
+            {["What does this project do?", "Add a way to delete a message", "Regenerate what changed"].map((hint) => (
+              <button key={hint} className="hint" onClick={() => props.onSend(hint)}>
+                {hint}
+              </button>
+            ))}
+          </div>
+        )}
+        {props.items.map((item, index) => (item.role === "toolResult" ? null : <Message key={index} item={item} results={results} running={props.running} />))}
+        {props.streaming && <Message item={props.streaming} results={results} running={props.running} live />}
+        {props.busy && !props.streaming && (
+          <div className="chat-working">
+            <Spinner /> {props.working ?? "thinking"}
+          </div>
+        )}
+        <div ref={end} />
+      </div>
+      <div className="composer">
+        {suggestions.length > 0 && (
+          <ul className="suggestions">
+            {suggestions.map(([name, what]) => (
+              <li key={name} onMouseDown={(event) => (event.preventDefault(), setDraft(`${name} `))}>
+                <strong>{name}</strong> <span className="muted">{what}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <textarea
+          ref={input}
+          rows={Math.min(8, Math.max(2, draft.split("\n").length))}
+          placeholder={props.busy ? "turri hears this when it finishes its turn…" : "Talk to turri - or / for a command"}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              send();
+            }
+            if (event.key === "Tab" && suggestions.length > 0) {
+              event.preventDefault();
+              setDraft(`${suggestions[0]![0]} `);
+            }
+          }}
+        />
+        <div className="composer-bar">
+          <span className="muted small">{statusLine}</span>
+          {props.busy ? (
+            <button className="button small" onClick={props.onAbort}>
+              <Icon name="stop" size={13} /> Stop
+            </button>
+          ) : (
+            <button className="button small primary" onClick={send} disabled={draft.trim() === ""}>
+              Send <kbd>↩</kbd>
+            </button>
+          )}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function Message({ item, results, running, live }: { item: ChatItem; results: Map<string, Extract<ChatItem, { role: "toolResult" }>>; running: Map<string, boolean>; live?: boolean }) {
+  const [thinking, setThinking] = useState(false);
+  if (item.role === "user") return <div className="msg user">{item.text}</div>;
+  if (item.role === "command") return <div className="msg user command">{item.text}</div>;
+  if (item.role === "job")
+    return (
+      <div className={`msg job-note ${item.status}`}>
+        <div className="job-note-head">
+          {item.status === "succeeded" ? <Icon name="check" size={14} /> : item.status === "stopped" ? <Icon name="stop" size={14} /> : <Icon name="warn" size={14} />}
+          <strong>{item.summary}</strong>
+          <span className="muted">
+            {item.status} · {item.duration}
+            {item.spent ? ` · ${item.spent}` : ""}
+          </span>
+        </div>
+        {item.text && <Prose text={item.text} />}
+      </div>
+    );
+  if (item.role === "note")
+    return (
+      <div className={`msg note ${item.level ?? ""} ${item.customType === "turri_command_echo" ? "echo" : ""}`}>
+        <Prose text={item.text} />
+      </div>
+    );
+  if (item.role !== "assistant") return null;
+  return (
+    <div className={`msg assistant ${live ? "live" : ""}`}>
+      {item.thinking && (
+        <button className="thinking-toggle" onClick={() => setThinking(!thinking)}>
+          {thinking ? "Hide thinking" : "Thought about it"}
+        </button>
+      )}
+      {thinking && item.thinking && <div className="thinking">{item.thinking}</div>}
+      {item.text && <Prose text={item.text} />}
+      {item.tools?.map((tool) => (
+        <ToolCall key={tool.id} tool={tool} result={results.get(tool.id)} running={running.get(tool.id) === true} />
+      ))}
+      {item.error && <div className="msg-error">{item.error}</div>}
+    </div>
+  );
+}
+
+/** What a tool call says it does, in words: the turri tools by what they mean, the rest by name. */
+function describeTool(name: string, args: any): string {
+  const file = args?.path ?? args?.file ?? args?.plain_file ?? args?.plainFile;
+  switch (name) {
+    case "read":
+      return `Read ${file ?? "a file"}`;
+    case "write":
+      return `Wrote ${file ?? "a file"}`;
+    case "edit":
+      return `Edited ${file ?? "a file"}`;
+    case "bash":
+      return `Ran ${String(args?.command ?? "a command").split("\n")[0]}`;
+    case "ask_user":
+      return `Asked you: ${args?.question ?? ""}`;
+    default:
+      return `${name.replace(/_/g, " ")}${file ? ` · ${file}` : ""}`;
+  }
+}
+
+function ToolCall({ tool, result, running }: { tool: { id: string; name: string; args: unknown }; result?: Extract<ChatItem, { role: "toolResult" }>; running: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`tool-call ${result?.isError ? "error" : ""}`}>
+      <button onClick={() => setOpen(!open)}>
+        {running ? <Spinner /> : result?.isError ? <Icon name="warn" size={13} /> : <Icon name="check" size={13} />}
+        <span>{describeTool(tool.name, tool.args)}</span>
+      </button>
+      {open && (
+        <div className="tool-detail">
+          <pre>{JSON.stringify(tool.args, null, 2)}</pre>
+          {result && <pre className="tool-result">{result.text}</pre>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Just enough Markdown for what turri says: paragraphs, lists, headings, code blocks, `code` and **bold**. */
+function Prose({ text }: { text: string }) {
+  const blocks = text.split(/\n```/);
+  return (
+    <div className="prose">
+      {blocks.map((block, index) => {
+        if (index % 2 === 1) {
+          const body = block.replace(/^[^\n]*\n/, "").replace(/```\s*$/, "");
+          return <pre key={index}>{body}</pre>;
+        }
+        return block
+          .trim()
+          .split(/\n{2,}/)
+          .map((paragraph, at) => {
+            const lines = paragraph.split("\n");
+            if (lines.every((line) => /^\s*([-*]|\d+\.)\s/.test(line)))
+              return (
+                <ul key={`${index}-${at}`}>
+                  {lines.map((line, n) => (
+                    <li key={n}>
+                      <Inline text={line.replace(/^\s*([-*]|\d+\.)\s/, "")} />
+                    </li>
+                  ))}
+                </ul>
+              );
+            const heading = /^#{1,4}\s+(.*)$/.exec(paragraph);
+            if (heading) return <h4 key={`${index}-${at}`}>{heading[1]}</h4>;
+            return (
+              <p key={`${index}-${at}`}>
+                {lines.map((line, n) => (
+                  <span key={n}>
+                    {n > 0 && <br />}
+                    <Inline text={line} />
+                  </span>
+                ))}
+              </p>
+            );
+          });
+      })}
+    </div>
+  );
+}
+
+function Inline({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).map((part, index) =>
+        part.startsWith("`") && part.endsWith("`") && part.length > 1 ? (
+          <code key={index}>{part.slice(1, -1)}</code>
+        ) : part.startsWith("**") && part.endsWith("**") && part.length > 4 ? (
+          <strong key={index}>{part.slice(2, -2)}</strong>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
+/** turri asking: a sheet over the window, as a native app asks - options to pick, or words to type. */
+export function QuestionSheet({ question, onAnswer }: { question: Question; onAnswer: (value: unknown) => void }) {
+  const [text, setText] = useState(question.prefill ?? "");
+  const [other, setOther] = useState(question.kind === "input" || question.kind === "editor" || (question.kind === "question" && !question.options?.length));
+  const field = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (other) field.current?.focus();
+  }, [other]);
+  const options = question.options ?? [];
+  return (
+    <div className="sheet-backdrop">
+      <div className="sheet question">
+        <h2>{question.title}</h2>
+        {question.message && (
+          <div className="question-context">
+            <Prose text={question.message} />
+          </div>
+        )}
+        {question.kind === "confirm" ? (
+          <div className="sheet-actions">
+            <button className="button" onClick={() => onAnswer(false)}>
+              No
+            </button>
+            <button className="button primary" onClick={() => onAnswer(true)} autoFocus>
+              Yes
+            </button>
+          </div>
+        ) : (
+          <>
+            {options.length > 0 && (
+              <div className="options">
+                {options.map((option) => (
+                  <button key={option} className="option" onClick={() => onAnswer(option)}>
+                    {option}
+                  </button>
+                ))}
+                {question.kind === "question" && !other && (
+                  <button className="option muted" onClick={() => setOther(true)}>
+                    Something else…
+                  </button>
+                )}
+              </div>
+            )}
+            {other && (
+              <textarea
+                ref={field}
+                className="answer"
+                rows={question.kind === "editor" ? 10 : 3}
+                placeholder={question.placeholder ?? "Your answer"}
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey && question.kind !== "editor") {
+                    event.preventDefault();
+                    if (text.trim()) onAnswer(text.trim());
+                  }
+                }}
+              />
+            )}
+            <div className="sheet-actions">
+              <button className="button" onClick={() => onAnswer(undefined)}>
+                Skip
+              </button>
+              {other && (
+                <button className="button primary" disabled={!text.trim()} onClick={() => onAnswer(text.trim())}>
+                  Answer
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

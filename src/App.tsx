@@ -8,6 +8,7 @@ import { CodeView } from "./CodeView.tsx";
 import { HistoryView } from "./HistoryView.tsx";
 import { PlanSheet, type Plan } from "./PlanSheet.tsx";
 import { Icon, Spinner } from "./ui.tsx";
+import { Chat, QuestionSheet, type ChatItem, type Question } from "./Chat.tsx";
 
 const EMPTY_STATUS: Status = { modules: [], jobs: [], planned: [] };
 
@@ -22,6 +23,16 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const saveRef = useRef<(() => Promise<void>) | null>(null);
+  // The conversation with turri.
+  const [chatOpen, setChatOpen] = useState(true);
+  const [items, setItems] = useState<ChatItem[]>([]);
+  const [streaming, setStreaming] = useState<ChatItem | null>(null);
+  const [chatBusy, setChatBusy] = useState(false);
+  const [working, setWorking] = useState<string | null>(null);
+  const [toolsRunning, setToolsRunning] = useState<Map<string, boolean>>(new Map());
+  const [statuses, setStatuses] = useState<Record<string, string>>({});
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [chatModel, setChatModel] = useState<string | null>(null);
 
   const spec = project?.specs.find((entry) => entry.file === selected) ?? null;
 
@@ -42,6 +53,12 @@ export function App() {
     setStatus(EMPTY_STATUS);
     setJobs(new Map());
     setView("spec");
+    setStreaming(null);
+    setQuestions([]);
+    void window.turri.call<{ messages: ChatItem[]; model: string | null }>("chatHistory").then(({ messages, model }) => {
+      setItems(messages);
+      setChatModel(model);
+    });
   }, []);
 
   // What the engine says as the work goes on.
@@ -59,6 +76,23 @@ export function App() {
       window.turri.on("engine:incident", (incident: { job?: string; text: string }) => say(incident.text, "error")),
       window.turri.on("engine:exit", () => say("The turri engine stopped. Open the project again to restart it.", "error")),
       window.turri.on("project:opened", opened),
+      window.turri.on("engine:chat:message", (item: ChatItem) => setItems((all) => [...all, item])),
+      window.turri.on("engine:chat:streaming", (item: ChatItem | null) => setStreaming(item)),
+      window.turri.on("engine:chat:busy", ({ busy }: { busy: boolean }) => {
+        setChatBusy(busy);
+        if (!busy) setWorking(null);
+      }),
+      window.turri.on("engine:chat:working", ({ text }: { text: string | null }) => setWorking(text)),
+      window.turri.on("engine:chat:tool", ({ id, running }: { id: string; running: boolean }) => setToolsRunning((all) => new Map(all).set(id, running))),
+      window.turri.on("engine:chat:status", ({ key, text }: { key: string; text: string | null }) => setStatuses((all) => ({ ...all, [key]: text ?? "" }))),
+      window.turri.on("engine:chat:notify", ({ level, text }: { level: string; text: string }) => {
+        setItems((all) => [...all, { role: "note", text, level }]);
+        if (level === "error") say(text.split("\n")[0]!, "error");
+      }),
+      window.turri.on("engine:chat:ask", (question: Question) => {
+        setQuestions((all) => [...all, question]);
+        setChatOpen(true);
+      }),
     ];
     return () => off.forEach((stop) => stop());
   }, [opened, refreshProject, say]);
@@ -68,9 +102,9 @@ export function App() {
       if (spec === null) return;
       if (dirty) await saveRef.current?.();
       setBusy(true);
+      setChatOpen(true);
       try {
         await window.turri.call("regenerate", { file: spec.file, frids });
-        setView("work");
       } catch (error) {
         say(String((error as Error).message ?? error), "error");
       } finally {
@@ -84,9 +118,9 @@ export function App() {
     async (frids?: string[]) => {
       if (spec === null) return;
       setBusy(true);
+      setChatOpen(true);
       try {
         await window.turri.call("conform", { file: spec.file, frids });
-        setView("work");
       } catch (error) {
         say(String((error as Error).message ?? error), "error");
       } finally {
@@ -110,8 +144,7 @@ export function App() {
 
   const halt = useCallback(async () => {
     if (spec === null) return;
-    const said = await window.turri.call<string | null>("halt", { module: spec.module });
-    say(said ?? `Nothing is running for ${spec.module}.`);
+    await window.turri.call("halt", { module: spec.module });
   }, [spec, say]);
 
   // The native menu's commands.
@@ -124,6 +157,7 @@ export function App() {
         else if (action === "conform") void conform();
         else if (action === "halt") void halt();
         else if (action === "save") void saveRef.current?.();
+        else if (action === "chat") setChatOpen((open) => !open);
         else if (action === "reveal" && project) void window.turri.reveal(project.dir);
       }),
     [regenerate, glimpse, conform, halt, project],
@@ -136,7 +170,7 @@ export function App() {
   if (project === null) return <Welcome onOpened={opened} />;
 
   return (
-    <div className="app">
+    <div className={`app ${chatOpen ? "with-chat" : ""}`}>
       <aside className="sidebar">
         <div className="titlebar-space" />
         <div className="project-name" title={project.dir}>
@@ -184,6 +218,11 @@ export function App() {
             ))}
           </div>
           <div className="toolbar-actions">
+            {!chatOpen && (
+              <button className="button" onClick={() => setChatOpen(true)} title="Talk to turri (⌘J)">
+                <Icon name="spark" /> turri
+              </button>
+            )}
             <button className="button" disabled={spec === null || !spec.ok || plan === "loading"} onClick={() => void glimpse()} title="Plan the work without starting it (⇧⌘P)">
               {plan === "loading" ? <Spinner /> : <Icon name="eye" />} Preview plan
             </button>
@@ -222,6 +261,30 @@ export function App() {
         </section>
       </main>
 
+      {chatOpen && (
+        <Chat
+          items={items}
+          streaming={streaming}
+          busy={chatBusy}
+          working={working}
+          running={toolsRunning}
+          statuses={statuses}
+          model={chatModel}
+          onSend={(text) => void window.turri.call("sendChat", { text })}
+          onAbort={() => void window.turri.call("abortChat")}
+          onClose={() => setChatOpen(false)}
+        />
+      )}
+      {questions[0] && (
+        <QuestionSheet
+          key={questions[0].id}
+          question={questions[0]}
+          onAnswer={(value) => {
+            void window.turri.call("answer", { id: questions[0]!.id, value });
+            setQuestions((all) => all.slice(1));
+          }}
+        />
+      )}
       {plan !== null && plan !== "loading" && <PlanSheet plan={plan} onClose={() => setPlan(null)} onRegenerate={() => (setPlan(null), void regenerate())} />}
       {toast && (
         <div className={`toast ${toast.tone}`} onClick={() => setToast(null)}>
