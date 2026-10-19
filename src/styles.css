@@ -612,24 +612,31 @@ code {
 }
 
 .editor {
-  position: relative;
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+}
+.editor-sheet {
+  position: relative;
+  min-height: 100%;
 }
 .editor textarea,
 .editor-colours {
-  position: absolute;
-  inset: 0;
   margin: 0;
   padding: 16px 18px 40vh;
   font: 16.5px/1.6 var(--mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  overflow: auto;
   border: 0;
   tab-size: 2;
+  letter-spacing: 0;
 }
 .editor textarea {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   background: transparent;
   color: transparent;
   caret-color: var(--fg);
@@ -643,7 +650,6 @@ code {
 .editor-colours {
   pointer-events: none;
   color: var(--fg);
-  overflow: hidden;
 }
 .plain-section {
   color: var(--plain-section);

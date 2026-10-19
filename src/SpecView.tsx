@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import { useEffect, useState, type MutableRefObject } from "react";
 import type { Job, Spec } from "./types.ts";
 import { elapsed, Icon, PlainText, Spinner, useTick } from "./ui.tsx";
 
@@ -23,7 +23,6 @@ export function SpecView(props: {
   const [saved, setSaved] = useState<string | null>(null);
   const [lines, setLines] = useState<Token[][]>([]);
   const [saving, setSaving] = useState(false);
-  const overlay = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
     void window.turri.call<{ text: string }>("readSpec", { file: spec.file }).then(({ text }) => {
@@ -93,24 +92,26 @@ export function SpecView(props: {
             <Spinner />
           </div>
         ) : (
+          // One scrolling box holds both layers, so they are always the same width and wrap alike: the coloured text
+          // in the flow, giving the height, and the textarea laid exactly over it. A line is drawn as typed at once,
+          // and coloured once its colours, a moment behind, are for the same text.
           <div className="editor">
-            <pre ref={overlay} className="editor-colours" aria-hidden>
-              {lines.map((tokens, index) => (
-                <div key={index}>
-                  {tokens.length === 0 ? "​" : tokens.map((token, at) => (token.role ? <span key={at} className={`plain-${token.role}`}>{token.text}</span> : token.text))}
-                </div>
-              ))}
+            <div className="editor-sheet">
+            <pre className="editor-colours" aria-hidden>
+              {text.split("\n").map((line, index) => {
+                const tokens = lines[index];
+                const coloured = tokens !== undefined && tokens.map((token) => token.text).join("") === line;
+                return (
+                  <div key={index}>
+                    {line === "" ? "\u200b" : coloured ? tokens.map((token, at) => (token.role ? <span key={at} className={`plain-${token.role}`}>{token.text}</span> : token.text)) : line}
+                  </div>
+                );
+              })}
             </pre>
             <textarea
               spellCheck={false}
               value={text}
               onChange={(event) => setText(event.target.value)}
-              onScroll={(event) => {
-                if (overlay.current) {
-                  overlay.current.scrollTop = event.currentTarget.scrollTop;
-                  overlay.current.scrollLeft = event.currentTarget.scrollLeft;
-                }
-              }}
               onKeyDown={(event) => {
                 if (event.key === "s" && event.metaKey) {
                   event.preventDefault();
@@ -125,6 +126,7 @@ export function SpecView(props: {
                 }
               }}
             />
+            </div>
           </div>
         )}
       </div>
