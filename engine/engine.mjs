@@ -4,8 +4,8 @@
 // slash commands, and what its jobs do is sent to the window as they do it. The app never shells out to `turri`.
 import * as turri from "@turri-dev/cli/host";
 import { startChat } from "./chat.mjs";
-import { existsSync, readdirSync, readFileSync, watch, writeFileSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync, watch, writeFileSync } from "node:fs";
+import { basename, join, relative, resolve, sep } from "node:path";
 
 // turri writes progress to the console as it would to a terminal; here it is only a log line for the app.
 for (const level of ["log", "info", "warn", "error"]) {
@@ -69,14 +69,27 @@ async function open({ dir }) {
 }
 
 /**
- * The .plain files change under the window too - turri edits them from the chat - and the window is told: the file,
- * its text and what it now says. A save of the window's own comes back the same way, and is known by its text.
+ * The project's files change under the window too - turri edits the specs from the chat, a pulse writes code - and the
+ * window is told. A .plain file comes with its text and what it now says; a save of the window's own comes back the
+ * same way, and is known by its text. Any other change is only where it was, for the tree to list that folder again.
  */
 function watchSpecs() {
   const skip = new Set([turri.MODULES_DIR, "node_modules", ".git", ".turri", "dist"]);
   const pending = new Map();
+  const changed = new Set();
+  let filesTimer;
   watch(projectDir, { recursive: true }, (_type, name) => {
-    if (name === null || !name.endsWith(".plain") || name.split("/").some((part) => skip.has(part) || part.startsWith("."))) return;
+    if (name === null) return;
+    const parts = name.split(sep);
+    if (!parts.some((part) => UNLISTED.has(part))) {
+      changed.add(join(projectDir, name));
+      clearTimeout(filesTimer);
+      filesTimer = setTimeout(() => {
+        emit("files", { paths: [...changed] });
+        changed.clear();
+      }, 250);
+    }
+    if (!name.endsWith(".plain") || parts.some((part) => skip.has(part) || part.startsWith("."))) return;
     const file = join(projectDir, name);
     // An editor writes a file in more than one step: it is read once they have settled.
     clearTimeout(pending.get(file));
@@ -89,6 +102,44 @@ function watchSpecs() {
       }, 150),
     );
   });
+}
+
+// ---------- the project's files ----------
+
+/** What the tree leaves out: version control's own, installed packages and caches nobody reads. */
+const UNLISTED = new Set([".git", ".plaingit", "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".DS_Store"]);
+/** A file larger than this is offered to open elsewhere, not read into the window. */
+const READABLE_SIZE = 1024 * 1024;
+
+/** A path the window names, held to the project: nothing outside it is listed, read or written. */
+function inProject(path) {
+  const full = resolve(projectDir, path);
+  if (full !== projectDir && !full.startsWith(projectDir + sep)) throw new Error(`Not in the project: ${path}`);
+  return full;
+}
+
+/** One folder of the project, folders first: the tree lists a folder when it is opened. */
+function listFiles({ dir }) {
+  const at = inProject(dir ?? projectDir);
+  const entries = readdirSync(at, { withFileTypes: true })
+    .filter((entry) => !UNLISTED.has(entry.name) && (entry.isDirectory() || entry.isFile()))
+    .map((entry) => ({ name: entry.name, path: join(at, entry.name), dir: entry.isDirectory() }));
+  return entries.sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name));
+}
+
+/** A file's text - or, for one that is not text or too large to read here, why not. */
+function readFile({ file }) {
+  const full = inProject(file);
+  const { size } = statSync(full);
+  if (size > READABLE_SIZE) return { file: full, text: null, reason: "large", size };
+  const bytes = readFileSync(full);
+  if (bytes.subarray(0, 8000).includes(0)) return { file: full, text: null, reason: "binary", size };
+  return { file: full, text: bytes.toString("utf8"), size };
+}
+
+function writeFile({ file, text }) {
+  writeFileSync(inProject(file), text);
+  return true;
 }
 
 // ---------- a new project ----------
@@ -317,7 +368,7 @@ function transcript({ id }) {
 
 // ---------- the wire ----------
 
-const methods = { open, vendors, initConfig, summary, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, sendChat, abortChat, chatHistory, commands, answer };
+const methods = { open, vendors, initConfig, summary, listFiles, readFile, writeFile, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, sendChat, abortChat, chatHistory, commands, answer };
 
 // What the window may ask before a project is open: to open one, or to start a new one.
 const BEFORE_A_PROJECT = new Set(["open", "vendors", "initConfig"]);

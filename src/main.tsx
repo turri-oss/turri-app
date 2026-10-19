@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
+import "./pixels/turri-pixels.css";
 import "./styles.css";
 import "./types.ts";
 

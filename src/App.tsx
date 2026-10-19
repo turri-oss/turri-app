@@ -6,8 +6,10 @@ import { SpecView } from "./SpecView.tsx";
 import { WorkView } from "./WorkView.tsx";
 import { PlanSheet, type Plan } from "./PlanSheet.tsx";
 import { NewProject } from "./NewProject.tsx";
+import { FileTree } from "./FileTree.tsx";
+import { FileView } from "./FileView.tsx";
 import { Appearance, Empty, Icon, Jellyfish, Spinner } from "./ui.tsx";
-import { Chat, QuestionSheet, type ChatItem, type Question } from "./Chat.tsx";
+import { Chat, type ChatItem, type Question } from "./Chat.tsx";
 
 const EMPTY_STATUS: Status = { modules: [], jobs: [], planned: [] };
 
@@ -15,7 +17,7 @@ const EMPTY_STATUS: Status = { modules: [], jobs: [], planned: [] };
 const CHAT_WIDTH = 400;
 const CHAT_MIN = 300;
 const CHAT_KEY = "turri-app.chat-width";
-const SIDEBAR_AND_SPEC_MIN = 220 + 480;
+const SIDEBAR_AND_SPEC_MIN = 260 + 480;
 function clampChat(width: number) {
   return Math.round(Math.max(CHAT_MIN, Math.min(width, window.innerWidth - SIDEBAR_AND_SPEC_MIN)));
 }
@@ -68,7 +70,9 @@ export function App() {
   const [chatModel, setChatModel] = useState<string | null>(null);
   const [commands, setCommands] = useState<Array<{ name: string; description: string }>>([]);
 
+  // What is selected in the tree: one of the project's specs, or any other file of it.
   const spec = project?.specs.find((entry) => entry.file === selected) ?? null;
+  const file = spec === null && project !== null && selected !== null ? selected : null;
 
   const say = useCallback((text: string, tone: "info" | "error" = "info") => {
     setToast({ text, tone });
@@ -242,13 +246,17 @@ export function App() {
             <Jellyfish size={18} swimming={running.length > 0} />
             <span>{project.name}</span>
           </div>
-          <div className="sidebar-section">Specs</div>
-          <nav>
-            {project.specs.map((entry) => (
-              <SpecRow key={entry.file} spec={entry} active={entry.file === selected} running={runningFor(entry.module) !== undefined} onClick={() => setSelected(entry.file)} />
-            ))}
-            {project.specs.length === 0 && <div className="sidebar-note">No .plain files in this folder yet.</div>}
-          </nav>
+          <div className="sidebar-section">Files</div>
+          <FileTree
+            root={project.dir}
+            specs={project.specs}
+            selected={selected}
+            isRunning={(module) => runningFor(module) !== undefined}
+            onSelect={(path) => {
+              setSelected(path);
+              setView("spec");
+            }}
+          />
           <div className="sidebar-section">Settings</div>
           <dl className="settings">
             {Object.entries(project.settings).map(([key, value]) => (
@@ -273,20 +281,20 @@ export function App() {
         <main className="main">
           <header className="toolbar">
             <div className="toolbar-title">
-              <h1>{spec?.module ?? project.name}</h1>
+              <h1>{spec?.module ?? file?.slice(file.lastIndexOf("/") + 1) ?? project.name}</h1>
               {spec?.description && <span className="subtitle">{spec.description}</span>}
             </div>
             <div className="segmented" role="tablist">
               {(["spec", "work"] as View[]).map((name) => (
                 <button key={name} role="tab" aria-selected={view === name} className={view === name ? "on" : ""} onClick={() => setView(name)}>
-                  {name === "spec" ? "Spec" : `Work${running.length ? ` · ${running.length}` : ""}`}
+                  {name === "spec" ? "intent" : `work${running.length ? ` · ${running.length}` : ""}`}
                 </button>
               ))}
             </div>
             <div className="toolbar-actions">
               {!chatOpen && (
-                <button className="button" onClick={() => setChatOpen(true)} title="Talk to turri (⌘J)">
-                  <Icon name="spark" /> turri
+                <button className={`button ${questions.length > 0 ? "asking" : ""}`} onClick={() => setChatOpen(true)} title={questions.length > 0 ? "turri is asking you something" : "Talk to turri (⌘J)"}>
+                  <Icon name="spark" /> turri{questions.length > 0 && " · asks"}
                 </button>
               )}
               <button className="button" disabled={!releasable} onClick={() => void release()} title={releasable ? "Release what is built to try, and hear from turri what to test" : "Nothing is built yet: regenerate first"}>
@@ -305,13 +313,17 @@ export function App() {
           </header>
 
           <section className="content">
-            {spec === null ? (
+            {view === "work" ? (
+              <WorkView status={status} jobs={allJobs} />
+            ) : file !== null ? (
+              <FileView key={file} root={project.dir} file={file} onDirty={setDirty} saveRef={saveRef} say={say} />
+            ) : spec === null ? (
               project.specs.length === 0 && (
                 <Empty icon="doc" title="No spec yet">
                   Tell turri what you want to build. It writes the first spec with you, then builds the code from it.
                 </Empty>
               )
-            ) : view === "spec" ? (
+            ) : (
               <SpecView
                 key={spec.file}
                 spec={spec}
@@ -323,8 +335,6 @@ export function App() {
                 onConform={(frids) => void conform(frids)}
                 say={say}
               />
-            ) : (
-              <WorkView status={status} jobs={allJobs} />
             )}
           </section>
         </main>
@@ -366,11 +376,6 @@ export function App() {
             onSend={(text) => void window.turri.call("sendChat", { text })}
             onAbort={() => void window.turri.call("abortChat")}
             onClose={() => setChatOpen(false)}
-          />
-        )}
-        {questions[0] && (
-          <QuestionSheet
-            key={questions[0].id}
             question={questions[0]}
             onAnswer={(value) => {
               void window.turri.call("answer", { id: questions[0]!.id, value });
@@ -387,19 +392,5 @@ export function App() {
       </div>
       {newProject}
     </>
-  );
-}
-
-function SpecRow({ spec, active, running, onClick }: { spec: Spec; active: boolean; running: boolean; onClick: () => void }) {
-  const total = spec.functionalSpecs.length;
-  const built = spec.functionalSpecs.filter((entry) => entry.built).length;
-  const state = !spec.ok ? "error" : running ? "running" : total > 0 && built === total && !spec.drifted ? "done" : built > 0 ? "partial" : "new";
-  const label = { error: "does not parse", running: "regenerating", done: "up to date", partial: "to regenerate", new: "not built" }[state];
-  return (
-    <button className={`spec-row ${active ? "active" : ""}`} onClick={onClick} title={`${spec.rel} - ${label}`}>
-      <span className={`state-dot ${state}`}>{state === "running" ? <Spinner /> : null}</span>
-      <span className="spec-row-name">{spec.module}</span>
-      <span className="spec-row-count">{spec.ok ? `${built}/${total}` : "!"}</span>
-    </button>
   );
 }

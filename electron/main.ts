@@ -262,8 +262,8 @@ function buildMenu() {
     {
       label: "View",
       submenu: [
-        { label: "Spec", accelerator: "CmdOrCtrl+1", click: menuAction("view:spec") },
-        { label: "Work", accelerator: "CmdOrCtrl+2", click: menuAction("view:work") },
+        { label: "intent", accelerator: "CmdOrCtrl+1", click: menuAction("view:spec") },
+        { label: "work", accelerator: "CmdOrCtrl+2", click: menuAction("view:work") },
         { type: "separator" },
         { label: "Show or Hide the Chat", accelerator: "CmdOrCtrl+J", click: menuAction("chat") },
         {

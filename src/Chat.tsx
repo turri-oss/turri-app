@@ -36,6 +36,9 @@ export function Chat(props: {
   onSend: (text: string) => void;
   onAbort: () => void;
   onClose: () => void;
+  /** What turri asks now - ask_user, a choice, a confirm - answered where the message box is, until it is answered. */
+  question?: Question;
+  onAnswer: (value: unknown) => void;
 }) {
   const [draft, setDraft] = useState("");
   const end = useRef<HTMLDivElement>(null);
@@ -44,7 +47,7 @@ export function Chat(props: {
 
   useEffect(() => {
     if (stick.current) end.current?.scrollIntoView({ block: "end" });
-  }, [props.items, props.streaming]);
+  }, [props.items, props.streaming, props.question?.id]);
 
   useEffect(() => input.current?.focus(), []);
 
@@ -84,7 +87,7 @@ export function Chat(props: {
         {/* Nothing said yet - notes aside, such as a new project's config - so how to begin is shown. */}
         {props.items.every((item) => item.role === "note") && !props.streaming && (
           <div className="chat-empty">
-            <Jellyfish size={72} />
+            <Jellyfish size={110} lifecycle />
             <p>Tell turri what you want to build, or what to change. It writes the spec with you, then regenerates the code from it.</p>
             {props.fresh ? (
               <>
@@ -119,6 +122,9 @@ export function Chat(props: {
         )}
         <div ref={end} />
       </div>
+      {props.question ? (
+        <QuestionCard key={props.question.id} question={props.question} onAnswer={props.onAnswer} />
+      ) : (
       <div className="composer">
         {suggestions.length > 0 && (
           <ul className="suggestions">
@@ -159,6 +165,7 @@ export function Chat(props: {
           )}
         </div>
       </div>
+      )}
     </aside>
   );
 }
@@ -302,7 +309,11 @@ function Inline({ text }: { text: string }) {
 }
 
 /** turri asking: a sheet over the window, as a native app asks - options to pick, or words to type. */
-export function QuestionSheet({ question, onAnswer }: { question: Question; onAnswer: (value: unknown) => void }) {
+/**
+ * A question of turri's, docked at the foot of the chat in the message box's place: the conversation stays in view
+ * above it, and the window is not covered. Its options are buttons; an answer of one's own is typed in it.
+ */
+function QuestionCard({ question, onAnswer }: { question: Question; onAnswer: (value: unknown) => void }) {
   const [text, setText] = useState(question.prefill ?? "");
   const [other, setOther] = useState(question.kind === "input" || question.kind === "editor" || (question.kind === "question" && !question.options?.length));
   const field = useRef<HTMLTextAreaElement>(null);
@@ -311,8 +322,11 @@ export function QuestionSheet({ question, onAnswer }: { question: Question; onAn
   }, [other]);
   const options = question.options ?? [];
   return (
-    <div className="sheet-backdrop">
-      <div className="sheet question">
+    <div className="question-card" role="dialog" aria-label={question.title}>
+      <div className="question-scroll">
+        <div className="question-asks">
+          <Jellyfish size={16} swimming={false} /> turri asks
+        </div>
         <h2>{question.title}</h2>
         {question.message && (
           <div className="question-context">
@@ -321,10 +335,10 @@ export function QuestionSheet({ question, onAnswer }: { question: Question; onAn
         )}
         {question.kind === "confirm" ? (
           <div className="sheet-actions">
-            <button className="button" onClick={() => onAnswer(false)}>
+            <button className="button small" onClick={() => onAnswer(false)}>
               No
             </button>
-            <button className="button primary" onClick={() => onAnswer(true)} autoFocus>
+            <button className="button small primary" onClick={() => onAnswer(true)} autoFocus>
               Yes
             </button>
           </div>
@@ -361,12 +375,12 @@ export function QuestionSheet({ question, onAnswer }: { question: Question; onAn
               />
             )}
             <div className="sheet-actions">
-              <button className="button" onClick={() => onAnswer(undefined)}>
+              <button className="button small" onClick={() => onAnswer(undefined)}>
                 Skip
               </button>
               {other && (
-                <button className="button primary" disabled={!text.trim()} onClick={() => onAnswer(text.trim())}>
-                  Answer
+                <button className="button small primary" disabled={!text.trim()} onClick={() => onAnswer(text.trim())}>
+                  Answer {question.kind !== "editor" && <kbd>↩</kbd>}
                 </button>
               )}
             </div>

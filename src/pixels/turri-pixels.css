@@ -1,0 +1,108 @@
+/* turri pixel art — animations extracted from the D5-Lean design mockup.
+   All classes are prefixed `tp-` so they can't collide with your app's CSS.
+   Everything uses steps() timing on purpose: the motion must look pixelated too. */
+
+:root {
+  --tp-pink:#FF5C8D; --tp-mid:#A9479A; --tp-ind:#5B57D9; --tp-egg:#732553;
+  --tp-orange:#FF7A3D; --tp-neon:#5CE1E6; --tp-hi:#FF7FA6;
+  --tp-bg:#0A0F1A; --tp-panel:#142030; --tp-panel-hi:#1E3442;
+  --tp-border:#22344A; --tp-dim:#3E5A6B; --tp-body:#85A3B2;
+  --tp-text:#F4F7F9; --tp-cream:#E9D8C8;
+}
+
+/* ---- idle sprite motion: a slow bob + two alternating tentacle frames ---- */
+.tp-bob    { animation: tp-bob 1.4s steps(1) infinite; }
+.tp-fa     { animation: tp-fa  1.4s steps(1) infinite; }
+.tp-fb     { opacity:0; animation: tp-fb 1.4s steps(1) infinite; }
+.tp-fb-off { display:none; }
+
+@keyframes tp-bob { 0% { transform:translateY(0);} 50% { transform:translateY(-10px);} }
+@keyframes tp-fa  { 0% { opacity:1;} 50% { opacity:0;} }
+@keyframes tp-fb  { 0% { opacity:0;} 50% { opacity:1;} }
+
+/* ---- blinking terminal cursor ---- */
+.tp-blink { animation: tp-blink 1s steps(1) infinite; }
+.tp-cursor {
+  display:inline-block; width:11px; height:20px; margin-left:8px;
+  vertical-align:-3px; background:var(--tp-text);
+}
+@keyframes tp-blink { 50% { opacity:0; } }
+
+/* ---- the four-step cycle diagram: nodes light up in sequence ---- */
+.tp-node {
+  width:80px; height:80px; background:var(--tp-panel);
+  box-shadow:0 -3px 0 var(--tp-body),0 3px 0 var(--tp-body),-3px 0 0 var(--tp-body),3px 0 0 var(--tp-body);
+  display:flex; align-items:center; justify-content:center; color:var(--tp-text);
+  animation: tp-lit 8s steps(1) infinite;
+}
+.tp-node-abs { position:absolute; margin:-40px 0 0 -40px; }
+@keyframes tp-lit {
+  0%  { box-shadow:0 -3px 0 var(--tp-neon),0 3px 0 var(--tp-neon),-3px 0 0 var(--tp-neon),3px 0 0 var(--tp-neon); color:var(--tp-neon); }
+  25% { box-shadow:0 -3px 0 var(--tp-body),0 3px 0 var(--tp-body),-3px 0 0 var(--tp-body),3px 0 0 var(--tp-body); color:var(--tp-text); }
+}
+.tp-lbl { position:absolute; display:flex; flex-direction:column; gap:6px; width:170px; }
+.tp-lbl .tp-nm { color:var(--tp-text); font-size:26px; font-weight:500; letter-spacing:-0.03em; line-height:1; }
+
+/* ---- the 5x5 pixel jelly mascot, drawn entirely with box-shadow ---- */
+.tp-jelly {
+  width:5px; height:5px; animation: tp-lbob .5s steps(1) infinite;
+  box-shadow:
+     5px 0   #FF5C8D, 10px 0   #FF5C8D, 15px 0   #FF5C8D,
+     0   5px #FF5C8D,  5px 5px #FF5C8D, 10px 5px #FF7A3D, 15px 5px #FF5C8D, 20px 5px #FF5C8D,
+     0  10px #FF5C8D,  5px 10px #FF5C8D,10px 10px #FF5C8D,15px 10px #FF5C8D,20px 10px #FF5C8D,
+     0  15px #5CE1E6, 10px 15px #5CE1E6,20px 15px #5CE1E6,
+     5px 20px #5CE1E6,15px 20px #5CE1E6;
+}
+@keyframes tp-lbob { 50% { transform:translateY(-4px); } }
+
+/* the jelly orbiting the cycle diagram (840x680 box) */
+.tp-ohero { position:absolute; width:25px; height:25px; animation: tp-orbit 8s steps(1) infinite; }
+@keyframes tp-orbit {
+  0%  { left:408px; top:56px;  }
+  25% { left:608px; top:256px; }
+  50% { left:408px; top:456px; }
+  75% { left:208px; top:256px; }
+}
+
+/* the jelly hopping along a horizontal progress track */
+.tp-lhero { position:absolute; top:0; width:25px; height:25px; margin-left:-12px; animation: tp-hop 8s steps(1) infinite; }
+@keyframes tp-hop {
+  0% { left:12.5%; } 25% { left:37.5%; } 50% { left:62.5%; } 75% { left:87.5%; }
+}
+
+/* ---- chrome that carries the same pixel language ---- */
+/* hard-edged pixel button */
+.tp-btn {
+  background:var(--tp-pink); color:var(--tp-bg); border:0; border-radius:0; cursor:pointer;
+  display:inline-flex; align-items:center; gap:10px;
+  box-shadow: inset -3px -3px 0 rgba(10,15,26,.28), inset 3px 3px 0 rgba(255,255,255,.28);
+  transition: transform .08s steps(1);
+}
+.tp-btn:hover  { background:var(--tp-hi); transform:translateY(-2px); }
+.tp-btn:active { transform:translateY(1px); }
+.tp-btn.tp-done{ background:var(--tp-neon); transform:none; }
+
+/* 3px outline box drawn with shadows so the corners stay square */
+.tp-box { background:var(--tp-panel);
+  box-shadow:0 -3px 0 var(--tp-body),0 3px 0 var(--tp-body),-3px 0 0 var(--tp-body),3px 0 0 var(--tp-body); }
+
+/* neon-edged panel */
+.tp-glow {
+  background:var(--tp-panel); border:1px solid rgba(92,225,230,.35);
+  box-shadow:0 0 28px -8px rgba(92,225,230,.35);
+  transition: box-shadow .25s, border-color .25s;
+}
+.tp-glow:hover { border-color:rgba(92,225,230,.7); box-shadow:0 0 40px -6px rgba(92,225,230,.5); }
+
+/* chevron link that steps forward on hover */
+.tp-go { display:inline-flex; align-items:center; gap:10px; }
+.tp-go .tp-chev { transition: transform .12s steps(2); }
+.tp-go:hover .tp-chev { transform:translateX(5px); }
+
+/* ---- accessibility: everything still renders, nothing moves ---- */
+@media (prefers-reduced-motion: reduce) {
+  .tp-bob,.tp-fa,.tp-blink,.tp-node,.tp-lhero,.tp-jelly,.tp-ohero { animation:none; }
+  .tp-fb { animation:none; opacity:0; }
+  .tp-lhero { left:12.5%; }
+  .tp-ohero { left:408px; top:56px; }
+}

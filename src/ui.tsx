@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { mountJellyfish, mountSprite, type Mounted } from "./pixels/turri-pixels.js";
 import type { Usage } from "./types.ts";
 
 /** Re-render once a second while `active`: for clocks that count up. */
@@ -31,29 +32,51 @@ export function tokens(usage: Usage | undefined): string {
   return total >= 1_000_000 ? `${(total / 1_000_000).toFixed(1)}M tok` : `${(total / 1000).toFixed(1)}k tok`;
 }
 
-/** The pixel jellyfish's box: the animated one's, which leaves room above it for its bob, in its pixels. */
-const JELLYFISH_WIDTH = 279;
-const JELLYFISH_HEIGHT = 449;
+/** The hero jellyfish's box, in its pixels: jellyfish-hero.svg's, and the swaying sprite's, which bobs inside it. */
+const HERO_WIDTH = 350;
+const HERO_HEIGHT = 460;
+/** The lifecycle's box: the polyp on the floor at its foot, the jellyfish risen to where the hero hangs. */
+const LIFECYCLE_WIDTH = 400;
+const LIFECYCLE_HEIGHT = 600;
 /** Below this, the jellyfish's pixels run together: the logo is drawn instead. */
 const LOGO_BELOW = 48;
 
 /**
- * The jellyfish turri is named after (public/jellyfish/). Large, the pixel jellyfish: at rest it hangs still, and
- * `swimming` it bobs, its tentacles stroking - while turri works. Small, the logo, which bobs in pixel steps instead.
+ * The jellyfish turri is named after, from turri's pixel kit (src/pixels/, public/jellyfish/). Large: at rest the hero
+ * hangs still; `swimming` it bobs, its tentacles swaying - while turri works; `lifecycle`, it grows from the polyp,
+ * sinks and grows again, then sways on. Small: the logo mark at rest, and the mascot, bobbing, while turri works.
  */
-export function Jellyfish({ size = 48, swimming = true, className = "" }: { size?: number; swimming?: boolean; className?: string }) {
+export function Jellyfish({ size = 48, swimming = true, lifecycle = false, className = "" }: { size?: number; swimming?: boolean; lifecycle?: boolean; className?: string }) {
   if (size < LOGO_BELOW) {
-    return <img className={`jellyfish logo-mark ${swimming ? "swimming" : ""} ${className}`} src="./jellyfish/logo.svg" width={size} height={size} alt="" draggable={false} />;
+    return (
+      <img
+        className={`jellyfish logo-mark ${swimming ? "swimming" : ""} ${className}`}
+        src={swimming ? "./jellyfish/jelly-mascot.svg" : "./jellyfish/logo-mark.svg"}
+        width={size}
+        height={size}
+        alt=""
+        draggable={false}
+      />
+    );
   }
+  if (lifecycle) return <Pixels size={size} width={LIFECYCLE_WIDTH} height={LIFECYCLE_HEIGHT} mount={(host) => mountJellyfish(host)} className={className} />;
+  if (swimming) return <Pixels size={size} width={HERO_WIDTH} height={HERO_HEIGHT} mount={(host) => mountSprite(host, "hero")} className={className} />;
+  return <img className={`jellyfish ${className}`} src="./jellyfish/jellyfish-hero.svg" width={size} height={Math.round((size * HERO_HEIGHT) / HERO_WIDTH)} alt="" draggable={false} />;
+}
+
+/** One of the kit's animations, mounted in its own pixels' box and scaled to `size` wide. */
+function Pixels({ size, width, height, mount, className }: { size: number; width: number; height: number; mount: (host: HTMLElement) => Mounted; className: string }) {
+  const host = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (host.current === null) return;
+    const mounted = mount(host.current);
+    return () => mounted.destroy();
+  }, []);
+  const scale = size / width;
   return (
-    <img
-      className={`jellyfish ${className}`}
-      src={swimming ? "./jellyfish/jellyfish-swimming.svg" : "./jellyfish/jellyfish.svg"}
-      width={size}
-      height={Math.round((size * JELLYFISH_HEIGHT) / JELLYFISH_WIDTH)}
-      alt=""
-      draggable={false}
-    />
+    <div className={`jellyfish pixels ${className}`} style={{ width: size, height: Math.round(height * scale) }} aria-hidden>
+      <div ref={host} style={{ position: "relative", width, height, transform: `scale(${scale})`, transformOrigin: "0 0" }} />
+    </div>
   );
 }
 
@@ -78,6 +101,8 @@ export function Appearance() {
 /** SF Symbols-like line icons, drawn inline so the app needs no icon font. */
 const PATHS: Record<string, string> = {
   doc: "M6 2.5h5.5L15 6v11.5H6zM11.5 2.5V6H15",
+  file: "M6 2.5h5.5L15 6v11.5H6zM11.5 2.5V6H15M8.5 10h4M8.5 13h4",
+  chevron: "M8 5.5l4.5 4.5L8 14.5",
   play: "M7 4.5v11l9-5.5z",
   stop: "M6 6h8v8H6z",
   release: "M10 13V3.5M6 7.5l4-4 4 4M4 12v4.5h12V12",

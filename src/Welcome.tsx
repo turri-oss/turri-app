@@ -26,15 +26,18 @@ export function Welcome({ onOpened, onNew }: { onOpened: (project: Project | nul
 
   return (
     <div className="welcome">
-      <div className="titlebar-space drag" />
+      {/* The name in the title bar, beside the window's buttons: the middle is the jellyfish's. */}
+      <header className="welcome-bar drag">
+        <Jellyfish size={30} swimming={false} />
+        <span className="logo">turri</span>
+      </header>
       <div className="bubbles" aria-hidden>
         {Array.from({ length: 14 }, (_, index) => (
           <i key={index} style={{ left: `${(index * 37) % 100}%`, animationDelay: `${(index * 1.7) % 9}s`, animationDuration: `${8 + (index % 5) * 2}s` }} />
         ))}
       </div>
       <div className="welcome-card">
-        <Jellyfish size={120} />
-        <div className="logo">turri</div>
+        <Jellyfish size={150} lifecycle />
         <p className="tagline">
           the first coding agent with the power of <em>regenerative software</em>
         </p>
