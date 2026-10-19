@@ -9,6 +9,9 @@
     "node": ">=22.19"
   },
   "scripts": {
+    "postinstall": "node scripts/brand.mjs",
+    "brand": "node scripts/brand.mjs",
+    "icon": "electron scripts/icon.cjs && node scripts/brand.mjs",
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs && vite build",
     "start": "npm run build && electron .",
@@ -28,6 +31,6 @@
     "vite": "^8.3.4"
   },
   "dependencies": {
-    "@turri-dev/cli": "0.1.7-next.9aec40e"
+    "@turri-dev/cli": "0.1.7-next.eb57c34"
   }
 }

@@ -31,51 +31,26 @@ export function tokens(usage: Usage | undefined): string {
   return total >= 1_000_000 ? `${(total / 1_000_000).toFixed(1)}M tok` : `${(total / 1000).toFixed(1)}k tok`;
 }
 
-/** The theme as it shows now: dark or light, the system's when it follows the system. */
-function useShownTheme(): "dark" | "light" {
-  const read = (): "dark" | "light" => {
-    const chosen = document.documentElement.dataset.theme;
-    if (chosen === "light" || chosen === "dark") return chosen;
-    return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  };
-  const [shown, setShown] = useState(read);
-  useEffect(() => {
-    const update = () => setShown(read());
-    const media = matchMedia("(prefers-color-scheme: light)");
-    media.addEventListener("change", update);
-    const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => {
-      media.removeEventListener("change", update);
-      observer.disconnect();
-    };
-  }, []);
-  return shown;
-}
-
-const FRAMES = 12;
+/** The pixel jellyfish's box: the animated one's, which leaves room above it for its bob, in its pixels. */
+const JELLYFISH_WIDTH = 279;
+const JELLYFISH_HEIGHT = 449;
+/** Below this, the jellyfish's pixels run together: the logo is drawn instead. */
+const LOGO_BELOW = 48;
 
 /**
- * The jellyfish turri is named after, from turri's own frames (assets/jellyfish): a stroke every three seconds, a
- * quarter second a frame. At rest it hangs open; `swimming`, it strokes - while turri works.
+ * The jellyfish turri is named after (public/jellyfish/). Large, the pixel jellyfish: at rest it hangs still, and
+ * `swimming` it bobs, its tentacles stroking - while turri works. Small, the logo, which bobs in pixel steps instead.
  */
 export function Jellyfish({ size = 48, swimming = true, className = "" }: { size?: number; swimming?: boolean; className?: string }) {
-  const theme = useShownTheme();
-  const [frame, setFrame] = useState(0);
-  useEffect(() => {
-    if (!swimming) {
-      setFrame(0);
-      return;
-    }
-    const timer = setInterval(() => setFrame((at) => (at + 1) % FRAMES), 250);
-    return () => clearInterval(timer);
-  }, [swimming]);
+  if (size < LOGO_BELOW) {
+    return <img className={`jellyfish logo-mark ${swimming ? "swimming" : ""} ${className}`} src="./jellyfish/logo.svg" width={size} height={size} alt="" draggable={false} />;
+  }
   return (
     <img
       className={`jellyfish ${className}`}
-      src={`./jellyfish/${theme}-${String(frame).padStart(2, "0")}.png`}
+      src={swimming ? "./jellyfish/jellyfish-swimming.svg" : "./jellyfish/jellyfish.svg"}
       width={size}
-      height={Math.round((size * 26) / 24)}
+      height={Math.round((size * JELLYFISH_HEIGHT) / JELLYFISH_WIDTH)}
       alt=""
       draggable={false}
     />
@@ -105,10 +80,12 @@ const PATHS: Record<string, string> = {
   doc: "M6 2.5h5.5L15 6v11.5H6zM11.5 2.5V6H15",
   play: "M7 4.5v11l9-5.5z",
   stop: "M6 6h8v8H6z",
+  release: "M10 13V3.5M6 7.5l4-4 4 4M4 12v4.5h12V12",
   eye: "M2.5 10s3-5.5 7.5-5.5S17.5 10 17.5 10 14.5 15.5 10 15.5 2.5 10 2.5 10zM10 12.3a2.3 2.3 0 1 0 0-4.6 2.3 2.3 0 0 0 0 4.6z",
   check: "M5 10.5l3.2 3L15 6.5",
   dot: "M10 10m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0",
   folder: "M2.5 5.5h5l1.5 1.5h8.5v8.5h-15z",
+  plus: "M10 4v12M4 10h12",
   clock: "M10 17a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM10 6v4l2.5 2",
   branch: "M6 4v12M6 9c0-2 8-1 8-5M14 4v0",
   code: "M7.5 6L3.5 10l4 4M12.5 6l4 4-4 4",
@@ -146,25 +123,5 @@ export function Empty({ icon, title, children }: { icon: string; title: string; 
       <h3>{title}</h3>
       {children && <p>{children}</p>}
     </div>
-  );
-}
-
-/** ***plain text with its :Concepts: and `literals` set apart - for spec cards, not the editor. */
-export function PlainText({ text }: { text: string }) {
-  const parts = text.split(/(:[A-Za-z][\w.\-]*:|`[^`]+`)/g);
-  return (
-    <>
-      {parts.map((part, index) =>
-        /^:[A-Za-z][\w.\-]*:$/.test(part) ? (
-          <span key={index} className="concept">
-            {part.slice(1, -1)}
-          </span>
-        ) : part.startsWith("`") && part.endsWith("`") && part.length > 1 ? (
-          <code key={index}>{part.slice(1, -1)}</code>
-        ) : (
-          part
-        ),
-      )}
-    </>
   );
 }

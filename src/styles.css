@@ -49,6 +49,7 @@
   --accent-hover: #8eebee;
   --on-accent: #0a0f1a;
   --green: #ff5c8d; /* turri's success is pink */
+  --pink: #ff5c8d;
   --amber: #e9d8c8; /* siesta tan */
   --red: #ff7a3d; /* orange */
   --diff-add: #1e3442;
@@ -84,6 +85,7 @@
   --accent-hover: #8c2e66;
   --on-accent: #f4f7f9;
   --green: #732553;
+  --pink: #d63a6f; /* turri's pink, deep enough to read on light */
   --amber: #3e5a6b;
   --red: #c4501c;
   --diff-add: #8eebee;
@@ -116,6 +118,7 @@
     --accent-hover: #8c2e66;
     --on-accent: #f4f7f9;
     --green: #732553;
+    --pink: #d63a6f;
     --amber: #3e5a6b;
     --red: #c4501c;
     --diff-add: #8eebee;
@@ -187,12 +190,31 @@ code {
 /* ---------- layout ---------- */
 
 .app {
+  position: relative;
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
   height: 100%;
 }
 .app.with-chat {
-  grid-template-columns: 220px minmax(0, 1fr) 400px;
+  grid-template-columns: 220px minmax(0, 1fr) var(--chat-width, 400px);
+}
+/* The chat's left edge, a little wider than its border to catch the pointer; lit while hovered or dragged. */
+.chat-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(var(--chat-width, 400px) - 4px);
+  width: 6px;
+  z-index: 5;
+  cursor: col-resize;
+}
+.chat-resize:hover,
+.app.resizing .chat-resize {
+  background: var(--accent);
+}
+.app.resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .titlebar-space {
@@ -419,9 +441,6 @@ code {
   color: var(--on-accent);
   border-color: transparent;
 }
-.button.danger {
-  color: var(--red);
-}
 .button.small {
   height: 22px;
   padding: 0 8px;
@@ -566,6 +585,12 @@ code {
 .drag {
   -webkit-app-region: drag;
 }
+.welcome-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
 .welcome-card {
   margin: auto;
   width: 440px;
@@ -581,6 +606,10 @@ code {
   color: var(--fg-2);
   font-size: 14px;
   margin: 6px 0 24px;
+}
+.tagline em {
+  color: var(--pink);
+  font-style: normal;
 }
 .recents {
   list-style: none;
@@ -623,22 +652,13 @@ code {
 /* ---------- spec ---------- */
 
 .spec-view {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 1fr);
   height: 100%;
 }
-.editor-pane,
-.cards-pane {
+.editor-pane {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
-}
-.editor-pane {
-  border-right: 2px solid var(--line);
-}
-.cards-pane {
-  background: var(--bg-2);
-  overflow-y: auto;
 }
 
 .editor {
@@ -646,9 +666,12 @@ code {
   min-height: 0;
   overflow-y: auto;
 }
+/* The text column, kept to a width that reads; the gutter of functional spec marks on its left. */
 .editor-sheet {
+  --gutter: 34px;
   position: relative;
   min-height: 100%;
+  max-width: 920px;
 }
 .editor textarea,
 .editor-colours {
@@ -663,8 +686,8 @@ code {
 }
 .editor textarea {
   position: absolute;
-  inset: 0;
-  width: 100%;
+  inset: 0 0 0 var(--gutter);
+  width: auto;
   height: 100%;
   overflow: hidden;
   background: transparent;
@@ -680,6 +703,68 @@ code {
 .editor-colours {
   pointer-events: none;
   color: var(--fg);
+  margin-left: var(--gutter);
+}
+.editor-colours > div {
+  position: relative;
+}
+
+/* A functional spec's state, beside its lines: a bar down all of them, and a mark on the first. */
+.gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--gutter));
+  width: var(--gutter);
+}
+.gutter::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 4px;
+  width: 2px;
+  background: var(--fg-3);
+}
+.gutter.built::before {
+  background: var(--green);
+}
+.gutter.now::before {
+  background: var(--accent);
+  width: 4px;
+}
+.gutter.todo::before {
+  background: repeating-linear-gradient(180deg, var(--fg-3) 0 4px, transparent 4px 8px);
+}
+.mark {
+  pointer-events: auto;
+  position: absolute;
+  top: 3px;
+  left: 8px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--fg-3);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--bg);
+  cursor: pointer;
+}
+.mark:hover {
+  box-shadow: 2px 2px 0 var(--shadow-ink);
+}
+.gutter.built .mark {
+  border-color: var(--green);
+  background: var(--green);
+}
+.gutter.now .mark {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.mark .spinner {
+  transform: scale(0.75);
 }
 .plain-section {
   color: var(--plain-section);
@@ -717,109 +802,31 @@ code {
   transition: width 0.4s;
 }
 
-.running-banner {
+/* The lines the running work renders now. */
+.editor-colours > div.rendering {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: -4px 0 0 color-mix(in srgb, var(--accent) 16%, transparent), 4px 0 0 color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.disk-banner {
   display: flex;
   gap: 10px;
   align-items: center;
-  margin: 12px 14px 0;
-  padding: 10px 12px;
-  border-radius: 0;
-  background: color-mix(in srgb, var(--accent) 12%, var(--card));
-  color: var(--fg);
-}
-.running-banner div {
-  display: flex;
-  flex-direction: column;
-}
-.running-banner span {
-  color: var(--fg-2);
-  font-size: 12px;
-}
-
-.cards {
-  list-style: none;
-  margin: 0;
-  padding: 12px 14px 30px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.card {
+  margin: 12px 18px 0 52px;
+  max-width: 868px;
+  padding: 8px 12px;
+  border: 2px solid var(--accent);
   background: var(--card);
-  border: 2px solid var(--line);
-  border-radius: 0;
-  padding: 10px 12px 11px;
-  box-shadow: var(--shadow);
-  border-left: 3px solid var(--fg-3);
 }
-.card.built {
-  border-left-color: var(--green);
-}
-.card.now {
-  border-left-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
-}
-.card-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.frid {
-  font-weight: 700;
-  font-size: 11px;
-  color: var(--fg-2);
-  font-variant-numeric: tabular-nums;
-}
-.card-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--fg-3);
-}
-.card.built .card-state {
-  color: var(--green);
-}
-.card-more {
+.disk-banner .button {
   margin-left: auto;
-  border: 0;
-  background: none;
-  color: var(--fg-3);
-  border-radius: 0;
-  padding: 0 5px;
-  font-weight: 700;
-  opacity: 0;
-}
-.card:hover .card-more {
-  opacity: 1;
-}
-.card-body p {
-  margin: 0;
-  user-select: text;
-}
-.card-body p.sub {
-  color: var(--fg-2);
-  font-size: 12px;
-  padding-left: 12px;
-  position: relative;
-  margin-top: 3px;
-}
-.card-body p.sub::before {
-  content: "•";
-  position: absolute;
-  left: 2px;
-  color: var(--fg-3);
-}
-.concept {
-  color: var(--plain-concept);
-  font-weight: 500;
 }
 
 .parse-error {
   display: flex;
   gap: 10px;
-  margin: 14px;
+  margin: 12px 18px 0 52px;
+  max-width: 868px;
   padding: 12px;
   border-radius: 0;
   background: color-mix(in srgb, var(--red) 10%, var(--card));
@@ -1456,6 +1463,8 @@ code {
   bottom: 100%;
   left: 12px;
   right: 12px;
+  max-height: 40vh;
+  overflow-y: auto;
   list-style: none;
   margin: 0 0 4px;
   padding: 4px;
@@ -1502,6 +1511,33 @@ code {
 }
 .option:hover {
   border-color: var(--accent);
+}
+.option.on {
+  border-color: var(--accent);
+  box-shadow: 3px 3px 0 var(--accent);
+}
+.option-detail {
+  display: block;
+  margin-top: 2px;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.new-project .options {
+  margin-top: 14px;
+}
+.bedrock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.bedrock-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.bedrock-row > .muted {
+  width: 110px;
 }
 .answer {
   width: 100%;
@@ -1550,19 +1586,26 @@ code {
 /* ---------- pixels ---------- */
 
 img.jellyfish {
-  image-rendering: pixelated;
   flex: none;
+  /* The still jellyfish is shorter than the animated one's box, which has room for its bob: it sits at the bottom. */
+  object-fit: contain;
+  object-position: bottom;
 }
-.drift {
-  animation: drift 6s steps(12) infinite;
+.logo-mark.swimming {
+  animation: bob 1.4s steps(1) infinite;
 }
-@keyframes drift {
+@keyframes bob {
   50% {
-    transform: translateY(-10px);
+    transform: translateY(-2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo-mark.swimming {
+    animation: none;
   }
 }
 
-/* Everything in Zed Mono; the main buttons - Regenerate, Preview plan, Open a project, Send - and the logo in Silkscreen's pixels. */
+/* Everything in Zed Mono; the main buttons - Regenerate, Release, Start a new project, Open a project, Send - and the logo in Silkscreen's pixels. */
 .logo,
 .button {
   font-family: var(--pixel);
@@ -1630,7 +1673,6 @@ code {
   color: var(--on-accent);
   box-shadow: none;
 }
-.card,
 .job,
 .msg.note,
 .msg.job-note,
@@ -1638,14 +1680,10 @@ code {
 .option,
 .toast,
 .sheet,
-.running-banner,
 .parse-error,
 .diagnosis {
   border-width: 2px;
   box-shadow: var(--shadow);
-}
-.card {
-  border-left-width: 6px;
 }
 .msg.user {
   box-shadow: 3px 3px 0 var(--diff-del);

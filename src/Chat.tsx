@@ -19,15 +19,6 @@ export type Question = {
   prefill?: string;
 };
 
-const COMMANDS = [
-  ["/regenerate", "regenerate a module from its spec - /regenerate backend 2"],
-  ["/halt", "halt a pulse or a module's planned pulses"],
-  ["/pulses", "the pulses of this session"],
-  ["/lineage", "a module's history"],
-  ["/steer", "how to cut and order the work"],
-  ["/btw", "a side question, without stopping the work"],
-  ["/stdlib", "the stacks a spec can import"],
-];
 
 /** Talking to turri: the same conversation `turri` holds in the terminal - its tools, commands and questions - in the window. */
 export function Chat(props: {
@@ -38,6 +29,10 @@ export function Chat(props: {
   running: Map<string, boolean>;
   statuses: Record<string, string>;
   model: string | null;
+  /** A project with no spec yet: the hints start one. */
+  fresh: boolean;
+  /** What typing / offers: turri's commands, prompt templates and skills, as its chat has them. */
+  commands: Array<{ name: string; description: string }>;
   onSend: (text: string) => void;
   onAbort: () => void;
   onClose: () => void;
@@ -65,7 +60,7 @@ export function Chat(props: {
     stick.current = true;
   };
 
-  const suggestions = draft.startsWith("/") && !draft.includes(" ") ? COMMANDS.filter(([name]) => name.startsWith(draft)) : [];
+  const suggestions = draft.startsWith("/") && !draft.includes(" ") ? props.commands.filter((command) => command.name.startsWith(draft)) : [];
   const statusLine = Object.values(props.statuses).filter(Boolean).join(" · ");
 
   return (
@@ -86,15 +81,33 @@ export function Chat(props: {
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
       >
-        {props.items.length === 0 && !props.streaming && (
+        {/* Nothing said yet - notes aside, such as a new project's config - so how to begin is shown. */}
+        {props.items.every((item) => item.role === "note") && !props.streaming && (
           <div className="chat-empty">
-            <Jellyfish size={72} className="drift" />
+            <Jellyfish size={72} />
             <p>Tell turri what you want to build, or what to change. It writes the spec with you, then regenerates the code from it.</p>
-            {["What does this project do?", "Add a way to delete a message", "Regenerate what changed"].map((hint) => (
-              <button key={hint} className="hint" onClick={() => props.onSend(hint)}>
-                {hint}
-              </button>
-            ))}
+            {props.fresh ? (
+              <>
+                <button
+                  className="hint"
+                  onClick={() => {
+                    setDraft("I want to build ");
+                    requestAnimationFrame(() => input.current?.focus());
+                  }}
+                >
+                  I want to build…
+                </button>
+                <button className="hint" onClick={() => props.onSend("Help me work out what to build: ask me what you need to know, then write the first spec.")}>
+                  Help me work out what to build
+                </button>
+              </>
+            ) : (
+              ["What does this project do?", "Add a way to delete a message", "Regenerate what changed"].map((hint) => (
+                <button key={hint} className="hint" onClick={() => props.onSend(hint)}>
+                  {hint}
+                </button>
+              ))
+            )}
           </div>
         )}
         {props.items.map((item, index) => (item.role === "toolResult" ? null : <Message key={index} item={item} results={results} running={props.running} />))}
@@ -109,9 +122,9 @@ export function Chat(props: {
       <div className="composer">
         {suggestions.length > 0 && (
           <ul className="suggestions">
-            {suggestions.map(([name, what]) => (
+            {suggestions.map(({ name, description }) => (
               <li key={name} onMouseDown={(event) => (event.preventDefault(), setDraft(`${name} `))}>
-                <strong>{name}</strong> <span className="muted">{what}</span>
+                <strong>{name}</strong> <span className="muted">{description}</span>
               </li>
             ))}
           </ul>
@@ -129,7 +142,7 @@ export function Chat(props: {
             }
             if (event.key === "Tab" && suggestions.length > 0) {
               event.preventDefault();
-              setDraft(`${suggestions[0]![0]} `);
+              setDraft(`${suggestions[0]!.name} `);
             }
           }}
         />

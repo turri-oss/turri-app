@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell, type MenuItemConstructorOptions } from "electron";
 import { fork, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, statSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 
 /**
  * The main process: one window, and behind it one turri engine per open project - a Node process that hosts
@@ -65,6 +65,8 @@ let engine: ChildProcess | undefined;
 let nextId = 0;
 const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
 let running = 0;
+/** Whether the engine has a project open: one that has not - started for a new project's config - opens one as it is. */
+let engineHasProject = false;
 
 function startEngine(): Promise<void> {
   engine?.kill();
@@ -91,8 +93,11 @@ function startEngine(): Promise<void> {
       else call.resolve(message.result);
     });
     child.on("exit", (code) => {
-      if (engine === child) engine = undefined;
       reject(new Error(`The turri engine exited (${code}). Is @turri-dev/cli installed (npm install)?`));
+      // One replaced by another - a project opened after another - was stopped on purpose: only the current one's end is news.
+      if (engine !== child) return;
+      engine = undefined;
+      engineHasProject = false;
       send("engine:exit", { code });
     });
   });
@@ -136,7 +141,8 @@ function recents(): string[] {
 }
 
 async function openProject(dir: string) {
-  await startEngine();
+  if (engine === undefined || engineHasProject) await startEngine();
+  engineHasProject = true;
   const summary = await call("open", { dir });
   writeFileSync(RECENTS_FILE, JSON.stringify([dir, ...recents().filter((other) => other !== dir)].slice(0, 8)));
   app.addRecentDocument(dir);
@@ -152,6 +158,39 @@ async function chooseProject() {
   return openProject(result.filePaths[0]!);
 }
 
+/**
+ * A new project's folder: named and placed in the save sheet, and made. A folder of that name with anything in it
+ * already is not taken over. Nothing is opened yet - the window asks which models it runs on first (startProject).
+ */
+async function newProjectFolder() {
+  const result = await dialog.showSaveDialog(window!, {
+    title: "Start a new turri project",
+    buttonLabel: "Create",
+    nameFieldLabel: "Project name:",
+    defaultPath: join(app.getPath("documents"), "my-project"),
+    properties: ["createDirectory"],
+  });
+  if (result.canceled || result.filePath === undefined) return null;
+  const dir = result.filePath;
+  if (existsSync(dir) && (!statSync(dir).isDirectory() || readdirSync(dir).some((name) => !name.startsWith(".")))) {
+    throw new Error(`${basename(dir)} is there already, with files in it: choose another name, or open it as a project.`);
+  }
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** The engine, started if no project has started it yet: for what it is asked before a project opens. */
+async function anEngine() {
+  if (engine === undefined) await startEngine();
+}
+
+/** A new project's config.turri.yaml, written by turri with the models chosen - then the project, opened on them. */
+async function startProject(dir: string, vendor: string, bedrock?: { maker: string; region: string }) {
+  await anEngine();
+  const { message } = (await call("initConfig", { dir, vendor, bedrock })) as { message: string };
+  return { ...((await openProject(dir)) as object), setup: message };
+}
+
 // ---------- the window ----------
 
 function createWindow() {
@@ -161,6 +200,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 620,
     title: "turri",
+    icon: join(ROOT, "build", "icon.png"),
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 18 },
     backgroundColor: backgroundFor(),
@@ -198,6 +238,7 @@ function buildMenu() {
     {
       label: "File",
       submenu: [
+        { label: "New Project…", accelerator: "CmdOrCtrl+N", click: menuAction("new-project") },
         { label: "Open Project…", accelerator: "CmdOrCtrl+O", click: () => void chooseProject().then((summary) => summary && send("project:opened", summary)) },
         { role: "recentDocuments", submenu: [{ role: "clearRecentDocuments" }] } as MenuItemConstructorOptions,
         { type: "separator" },
@@ -215,8 +256,7 @@ function buildMenu() {
         { label: "Regenerate", accelerator: "CmdOrCtrl+R", click: menuAction("regenerate"), enabled: engine !== undefined },
         { label: "Preview the Plan", accelerator: "CmdOrCtrl+Shift+P", click: menuAction("glimpse"), enabled: engine !== undefined },
         { label: "Write Conformance Tests", click: menuAction("conform"), enabled: engine !== undefined },
-        { type: "separator" },
-        { label: "Halt This Module", accelerator: "CmdOrCtrl+.", click: menuAction("halt"), enabled: engine !== undefined },
+        { label: "Release to Try", click: menuAction("release"), enabled: engine !== undefined },
       ],
     },
     {
@@ -257,6 +297,17 @@ function buildMenu() {
 
 ipcMain.handle("engine:call", (_event, method: string, params: unknown) => call(method, params));
 ipcMain.handle("project:choose", () => chooseProject());
+ipcMain.handle("project:new", () => newProjectFolder());
+ipcMain.handle("project:vendors", async () => (await anEngine(), call("vendors")));
+ipcMain.handle("project:start", (_event, dir: string, vendor: string, bedrock?: { maker: string; region: string }) => startProject(dir, vendor, bedrock));
+// A new project given up before it started: its folder, made for it and still empty, taken away again.
+ipcMain.handle("project:abandon", (_event, dir: string) => {
+  try {
+    rmdirSync(dir);
+  } catch {
+    /* something is in it now: it stays */
+  }
+});
 ipcMain.handle("project:open", (_event, dir: string) => openProject(dir));
 ipcMain.handle("project:recents", () => recents());
 ipcMain.handle("shell:reveal", (_event, path: string) => shell.showItemInFolder(path));
@@ -282,6 +333,8 @@ app.on("open-file", (event, path) => {
 
 app.whenReady().then(() => {
   app.setName("turri");
+  // The bundle carries the icon once scripts/brand.mjs has run; the Dock is given it as well, for when it has not.
+  app.dock?.setIcon(join(ROOT, "build", "icon.png"));
   nativeTheme.themeSource = theme;
   buildMenu();
   createWindow();
@@ -292,5 +345,8 @@ app.on("window-all-closed", () => {
   engine?.kill();
   if (process.platform !== "darwin") app.quit();
 });
+
+// Quitting - ⌘Q, the menu, app.quit() - closes no window first, so the engine is stopped here too.
+app.on("will-quit", () => engine?.kill());
 
 app.on("before-quit", () => engine?.kill());

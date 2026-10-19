@@ -3,7 +3,7 @@ import type { Job, Status, TranscriptEntry } from "./types.ts";
 import { cost, elapsed, Empty, Icon, Spinner, tokens, useTick } from "./ui.tsx";
 
 /** The work: each codebase's plan, and every pulse - running, planned and done - opened into its agents' conversation. */
-export function WorkView({ status, jobs, onStop }: { status: Status; jobs: Job[]; onStop: (id: string) => void }) {
+export function WorkView({ status, jobs }: { status: Status; jobs: Job[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const anyRunning = jobs.some((job) => job.status === "running");
   useTick(anyRunning);
@@ -48,7 +48,7 @@ export function WorkView({ status, jobs, onStop }: { status: Status; jobs: Job[]
           Pulses {total > 0 && <span className="muted">· ${total.toFixed(2)} so far</span>}
         </div>
         {jobs.map((job) => (
-          <JobCard key={job.id} job={job} open={job.id === open} onOpen={() => setOpen(job.id === open ? null : job.id)} onStop={() => onStop(job.id)} />
+          <JobCard key={job.id} job={job} open={job.id === open} onOpen={() => setOpen(job.id === open ? null : job.id)} />
         ))}
       </div>
       {selected && <Transcript job={selected} onClose={() => setOpen(null)} />}
@@ -56,7 +56,7 @@ export function WorkView({ status, jobs, onStop }: { status: Status; jobs: Job[]
   );
 }
 
-function JobCard({ job, open, onOpen, onStop }: { job: Job; open: boolean; onOpen: () => void; onStop: () => void }) {
+function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () => void }) {
   const icon =
     job.status === "running" ? <Spinner /> : job.status === "succeeded" ? <Icon name="check" /> : job.status === "failed" ? <Icon name="x" /> : job.status === "stopped" ? <Icon name="stop" /> : <Icon name="clock" />;
   return (
@@ -74,18 +74,6 @@ function JobCard({ job, open, onOpen, onStop }: { job: Job; open: boolean; onOpe
           <span>{job.status === "queued" ? "waiting" : elapsed(job.startedAt, job.finishedAt)}</span>
           {cost(job.usage) && <span className="muted">{cost(job.usage)}</span>}
         </div>
-        {(job.status === "running" || job.status === "queued") && (
-          <button
-            className="icon-button"
-            title="Stop this pulse"
-            onClick={(event) => {
-              event.stopPropagation();
-              onStop();
-            }}
-          >
-            <Icon name="stop" />
-          </button>
-        )}
       </div>
       {job.status === "running" && (
         <div className="job-live">

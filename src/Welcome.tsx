@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Project } from "./types.ts";
 import { Appearance, Icon, Jellyfish, Spinner } from "./ui.tsx";
 
-export function Welcome({ onOpened }: { onOpened: (project: Project | null) => void }) {
+export function Welcome({ onOpened, onNew }: { onOpened: (project: Project | null) => void; onNew: () => void }) {
   const [recents, setRecents] = useState<string[]>([]);
   const [opening, setOpening] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +17,8 @@ export function Welcome({ onOpened }: { onOpened: (project: Project | null) => v
     try {
       onOpened(dir === undefined ? await window.turri.chooseProject() : await window.turri.openProject(dir));
     } catch (failure) {
-      setError(String((failure as Error).message ?? failure));
+      // As the main process said it, without Electron's wrapping.
+      setError(String((failure as Error).message ?? failure).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
     } finally {
       setOpening(null);
     }
@@ -32,12 +33,19 @@ export function Welcome({ onOpened }: { onOpened: (project: Project | null) => v
         ))}
       </div>
       <div className="welcome-card">
-        <Jellyfish size={144} className="drift" />
+        <Jellyfish size={120} />
         <div className="logo">turri</div>
-        <p className="tagline">Describe your software in plain words. turri writes, tests and keeps the code in step with it.</p>
-        <button className="button primary large" onClick={() => void open()} disabled={opening !== null}>
-          {opening === "…" ? <Spinner /> : <Icon name="folder" />} Open a project…
-        </button>
+        <p className="tagline">
+          the first coding agent with the power of <em>regenerative software</em>
+        </p>
+        <div className="welcome-actions">
+          <button className="button primary large" onClick={onNew} disabled={opening !== null}>
+            <Icon name="plus" /> Start a new project…
+          </button>
+          <button className="button large" onClick={() => void open()} disabled={opening !== null}>
+            {opening === "…" ? <Spinner /> : <Icon name="folder" />} Open a project…
+          </button>
+        </div>
         {error && <p className="error-text">{error}</p>}
         {recents.length > 0 && (
           <>

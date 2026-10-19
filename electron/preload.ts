@@ -4,6 +4,10 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 const api = {
   call: <T>(method: string, params?: unknown) => ipcRenderer.invoke("engine:call", method, params) as Promise<T>,
   chooseProject: () => ipcRenderer.invoke("project:choose"),
+  newProject: () => ipcRenderer.invoke("project:new") as Promise<string | null>,
+  vendors: () => ipcRenderer.invoke("project:vendors"),
+  startProject: (dir: string, vendor: string, bedrock?: { maker: string; region: string }) => ipcRenderer.invoke("project:start", dir, vendor, bedrock),
+  abandonProject: (dir: string) => ipcRenderer.invoke("project:abandon", dir),
   openProject: (dir: string) => ipcRenderer.invoke("project:open", dir),
   recents: () => ipcRenderer.invoke("project:recents") as Promise<string[]>,
   reveal: (path: string) => ipcRenderer.invoke("shell:reveal", path),

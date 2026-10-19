@@ -80,6 +80,18 @@ export async function startChat({ cwd, harnessModel, host, emit, ask }) {
       const run = session.isStreaming ? session.followUp(text) : session.prompt(text);
       Promise.resolve(run).catch((error) => emit("chat:notify", { level: "error", text: error instanceof Error ? error.message : String(error) }));
     },
+    /**
+     * The commands typing / offers, as pi has them: the extension's - /turri-config, /regenerate, /stack - its prompt
+     * templates, and its skills as /skill:<name>. /halt is left out: halting a pulse is turri's alone, not the window's.
+     */
+    commands: () =>
+      [
+        ...session.extensionRunner.getRegisteredCommands().map((command) => ({ name: command.invocationName, description: command.description })),
+        ...session.promptTemplates.map((template) => ({ name: template.name, description: template.description })),
+        ...session.resourceLoader.getSkills().skills.map((skill) => ({ name: `skill:${skill.name}`, description: skill.description })),
+      ]
+        .filter((command) => command.name !== "halt")
+        .map((command) => ({ name: `/${command.name}`, description: command.description ?? "" })),
     abort: () => session.abort(),
     model: () => (session.model ? `${session.model.provider}/${session.model.id}` : null),
     dispose: () => session.dispose(),

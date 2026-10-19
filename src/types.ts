@@ -34,6 +34,8 @@ export interface Project {
   stacks: string[];
   settings: Record<string, string | number | boolean | null>;
   specs: Spec[];
+  /** A project just started: what turri said of the config it wrote for it - its models, and how to sign in. */
+  setup?: string;
 }
 
 export interface Usage {
@@ -51,7 +53,10 @@ export interface Job {
   module?: string;
   pulse?: number;
   title?: string;
+  /** The spec change a pulse renders, as a diff of the .plain files. */
   diff?: string;
+  /** Where the diff's lines are in the .plain files: by a line's place in the diff, its file and its line there (from 1). */
+  diffWhere?: Record<number, { file: string; line: number; section?: string }>;
   model?: string;
   status: "queued" | "running" | "succeeded" | "failed" | "stopped";
   sequence: number;

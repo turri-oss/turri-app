@@ -4,7 +4,7 @@
 // slash commands, and what its jobs do is sent to the window as they do it. The app never shells out to `turri`.
 import * as turri from "@turri-dev/cli/host";
 import { startChat } from "./chat.mjs";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, watch, writeFileSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 
 // turri writes progress to the console as it would to a terminal; here it is only a log line for the app.
@@ -64,7 +64,58 @@ async function open({ dir }) {
   });
   const harnessModel = turri.modelSpec(turri.projectModels(turri.readProjectConfig(projectDir)).harness);
   chat = await startChat({ cwd: projectDir, harnessModel, host, emit, ask });
+  watchSpecs();
   return { ...summary(), orphans, chatModel: chat.model() };
+}
+
+/**
+ * The .plain files change under the window too - turri edits them from the chat - and the window is told: the file,
+ * its text and what it now says. A save of the window's own comes back the same way, and is known by its text.
+ */
+function watchSpecs() {
+  const skip = new Set([turri.MODULES_DIR, "node_modules", ".git", ".turri", "dist"]);
+  const pending = new Map();
+  watch(projectDir, { recursive: true }, (_type, name) => {
+    if (name === null || !name.endsWith(".plain") || name.split("/").some((part) => skip.has(part) || part.startsWith("."))) return;
+    const file = join(projectDir, name);
+    // An editor writes a file in more than one step: it is read once they have settled.
+    clearTimeout(pending.get(file));
+    pending.set(
+      file,
+      setTimeout(() => {
+        pending.delete(file);
+        if (!existsSync(file)) return;
+        emit("spec", { file, text: readFileSync(file, "utf8"), spec: describeSpec(file) });
+      }, 150),
+    );
+  });
+}
+
+// ---------- a new project ----------
+
+/** turri's vendors and the two models each gives - and Bedrock's, by maker and geography - for the window to choose from. */
+function vendors() {
+  const bedrockModels = {};
+  for (const [maker, regions] of Object.entries(turri.BEDROCK_REGIONS)) {
+    for (const region of regions) bedrockModels[`${maker}/${region}`] = turri.bedrockModels({ maker, region });
+  }
+  return {
+    vendors: Object.entries(turri.VENDORS).map(([id, preset]) => ({ id, label: preset.label, harness: preset.harness, coding: preset.coding })),
+    regions: turri.BEDROCK_REGIONS,
+    bedrockDefault: turri.BEDROCK_DEFAULT,
+    bedrockModels,
+  };
+}
+
+/**
+ * A new project's config.turri.yaml, as `turri init-config` writes it, with the chosen vendor's models. What turri says
+ * of it is kept up to its terminal advice - the commands to run next - which a window has no use for.
+ */
+function initConfig({ dir, vendor, bedrock }) {
+  const { message } = turri.initConfig(dir, { vendor, ...(bedrock !== undefined ? { bedrock } : {}) });
+  const lines = message.split("\n");
+  const then = lines.findIndex((line) => line.trim() === "Then");
+  return { message: (then === -1 ? lines : lines.slice(0, then)).join("\n").trim() };
 }
 
 /** A question for the person, put in the window; answered through `answer`. */
@@ -215,6 +266,13 @@ function conform({ file, frids }) {
   return true;
 }
 
+function release({ file }) {
+  chat.send(
+    `Release ${relative(projectDir, file)} for me to try. Once it runs, tell me how to open or run it, and what to test: what was built from the spec, and for each the steps to check it works and what I should see.`,
+  );
+  return true;
+}
+
 function sendChat({ text }) {
   chat.send(text);
   return true;
@@ -223,6 +281,10 @@ function sendChat({ text }) {
 function abortChat() {
   void chat.abort();
   return true;
+}
+
+function commands() {
+  return chat.commands();
 }
 
 function chatHistory() {
@@ -249,28 +311,25 @@ async function glimpse({ file }) {
   return { statuses, firsts, drift: dry.drift(file) };
 }
 
-function stop({ id }) {
-  return registry?.stop(id) !== undefined;
-}
-
-function halt({ module }) {
-  chat.send(`/halt ${module}`);
-  return true;
-}
-
 function transcript({ id }) {
   return registry?.get(id)?.transcript ?? [];
 }
 
 // ---------- the wire ----------
 
-const methods = { open, summary, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, glimpse, stop, halt, transcript, sendChat, abortChat, chatHistory, answer };
+const methods = { open, vendors, initConfig, summary, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, sendChat, abortChat, chatHistory, commands, answer };
+
+// What the window may ask before a project is open: to open one, or to start a new one.
+const BEFORE_A_PROJECT = new Set(["open", "vendors", "initConfig"]);
+
+// The app gone - quit, crashed, killed - the engine goes with it: never a chat left running with no window.
+process.on("disconnect", () => process.exit(0));
 
 process.on("message", async ({ id, method, params }) => {
   try {
     const handler = methods[method];
     if (handler === undefined) throw new Error(`No such engine method: ${method}`);
-    if (method !== "open" && projectDir === undefined) throw new Error("No project is open.");
+    if (!BEFORE_A_PROJECT.has(method) && projectDir === undefined) throw new Error("No project is open.");
     const result = await handler(params ?? {});
     process.send?.({ id, result });
   } catch (error) {
