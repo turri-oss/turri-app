@@ -1,19 +1,17 @@
 // The conversation: pi's agent session with turri's extension loaded - the same chat `turri` opens in the terminal, its
 // tools, slash commands, rules and skills - with the window in place of the terminal. What the extension would draw in
 // the terminal (dialogs, notices, the working line) comes here as UI calls and goes to the window as events.
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { createTurriExtension, pi } from "@turri-dev/cli/host";
 
 /**
- * Start a chat in `cwd`. `emit` sends an event to the window; `ask` puts a question to the person there and resolves with
- * the answer (undefined when they dismiss it).
+ * Start a chat in `cwd`. `host` is what turri's extension tells of its jobs and asks its questions in (TurriHost);
+ * `emit` sends an event to the window; `ask` puts a question to the person there and resolves with the answer
+ * (undefined when they dismiss it).
  */
-export async function startChat({ turriHome, cwd, harnessModel, emit, ask }) {
-  const pi = await import(pathToFileURL(join(turriHome, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "index.js")).href);
-  const { default: turriExtension } = await import(pathToFileURL(join(turriHome, "src", "extension.ts")).href);
+export async function startChat({ cwd, harnessModel, host, emit, ask }) {
   process.env.PI_SKIP_VERSION_CHECK = "1";
 
-  const loader = new pi.DefaultResourceLoader({ cwd, agentDir: pi.getAgentDir(), extensionFactories: [turriExtension] });
+  const loader = new pi.DefaultResourceLoader({ cwd, agentDir: pi.getAgentDir(), extensionFactories: [createTurriExtension(host)] });
   await loader.reload();
   const { session } = await pi.createAgentSession({ cwd, resourceLoader: loader, sessionManager: pi.SessionManager.create(cwd) });
 
@@ -156,7 +154,6 @@ function uiContext({ emit, ask }) {
     {},
     { get: (_target, key) => (key === "fg" || key === "bg" ? (_colour, text) => text : (text) => text) },
   );
-  const tui = { terminal: { rows: 40, columns: 100 }, requestRender() {}, addInputListener: () => () => {} };
   const known = {
     theme,
     select: (title, options) => ask({ kind: "select", title, options }),
@@ -177,22 +174,10 @@ function uiContext({ emit, ask }) {
     setTheme: () => ({ success: false }),
     onTerminalInput: () => () => {},
     /**
-     * A component of the extension's own. ask_user's question dialog is one: its question, brief and options are read
-     * from it and asked in the window. Any other - a panel, a picker - has no window form yet, and is closed at once.
+     * A component of the extension's own, drawn in the terminal - a panel, a picker. ask_user's questions come through
+     * the host's dialogs instead (engine.mjs); the rest have no window form yet, and are closed at once.
      */
-    custom: (factory) =>
-      new Promise((resolve) => {
-        let component;
-        try {
-          component = factory(tui, theme, {}, resolve);
-        } catch {
-          return resolve(undefined);
-        }
-        const asked = component?.options;
-        if (asked && typeof asked.question === "string") {
-          void ask({ kind: "question", title: asked.question, message: asked.context, options: asked.options }).then((answer) => (asked.done ?? resolve)(answer));
-        } else resolve(undefined);
-      }),
+    custom: () => Promise.resolve(undefined),
   };
   return new Proxy(known, { get: (target, key) => (key in target ? target[key] : () => undefined) });
 }

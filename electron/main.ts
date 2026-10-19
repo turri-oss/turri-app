@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell, type MenuItemConstructorOptions } from "electron";
-import { execFileSync, fork, type ChildProcess } from "node:child_process";
+import { fork, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -66,26 +66,17 @@ let nextId = 0;
 const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
 let running = 0;
 
-/**
- * The Node that runs the engine. turri runs its TypeScript unbuilt, which takes Node >= 22.19's type stripping:
- * Electron's own Node is not used. An app started from the Finder has no shell PATH, so the login shell is asked.
- */
-function findNode(): string {
-  if (process.env.TURRI_NODE) return process.env.TURRI_NODE;
-  try {
-    const found = execFileSync(process.env.SHELL ?? "/bin/zsh", ["-ilc", "command -v node"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim().split("\n").at(-1);
-    if (found && existsSync(found)) return found;
-  } catch {
-    /* fall through to the usual places */
-  }
-  return ["/opt/homebrew/bin/node", "/usr/local/bin/node"].find(existsSync) ?? "node";
-}
-
 function startEngine(): Promise<void> {
   engine?.kill();
   for (const { reject } of pending.values()) reject(new Error("The engine restarted."));
   pending.clear();
-  const child = fork(join(ROOT, "engine", "engine.mjs"), [], { execPath: findNode(), execArgv: [], stdio: ["ignore", "pipe", "pipe", "ipc"] });
+  // Electron's own Node runs it: turri comes compiled, from the @turri-dev/cli package, so no other Node is needed.
+  const child = fork(join(ROOT, "engine", "engine.mjs"), [], {
+    execPath: process.execPath,
+    execArgv: [],
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
+  });
   engine = child;
   child.stdout?.on("data", (chunk) => send("engine:log", { level: "stdout", text: String(chunk) }));
   child.stderr?.on("data", (chunk) => send("engine:log", { level: "stderr", text: String(chunk) }));
@@ -101,7 +92,7 @@ function startEngine(): Promise<void> {
     });
     child.on("exit", (code) => {
       if (engine === child) engine = undefined;
-      reject(new Error(`The turri engine exited (${code}). Is Node >= 22.19 on your PATH, and turri beside this app?`));
+      reject(new Error(`The turri engine exited (${code}). Is @turri-dev/cli installed (npm install)?`));
       send("engine:exit", { code });
     });
   });

@@ -19,27 +19,25 @@ electron/main.ts     the window, native menus, notifications, dock - and the bri
 electron/preload.ts  what the window may ask of the app (window.turri)
 engine/engine.mjs    a Node process per open project that imports turri's src/: the chat, the spec, the work
 engine/chat.mjs      pi's agent session with turri's extension; its dialogs and notices become window events
-engine/capture.mjs   wraps createJobRegistry and createWorkLoop as Node loads them, so the app sees the chat's own jobs
 src/                 the window: React, no UI kit
 ```
 
-The engine runs on the system's Node (>= 22.19), not Electron's, because turri runs its TypeScript unbuilt through Node's type stripping. It imports turri from `../turri` (a clone beside this one), or from `TURRI_HOME`. Models and credentials are turri's as usual: the project's `config.turri.yaml` and pi's auth.
+turri comes from npm, as `@turri-dev/cli` - its host entry, `@turri-dev/cli/host` (turri's [docs/hosting.md](https://github.com/turri-oss/turri/blob/main/docs/hosting.md)): the chat extension, which hands the engine its jobs and puts `ask_user`'s questions in the window's dialogs, and what the window shows beside it. It is compiled JavaScript, so the engine runs on Electron's own Node; nothing else need be installed. Models and credentials are turri's as usual: the project's `config.turri.yaml` and pi's auth.
 
 ## Running it
 
 ```bash
-# beside a clone of turri: ../turri, with its npm install done
 npm install
 npm install-scripts approve electron esbuild   # if npm held back their install scripts; then npm rebuild
 npm run dev        # Vite with hot reload, Electron on it
 npm start          # a production build of the window, in Electron
 ```
 
-`TURRI_NODE` names the Node to run the engine on, when the one on your login shell's PATH is not it.
+To try a turri not yet on npm, pack it and install the tarball: `npm pack` in the turri clone, then `npm install <path to the .tgz>` here.
 
 ## What is not here yet
 
 - The extension's own terminal panels (the side panel, `/lineage`'s picker, `/turri-config`): anything drawn as a terminal component other than `ask_user`'s question is closed at once. The window has its own Work view instead.
 - Resuming a conversation: each open starts a new one.
 - New projects (init-config, a first spec), the settings as a form, stacks, release and `activate`, spec conflicts and start-overs as dialogs.
-- Packaging: a signed `.app` would bundle turri and a Node.
+- Packaging: a signed `.app`. turri and its Node are in it already - the package in `node_modules`, Electron's Node - so it is electron-builder's work, and signing.

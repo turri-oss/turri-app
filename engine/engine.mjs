@@ -1,28 +1,11 @@
-// The turri engine: a plain Node process (>= 22.19, so it can run turri's TypeScript unbuilt) that hosts turri's chat
-// for one project - pi's agent session with turri's extension - and talks to the Electron main process over IPC. The
-// chat's job registry and work loop are the project's one: the window's buttons go through the chat's slash commands,
-// and what its jobs do is sent to the window as they do it. The app never shells out to `turri`.
-import { onCapture, own } from "./capture.mjs";
+// The turri engine: a Node process - Electron's own, run as Node - that hosts turri's chat for one project: pi's agent
+// session with turri's extension, from the @turri-dev/cli package's host entry. It talks to the Electron main process
+// over IPC. The chat's job registry and work loop are the project's one: the window's buttons go through the chat's
+// slash commands, and what its jobs do is sent to the window as they do it. The app never shells out to `turri`.
+import * as turri from "@turri-dev/cli/host";
 import { startChat } from "./chat.mjs";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-
-const TURRI_HOME = resolve(process.env.TURRI_HOME ?? join(import.meta.dirname, "..", "..", "turri"));
-const load = (path) => import(pathToFileURL(join(TURRI_HOME, "src", path)).href);
-
-const [config, paths, check, parser, spec, highlight, loopMod, jobsMod, activity, shell] = await Promise.all([
-  load("config.ts"),
-  load("regenerate/paths.ts"),
-  load("plain/check.ts"),
-  load("plain/parser.ts"),
-  load("plain/spec.ts"),
-  load("plain/highlight.ts"),
-  load("regenerate/loop.ts"),
-  load("regenerate/jobs.ts"),
-  load("regenerate/activity.ts"),
-  load("regenerate/shell.ts"),
-]);
 
 // turri writes progress to the console as it would to a terminal; here it is only a log line for the app.
 for (const level of ["log", "info", "warn", "error"]) {
@@ -43,44 +26,44 @@ let chat;
 const questions = new Map();
 let nextQuestion = 0;
 
-onCapture({
-  wrapOptions: (options = {}) => ({
-    ...options,
-    onChange: (job) => {
-      options.onChange?.(job);
-      jobChanged(job);
-    },
-    onFinish: (job) => {
-      options.onFinish?.(job);
-      jobChanged(job, true);
-      if (job.replacedBy === undefined) emit("finished", { id: job.id, status: job.status, title: job.title ?? job.summary, module: job.module });
-      emit("status", statusNow());
-    },
-    onNotify: () => {
-      options.onNotify?.();
-      emit("status", statusNow());
-    },
-  }),
-  onRegistry: (made) => (registry = made),
-  onLoop: (made) => {
+/** What turri's chat tells its host - the window - of its jobs and its work loop (TurriHost in turri). */
+const ENDED = new Set(["succeeded", "failed", "stopped"]);
+const announced = new Set();
+const host = {
+  onJobs: (made) => (registry = made),
+  onWorkLoop: (made) => {
     loop = made;
     emit("status", statusNow());
   },
-});
+  onJobChange: (job) => {
+    const ended = ENDED.has(job.status);
+    jobChanged(job, ended);
+    if (!ended || announced.has(job.id)) return;
+    announced.add(job.id);
+    if (job.replacedBy === undefined) emit("finished", { id: job.id, status: job.status, title: job.title ?? job.summary, module: job.module });
+    emit("status", statusNow());
+  },
+  onPlanChange: () => emit("status", statusNow()),
+  // ask_user's questions, put in the window: a choice of options, or words to type.
+  dialogs: {
+    select: (title, options, context) => ask({ kind: "select", title, options, message: context }),
+    input: (title, context) => ask({ kind: "input", title, message: context }),
+  },
+};
 
 // ---------- the project ----------
 
 async function open({ dir }) {
   projectDir = resolve(dir);
   process.chdir(projectDir);
-  const orphans = shell.sweepOrphanedGroups();
-  looker = own(() => loopMod.createWorkLoop({ registry: jobsMod.createJobRegistry(), cwd: projectDir, dryRun: true }));
-  activity.onModelEvent((event) => {
-    const line = activity.describeTurnIncident(event);
+  const orphans = turri.sweepOrphanedGroups();
+  looker = turri.createWorkLoop({ registry: turri.createJobRegistry(), cwd: projectDir, dryRun: true });
+  turri.onModelEvent((event) => {
+    const line = turri.describeTurnIncident(event);
     if (line !== undefined) emit("incident", { job: event.job, text: line });
   });
-  const harnessModel = config.modelSpec(config.projectModels(config.readProjectConfig(projectDir)).harness);
-  chat = await startChat({ turriHome: TURRI_HOME, cwd: projectDir, harnessModel, emit, ask });
+  const harnessModel = turri.modelSpec(turri.projectModels(turri.readProjectConfig(projectDir)).harness);
+  chat = await startChat({ cwd: projectDir, harnessModel, host, emit, ask });
   return { ...summary(), orphans, chatModel: chat.model() };
 }
 
@@ -100,20 +83,19 @@ function answer({ id, value }) {
 }
 
 function summary() {
-  const project = config.readProjectConfig(projectDir);
-  const models = config.projectModels(project);
+  const project = turri.readProjectConfig(projectDir);
+  const models = turri.projectModels(project);
   return {
     dir: projectDir,
     name: basename(projectDir),
-    turriHome: TURRI_HOME,
-    hasConfig: config.hasProjectConfig(projectDir),
-    stacks: config.stacksOf(projectDir),
+    hasConfig: turri.hasProjectConfig(projectDir),
+    stacks: turri.stacksOf(projectDir),
     settings: {
-      "harness-model": config.modelSpec(models.harness) ?? null,
-      "coding-model": config.modelSpec(models.coding) ?? null,
+      "harness-model": turri.modelSpec(models.harness) ?? null,
+      "coding-model": turri.modelSpec(models.coding) ?? null,
       "conformance-tests": String(project.conformanceTests ?? false),
       review: project.review === true,
-      "parallel-jobs": project.parallelJobs ?? jobsMod.defaultParallelJobs(),
+      "parallel-jobs": project.parallelJobs ?? turri.defaultParallelJobs(),
     },
     specs: plainFiles(projectDir).map((file) => describeSpec(file)),
   };
@@ -121,7 +103,7 @@ function summary() {
 
 /** Every .plain file of the project, outside plain_modules and the folders nobody writes specs in. */
 function plainFiles(dir) {
-  const skip = new Set([paths.MODULES_DIR, "node_modules", ".git", ".turri", "dist", "template", "resources"]);
+  const skip = new Set([turri.MODULES_DIR, "node_modules", ".git", ".turri", "dist", "template", "resources"]);
   const found = [];
   const walk = (at, depth) => {
     for (const entry of readdirSync(at, { withFileTypes: true })) {
@@ -136,7 +118,7 @@ function plainFiles(dir) {
 }
 
 function describeSpec(file) {
-  const result = check.checkPlainFile(file);
+  const result = turri.checkPlainFile(file);
   const text = readFileSync(file, "utf8");
   const description = /^description:\s*(.+)$/m.exec(text)?.[1]?.trim();
   const base = { file, rel: relative(projectDir, file), ok: result.ok, module: result.moduleName ?? basename(file, ".plain"), description, requires: result.requiredModules ?? [] };
@@ -146,7 +128,7 @@ function describeSpec(file) {
   let conformanceTested = 0;
   let built = false;
   try {
-    for (const chain of loopMod.functionalityCompletion(file)) {
+    for (const chain of turri.functionalityCompletion(file)) {
       const own = chain.modules.find((entry) => entry.module === result.moduleName);
       if (own === undefined) continue;
       incomplete = new Set(own.incomplete);
@@ -158,9 +140,9 @@ function describeSpec(file) {
   }
   const functionalSpecs = [];
   try {
-    const [, tree] = parser.plainFileParser(basename(file), paths.resolveTemplateDirs(file), { allowNoFunctionalities: true });
-    for (const { frid, specifications } of spec.iterateFunctionalSpecs(tree, false)) {
-      const own = specifications[spec.FUNCTIONAL_REQUIREMENTS]?.at(-1) ?? "";
+    const [, tree] = turri.plainFileParser(basename(file), turri.resolveTemplateDirs(file), { allowNoFunctionalities: true });
+    for (const { frid, specifications } of turri.iterateFunctionalSpecs(tree, false)) {
+      const own = specifications[turri.FUNCTIONAL_REQUIREMENTS]?.at(-1) ?? "";
       functionalSpecs.push({ frid, text: own.replace(/^- /, ""), built: incomplete !== undefined ? !incomplete.has(frid) : false });
     }
   } catch (error) {
@@ -192,7 +174,7 @@ function writeSpec({ file, text }) {
 
 /** The spec's lines as turri's own ***plain grammar colours them - the same roles the TUI uses. */
 function highlightSpec({ text }) {
-  return highlight.highlightLines(text.split("\n")).map((tokens) => tokens.map((token) => ({ text: token.text, role: highlight.roleOf(token.scopes) ?? null })));
+  return turri.highlightLines(text.split("\n")).map((tokens) => tokens.map((token) => ({ text: token.text, role: turri.roleOf(token.scopes) ?? null })));
 }
 
 // ---------- the work ----------
@@ -249,20 +231,20 @@ function chatHistory() {
 
 /** What regenerating would do, planned on a loop of its own that starts nothing - `turri glimpse`. */
 async function glimpse({ file }) {
-  const project = config.readProjectConfig(projectDir);
-  const models = config.projectModels(project);
-  const planner = config.modelSpec(models.harness);
-  const dry = own(() => loopMod.createWorkLoop({
-    registry: jobsMod.createJobRegistry(),
+  const project = turri.readProjectConfig(projectDir);
+  const models = turri.projectModels(project);
+  const planner = turri.modelSpec(models.harness);
+  const dry = turri.createWorkLoop({
+    registry: turri.createJobRegistry(),
     cwd: projectDir,
     dryRun: true,
-    modelFor: () => config.modelSpec(models.coding),
+    modelFor: () => turri.modelSpec(models.coding),
     ...(planner !== undefined ? { plannerModel: planner } : {}),
-  }));
+  });
   const statuses = await dry.bringUp(file);
   const firsts = [];
   for (const first of dry.firsts()) {
-    firsts.push({ module: first.module, title: first.planned.title, reason: first.planned.reason, track: first.planned.track, prompt: first.planned.track === "code" ? ((await loopMod.promptOf(first)) ?? null) : null });
+    firsts.push({ module: first.module, title: first.planned.title, reason: first.planned.reason, track: first.planned.track, prompt: first.planned.track === "code" ? ((await turri.promptOf(first)) ?? null) : null });
   }
   return { statuses, firsts, drift: dry.drift(file) };
 }
@@ -296,4 +278,4 @@ process.on("message", async ({ id, method, params }) => {
   }
 });
 
-emit("ready", { turriHome: TURRI_HOME, node: process.version });
+emit("ready", { node: process.version });
