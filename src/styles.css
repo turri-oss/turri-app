@@ -1,5 +1,3 @@
-@import "@fontsource/pixelify-sans/400.css";
-@import "@fontsource/pixelify-sans/600.css";
 @import "@fontsource/silkscreen/400.css";
 @import "@fontsource/silkscreen/700.css";
 
@@ -65,8 +63,8 @@
   --plain-comment: #85a3b2;
   --plain-bullet: #85a3b2;
   --mono: "Zed Mono", ui-monospace, monospace;
-  --pixel: "Silkscreen", "Pixelify Sans", monospace;
-  --body: "Pixelify Sans", system-ui, sans-serif;
+  --pixel: "Silkscreen", monospace;
+  --body: var(--mono);
   --shadow-ink: #000000;
 }
 
@@ -146,7 +144,7 @@ body,
 }
 
 body {
-  font: 14px/1.45 var(--body);
+  font: 13px/1.5 var(--body);
   color: var(--fg);
   background: var(--bg);
   -webkit-font-smoothing: none;
@@ -605,6 +603,10 @@ code {
 }
 .recent-name {
   font-weight: 500;
+  white-space: nowrap;
+}
+.recent-path {
+  min-width: 0;
 }
 .recent-path {
   color: var(--fg-3);
@@ -1695,28 +1697,8 @@ img.jellyfish {
   }
 }
 
-/* Labels, headings and controls in Silkscreen; the reading in Pixelify Sans; code and the spec in Zed Mono. */
-h1,
-h2,
-h3,
-h4,
-.logo,
-.button,
-.segmented button,
-.appearance button,
-.sidebar-section,
-.pane-header,
-.project-name,
-.chat-title,
-.tag,
-.frid,
-.card-state,
-.planned-index,
-.job-title strong,
-.t-stage,
-.t-who,
-.option,
-.toolbar-title h1 {
+/* Everything in Zed Mono; the main buttons - Regenerate, Preview plan, Open a project, Send - in Silkscreen's pixels. */
+.button {
   font-family: var(--pixel);
   letter-spacing: 0;
 }

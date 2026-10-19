@@ -12,7 +12,7 @@ It is not a terminal in a window. The app hosts turri's own chat - pi's agent se
 - **History** - the module's lineage (`.plaingit`): every pulse that landed, with its diff.
 - **Preview plan** - `turri glimpse`: the pulses Regenerate would run, and what the coding agent would be told, before anything starts.
 - Native menus and shortcuts (⌘O, ⌘S, ⌘R, ⇧⌘P, ⌘., ⌘1-4, ⌘J), recent projects, a dock badge and progress while pulses run, and a notification when one lands while the window is in the background.
-- turri's look, in pixels: turri-dark by default, turri-light or the system's as chosen (View > Appearance, or the switch in the sidebar). Silkscreen for labels, Pixelify Sans to read, Zed Mono (Zed's Iosevka build, SIL OFL 1.1, subset to woff2 in `src/fonts/zed-mono/` with its licence) for code and the spec; square corners and hard shadows. turri's jellyfish (its own frames, `public/jellyfish/` from turri's `assets/jellyfish/`) swims on the welcome screen, and in the chat and the sidebar while turri works.
+- turri's look, in pixels: turri-dark by default, turri-light or the system's as chosen (View > Appearance, or the switch in the sidebar). Zed Mono for everything but the main buttons, which are in Silkscreen's pixels - Zed Mono (Zed's Iosevka build, SIL OFL 1.1, subset to woff2 in `src/fonts/zed-mono/` with its licence) for code and the spec; square corners and hard shadows. turri's jellyfish (its own frames, `public/jellyfish/` from turri's `assets/jellyfish/`) swims on the welcome screen, and in the chat and the sidebar while turri works.
 
 ## How it is put together
 
