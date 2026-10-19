@@ -1697,7 +1697,8 @@ img.jellyfish {
   }
 }
 
-/* Everything in Zed Mono; the main buttons - Regenerate, Preview plan, Open a project, Send - in Silkscreen's pixels. */
+/* Everything in Zed Mono; the main buttons - Regenerate, Preview plan, Open a project, Send - and the logo in Silkscreen's pixels. */
+.logo,
 .button {
   font-family: var(--pixel);
   letter-spacing: 0;
