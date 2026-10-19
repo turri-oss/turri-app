@@ -4,8 +4,6 @@ import type { Job, Project, Spec, Status, View } from "./types.ts";
 import { Welcome } from "./Welcome.tsx";
 import { SpecView } from "./SpecView.tsx";
 import { WorkView } from "./WorkView.tsx";
-import { CodeView } from "./CodeView.tsx";
-import { HistoryView } from "./HistoryView.tsx";
 import { PlanSheet, type Plan } from "./PlanSheet.tsx";
 import { Appearance, Icon, Jellyfish, Spinner } from "./ui.tsx";
 import { Chat, QuestionSheet, type ChatItem, type Question } from "./Chat.tsx";
@@ -212,9 +210,9 @@ export function App() {
             {spec?.description && <span className="subtitle">{spec.description}</span>}
           </div>
           <div className="segmented" role="tablist">
-            {(["spec", "work", "code", "history"] as View[]).map((name) => (
+            {(["spec", "work"] as View[]).map((name) => (
               <button key={name} role="tab" aria-selected={view === name} className={view === name ? "on" : ""} onClick={() => setView(name)}>
-                {name === "spec" ? "Spec" : name === "work" ? `Work${running.length ? ` · ${running.length}` : ""}` : name === "code" ? "Code" : "History"}
+                {name === "spec" ? "Spec" : `Work${running.length ? ` · ${running.length}` : ""}`}
               </button>
             ))}
           </div>
@@ -252,12 +250,8 @@ export function App() {
               onConform={(frids) => void conform(frids)}
               say={say}
             />
-          ) : view === "work" ? (
-            <WorkView status={status} jobs={allJobs} onStop={(id) => void window.turri.call("stop", { id })} />
-          ) : view === "code" ? (
-            <CodeView project={project} spec={spec} />
           ) : (
-            <HistoryView project={project} spec={spec} />
+            <WorkView status={status} jobs={allJobs} onStop={(id) => void window.turri.call("stop", { id })} />
           )}
         </section>
       </main>

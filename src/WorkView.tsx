@@ -230,7 +230,7 @@ function Entry({ entry }: { entry: TranscriptEntry }) {
   }
 }
 
-export function colourDiff(text: string) {
+function colourDiff(text: string) {
   return text.split("\n").map((line, index) => (
     <div key={index} className={line.startsWith("+") && !line.startsWith("+++") ? "add" : line.startsWith("-") && !line.startsWith("---") ? "del" : line.startsWith("@@") ? "hunk" : ""}>
       {line || "​"}

@@ -4,9 +4,8 @@
 // and what its jobs do is sent to the window as they do it. The app never shells out to `turri`.
 import { onCapture, own } from "./capture.mjs";
 import { startChat } from "./chat.mjs";
-import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const TURRI_HOME = resolve(process.env.TURRI_HOME ?? join(import.meta.dirname, "..", "..", "turri"));
@@ -281,55 +280,9 @@ function transcript({ id }) {
   return registry?.get(id)?.transcript ?? [];
 }
 
-// ---------- the code and its lineage ----------
-
-// What a codebase holds that nobody wrote: history, dependencies and tool caches.
-const HIDDEN_IN_CODE = new Set([".plaingit", ".git", "node_modules", "__pycache__", ".venv", "dist", ".DS_Store"]);
-
-function codeFiles({ module }) {
-  const root = paths.buildDirUnder(paths.modulesRoot(projectDir), module);
-  if (!existsSync(root)) return { root, files: [] };
-  const files = [];
-  const walk = (at) => {
-    for (const entry of readdirSync(at, { withFileTypes: true })) {
-      if (HIDDEN_IN_CODE.has(entry.name) || (entry.isDirectory() && entry.name.endsWith("_cache"))) continue;
-      const path = join(at, entry.name);
-      if (entry.isDirectory()) walk(path);
-      else files.push({ path, rel: relative(root, path).split(sep).join("/"), size: statSync(path).size });
-    }
-  };
-  walk(root);
-  return { root, files: files.sort((a, b) => a.rel.localeCompare(b.rel)) };
-}
-
-function readCode({ path }) {
-  const size = statSync(path).size;
-  if (size > 400_000) return { text: `(${Math.round(size / 1024)} KB - too large to show)` };
-  return { text: readFileSync(path, "utf8") };
-}
-
-function lineage({ module }) {
-  const dir = paths.moduleDir(module, projectDir);
-  if (!existsSync(join(dir, ".plaingit"))) return [];
-  const out = execFileSync("git", ["--git-dir", join(dir, ".plaingit"), "--work-tree", dir, "log", "-n", "60", "--date=iso-strict", "--format=%H%x1f%ad%x1f%s%x1f%b%x1e"], { encoding: "utf8" });
-  return out
-    .split("\x1e")
-    .map((record) => record.trim())
-    .filter(Boolean)
-    .map((record) => {
-      const [hash, date, subject, body] = record.split("\x1f");
-      return { hash, date, subject, body: body?.trim() ?? "" };
-    });
-}
-
-function commitDiff({ module, hash }) {
-  const dir = paths.moduleDir(module, projectDir);
-  return execFileSync("git", ["--git-dir", join(dir, ".plaingit"), "--work-tree", dir, "show", "--stat", "--patch", "--format=%s%n%n%b", hash], { encoding: "utf8", maxBuffer: 20_000_000 }).slice(0, 300_000);
-}
-
 // ---------- the wire ----------
 
-const methods = { open, summary, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, glimpse, stop, halt, transcript, codeFiles, readCode, lineage, commitDiff, sendChat, abortChat, chatHistory, answer };
+const methods = { open, summary, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, glimpse, stop, halt, transcript, sendChat, abortChat, chatHistory, answer };
 
 process.on("message", async ({ id, method, params }) => {
   try {

@@ -31,16 +31,6 @@ export function tokens(usage: Usage | undefined): string {
   return total >= 1_000_000 ? `${(total / 1_000_000).toFixed(1)}M tok` : `${(total / 1000).toFixed(1)}k tok`;
 }
 
-export function relativeDate(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const minutes = Math.round(ms / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
 /** The theme as it shows now: dark or light, the system's when it follows the system. */
 function useShownTheme(): "dark" | "light" {
   const read = (): "dark" | "light" => {

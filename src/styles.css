@@ -1140,141 +1140,6 @@ code {
 .t-diff .hunk {
   color: var(--plain-section);
 }
-.t-diff.full {
-  margin: 0;
-  border-radius: 0;
-  min-height: 100%;
-  background: var(--bg);
-}
-
-/* ---------- code ---------- */
-
-.code-view {
-  display: grid;
-  grid-template-columns: 240px 1fr;
-  height: 100%;
-}
-.file-list {
-  border-right: 2px solid var(--line);
-  background: var(--bg-2);
-  overflow-y: auto;
-  padding: 8px;
-}
-.search {
-  width: 100%;
-  border: 2px solid var(--line);
-  background: var(--card);
-  border-radius: 0;
-  padding: 4px 8px;
-  margin-bottom: 6px;
-  font: inherit;
-  color: inherit;
-  outline: none;
-}
-.search:focus {
-  border-color: var(--accent);
-}
-.file-dir {
-  font-size: 11.5px;
-  color: var(--fg-2);
-  padding: 6px 6px 2px;
-  font-weight: 600;
-}
-.file {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: 0;
-  background: none;
-  padding: 3px 8px;
-  border-radius: 0;
-  font-size: 12.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.file.nested {
-  padding-left: 22px;
-}
-.file:hover {
-  background: var(--hover);
-}
-.file.active {
-  background: var(--selected);
-}
-.file-content {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-.code {
-  flex: 1;
-  margin: 0;
-  overflow: auto;
-  padding: 10px 0 40px;
-  font: 12px/1.6 var(--mono);
-  user-select: text;
-}
-.code div {
-  white-space: pre;
-  padding-right: 20px;
-}
-.ln {
-  display: inline-block;
-  width: 48px;
-  padding-right: 14px;
-  text-align: right;
-  color: var(--fg-3);
-  user-select: none;
-}
-
-/* ---------- history ---------- */
-
-.history-view {
-  display: grid;
-  grid-template-columns: minmax(280px, 380px) 1fr;
-  height: 100%;
-}
-.timeline {
-  list-style: none;
-  margin: 0;
-  padding: 14px 10px 40px;
-  overflow-y: auto;
-  border-right: 2px solid var(--line);
-  background: var(--bg-2);
-}
-.timeline li {
-  display: flex;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 0;
-  position: relative;
-}
-.timeline li:hover {
-  background: var(--hover);
-}
-.timeline li.active {
-  background: var(--selected);
-}
-.timeline-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 0;
-  background: var(--accent);
-  margin-top: 5px;
-  flex: none;
-}
-.commit-subject {
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-.commit-detail {
-  overflow: auto;
-  min-width: 0;
-}
 
 /* ---------- plan sheet ---------- */
 
@@ -1720,7 +1585,6 @@ img.jellyfish {
   text-shadow: 4px 4px 0 var(--diff-del);
 }
 code,
-.code,
 .editor textarea,
 .editor-colours,
 kbd {
@@ -1790,8 +1654,7 @@ code {
   border: 2px solid var(--accent);
   box-shadow: 6px 6px 0 var(--shadow-ink);
 }
-.composer textarea:focus,
-.search:focus {
+.composer textarea:focus {
   box-shadow: 3px 3px 0 var(--accent);
 }
 .progress {
