@@ -2,9 +2,37 @@
 @import "@fontsource/pixelify-sans/600.css";
 @import "@fontsource/silkscreen/400.css";
 @import "@fontsource/silkscreen/700.css";
-@import "@fontsource/vt323/400.css";
 
-/* macOS-native look: system font, a translucent sidebar over the window's vibrancy, system accent, light and dark. */
+/* Zed Mono - Zed's build of Iosevka, SIL Open Font License 1.1 (fonts/zed-mono/LICENSE.md) - for code and the spec. */
+@font-face {
+  font-family: "Zed Mono";
+  src: url("./fonts/zed-mono/zed-mono-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "Zed Mono";
+  src: url("./fonts/zed-mono/zed-mono-medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "Zed Mono";
+  src: url("./fonts/zed-mono/zed-mono-bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "Zed Mono";
+  src: url("./fonts/zed-mono/zed-mono-italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+
 /* turri's own colours: turri-dark (the default) and turri-light, as its pi themes and its ***plain palette have them. */
 :root,
 :root[data-theme="dark"] {
@@ -36,7 +64,7 @@
   --plain-keyword: #f4f7f9;
   --plain-comment: #85a3b2;
   --plain-bullet: #85a3b2;
-  --mono: "VT323", ui-monospace, monospace;
+  --mono: "Zed Mono", ui-monospace, monospace;
   --pixel: "Silkscreen", "Pixelify Sans", monospace;
   --body: "Pixelify Sans", system-ui, sans-serif;
   --shadow-ink: #000000;
@@ -624,7 +652,7 @@ code {
 .editor-colours {
   margin: 0;
   padding: 16px 18px 40vh;
-  font: 16.5px/1.6 var(--mono);
+  font: 12.5px/1.6 var(--mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   border: 0;
@@ -941,7 +969,7 @@ code {
   padding: 6px 8px;
   border-radius: 0;
   background: var(--bg-2);
-  font: 15.5px/1.55 var(--mono);
+  font: 11.5px/1.55 var(--mono);
   color: var(--fg-2);
 }
 .activity li {
@@ -1067,7 +1095,7 @@ code {
   white-space: pre-wrap;
 }
 .t-tool {
-  font: 15.5px/1.5 var(--mono);
+  font: 11.5px/1.5 var(--mono);
   color: var(--fg-2);
   margin: 4px 0;
   cursor: pointer;
@@ -1080,7 +1108,7 @@ code {
 }
 .t-result pre {
   margin: 2px 0 6px 18px;
-  font: 15px/1.5 var(--mono);
+  font: 11px/1.5 var(--mono);
   color: var(--fg-3);
   white-space: pre-wrap;
   cursor: pointer;
@@ -1089,7 +1117,7 @@ code {
   color: var(--red);
 }
 .t-diff {
-  font: 15.5px/1.5 var(--mono);
+  font: 11.5px/1.5 var(--mono);
   background: var(--card);
   border-radius: 0;
   padding: 8px 0;
@@ -1183,7 +1211,7 @@ code {
   margin: 0;
   overflow: auto;
   padding: 10px 0 40px;
-  font: 16px/1.6 var(--mono);
+  font: 12px/1.6 var(--mono);
   user-select: text;
 }
 .code div {
@@ -1286,7 +1314,7 @@ code {
   margin: 0 0 4px;
 }
 .prompt-preview {
-  font: 15.5px/1.5 var(--mono);
+  font: 11.5px/1.5 var(--mono);
   white-space: pre-wrap;
   background: var(--bg-2);
   border-radius: 0;
@@ -1448,7 +1476,7 @@ code {
   font-size: 13px;
 }
 .prose pre {
-  font: 15.5px/1.5 var(--mono);
+  font: 11.5px/1.5 var(--mono);
   background: var(--bg-2);
   padding: 8px 10px;
   border-radius: 0;
@@ -1503,7 +1531,7 @@ code {
   color: var(--red);
 }
 .tool-detail pre {
-  font: 15px/1.45 var(--mono);
+  font: 11px/1.45 var(--mono);
   white-space: pre-wrap;
   background: var(--card);
   border: 2px solid var(--line);
@@ -1667,7 +1695,7 @@ img.jellyfish {
   }
 }
 
-/* Labels, headings and controls in Silkscreen; the reading in Pixelify Sans; code in VT323. */
+/* Labels, headings and controls in Silkscreen; the reading in Pixelify Sans; code and the spec in Zed Mono. */
 h1,
 h2,
 h3,
@@ -1716,7 +1744,7 @@ kbd {
   font-family: var(--mono);
 }
 code {
-  font-size: 1.2em;
+  font-size: 0.95em;
 }
 
 .button {
