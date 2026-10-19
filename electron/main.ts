@@ -16,14 +16,33 @@ const APPEARANCE_FILE = join(app.getPath("userData"), "appearance.json");
 /** Dark - turri's own - unless the person chose light or to follow the system. */
 type Theme = "dark" | "light" | "system";
 let theme: Theme = readTheme();
+/** How far the window is zoomed: 0 is actual size, each step about 20% bigger or smaller (Electron's zoom levels). */
+let zoom = readAppearance().zoom ?? 0;
+const ZOOM_MIN = -3;
+const ZOOM_MAX = 5;
+
+function readAppearance(): { theme?: Theme; zoom?: number } {
+  try {
+    return JSON.parse(readFileSync(APPEARANCE_FILE, "utf8")) as { theme?: Theme; zoom?: number };
+  } catch {
+    return {};
+  }
+}
+
+function writeAppearance() {
+  writeFileSync(APPEARANCE_FILE, JSON.stringify({ theme, zoom }));
+}
 
 function readTheme(): Theme {
-  try {
-    const chosen = (JSON.parse(readFileSync(APPEARANCE_FILE, "utf8")) as { theme?: Theme }).theme;
-    return chosen === "light" || chosen === "system" ? chosen : "dark";
-  } catch {
-    return "dark";
-  }
+  const chosen = readAppearance().theme;
+  return chosen === "light" || chosen === "system" ? chosen : "dark";
+}
+
+/** Zoom in, out or back to actual size - the text and everything with it - and remember it. */
+function setZoom(next: number) {
+  zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
+  window?.webContents.setZoomLevel(zoom);
+  writeAppearance();
 }
 
 /** The window's own colour behind the page, as the theme has it - what shows while it loads or resizes. */
@@ -33,7 +52,7 @@ function backgroundFor(): string {
 
 function setTheme(next: Theme) {
   theme = next;
-  writeFileSync(APPEARANCE_FILE, JSON.stringify({ theme }));
+  writeAppearance();
   // Menus, dialogs and the title bar follow it too.
   nativeTheme.themeSource = theme;
   window?.setBackgroundColor(backgroundFor());
@@ -158,6 +177,8 @@ function createWindow() {
     webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: false },
   });
   window.once("ready-to-show", () => window?.show());
+  // The zoom chosen last time, kept across reloads and launches.
+  window.webContents.on("did-finish-load", () => window?.webContents.setZoomLevel(zoom));
   // For development: TURRI_APP_OPEN opens a project at start, TURRI_APP_SCREENSHOT=<file.png> captures the window and quits.
   window.webContents.once("did-finish-load", async () => {
     if (process.env.TURRI_APP_OPEN) send("project:opened", await openProject(process.env.TURRI_APP_OPEN));
@@ -225,6 +246,12 @@ function buildMenu() {
             click: () => setTheme(name),
           })),
         },
+        { type: "separator" },
+        { label: "Actual Size", accelerator: "CmdOrCtrl+0", click: () => setZoom(0) },
+        { label: "Zoom In", accelerator: "CmdOrCtrl+Plus", click: () => setZoom(zoom + 0.5) },
+        // ⌘= as well: on most keyboards + is shift+=, and ⌘+ is pressed without the shift.
+        { label: "Zoom In", accelerator: "CmdOrCtrl+=", click: () => setZoom(zoom + 0.5), visible: false, acceleratorWorksWhenHidden: true },
+        { label: "Zoom Out", accelerator: "CmdOrCtrl+-", click: () => setZoom(zoom - 0.5) },
         { type: "separator" },
         { role: "reload" },
         { role: "toggleDevTools" },
