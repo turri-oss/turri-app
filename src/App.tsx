@@ -7,7 +7,7 @@ import { WorkView } from "./WorkView.tsx";
 import { CodeView } from "./CodeView.tsx";
 import { HistoryView } from "./HistoryView.tsx";
 import { PlanSheet, type Plan } from "./PlanSheet.tsx";
-import { Icon, Spinner } from "./ui.tsx";
+import { Appearance, Icon, Jellyfish, Spinner } from "./ui.tsx";
 import { Chat, QuestionSheet, type ChatItem, type Question } from "./Chat.tsx";
 
 const EMPTY_STATUS: Status = { modules: [], jobs: [], planned: [] };
@@ -174,7 +174,7 @@ export function App() {
       <aside className="sidebar">
         <div className="titlebar-space" />
         <div className="project-name" title={project.dir}>
-          <Icon name="folder" />
+          <Jellyfish size={18} swimming={running.length > 0} />
           <span>{project.name}</span>
         </div>
         <div className="sidebar-section">Specs</div>
@@ -196,11 +196,12 @@ export function App() {
         <div className="sidebar-footer">
           {running.length > 0 ? (
             <button className="link" onClick={() => setView("work")}>
-              <Spinner /> {running.length} pulse{running.length === 1 ? "" : "s"} running
+              <Jellyfish size={22} /> {running.length} pulse{running.length === 1 ? "" : "s"} running
             </button>
           ) : (
             <span className="muted">Idle</span>
           )}
+          <Appearance />
         </div>
       </aside>
 

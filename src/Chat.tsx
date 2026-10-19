@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Icon, Spinner } from "./ui.tsx";
+import { Icon, Jellyfish, Spinner } from "./ui.tsx";
 
 export type ChatItem =
   | { role: "user"; text: string }
@@ -72,7 +72,7 @@ export function Chat(props: {
     <aside className="chat">
       <div className="titlebar-space chat-top">
         <span className="chat-title">
-          <Icon name="spark" /> turri
+          <Jellyfish size={22} swimming={props.busy} /> turri
         </span>
         {props.model && <span className="chat-model" title={props.model}>{props.model.split("/").at(-1)}</span>}
         <button className="icon-button" onClick={props.onClose} title="Hide the chat (⌘J)">
@@ -88,6 +88,7 @@ export function Chat(props: {
       >
         {props.items.length === 0 && !props.streaming && (
           <div className="chat-empty">
+            <Jellyfish size={72} className="drift" />
             <p>Tell turri what you want to build, or what to change. It writes the spec with you, then regenerates the code from it.</p>
             {["What does this project do?", "Add a way to delete a message", "Regenerate what changed"].map((hint) => (
               <button key={hint} className="hint" onClick={() => props.onSend(hint)}>
@@ -100,7 +101,7 @@ export function Chat(props: {
         {props.streaming && <Message item={props.streaming} results={results} running={props.running} live />}
         {props.busy && !props.streaming && (
           <div className="chat-working">
-            <Spinner /> {props.working ?? "thinking"}
+            <Jellyfish size={20} /> {props.working ?? "thinking"}
           </div>
         )}
         <div ref={end} />

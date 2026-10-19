@@ -11,6 +11,35 @@ import { join } from "node:path";
 
 const ROOT = join(__dirname, "..");
 const RECENTS_FILE = join(app.getPath("userData"), "recent-projects.json");
+const APPEARANCE_FILE = join(app.getPath("userData"), "appearance.json");
+
+/** Dark - turri's own - unless the person chose light or to follow the system. */
+type Theme = "dark" | "light" | "system";
+let theme: Theme = readTheme();
+
+function readTheme(): Theme {
+  try {
+    const chosen = (JSON.parse(readFileSync(APPEARANCE_FILE, "utf8")) as { theme?: Theme }).theme;
+    return chosen === "light" || chosen === "system" ? chosen : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+/** The window's own colour behind the page, as the theme has it - what shows while it loads or resizes. */
+function backgroundFor(): string {
+  return (theme === "system" ? nativeTheme.shouldUseDarkColors : theme === "dark") ? "#0a0f1a" : "#f4f7f9";
+}
+
+function setTheme(next: Theme) {
+  theme = next;
+  writeFileSync(APPEARANCE_FILE, JSON.stringify({ theme }));
+  // Menus, dialogs and the title bar follow it too.
+  nativeTheme.themeSource = theme;
+  window?.setBackgroundColor(backgroundFor());
+  send("theme", theme);
+  buildMenu();
+}
 
 let window: BrowserWindow | undefined;
 let engine: ChildProcess | undefined;
@@ -124,9 +153,7 @@ function createWindow() {
     title: "turri",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 18 },
-    vibrancy: "sidebar",
-    visualEffectState: "followWindow",
-    backgroundColor: "#00000000",
+    backgroundColor: backgroundFor(),
     show: false,
     webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: false },
   });
@@ -189,6 +216,15 @@ function buildMenu() {
         { label: "History", accelerator: "CmdOrCtrl+4", click: menuAction("view:history") },
         { type: "separator" },
         { label: "Show or Hide the Chat", accelerator: "CmdOrCtrl+J", click: menuAction("chat") },
+        {
+          label: "Appearance",
+          submenu: (["dark", "light", "system"] as Theme[]).map((name) => ({
+            label: name === "system" ? "Same as the System" : name === "dark" ? "Dark" : "Light",
+            type: "radio" as const,
+            checked: theme === name,
+            click: () => setTheme(name),
+          })),
+        },
         { type: "separator" },
         { role: "reload" },
         { role: "toggleDevTools" },
@@ -209,7 +245,9 @@ ipcMain.handle("project:open", (_event, dir: string) => openProject(dir));
 ipcMain.handle("project:recents", () => recents());
 ipcMain.handle("shell:reveal", (_event, path: string) => shell.showItemInFolder(path));
 ipcMain.handle("shell:open", (_event, path: string) => shell.openPath(path));
-ipcMain.handle("theme:dark", () => nativeTheme.shouldUseDarkColors);
+ipcMain.handle("theme:get", () => theme);
+ipcMain.handle("theme:set", (_event, next: Theme) => setTheme(next));
+nativeTheme.on("updated", () => window?.setBackgroundColor(backgroundFor()));
 // A native context menu: the window lists what it offers, and is told which was chosen.
 ipcMain.handle("menu:popup", (event, items: Array<{ id: string; label: string; enabled?: boolean } | { type: "separator" }>) => {
   return new Promise<string | null>((resolve) => {
@@ -228,6 +266,7 @@ app.on("open-file", (event, path) => {
 
 app.whenReady().then(() => {
   app.setName("turri");
+  nativeTheme.themeSource = theme;
   buildMenu();
   createWindow();
   app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());

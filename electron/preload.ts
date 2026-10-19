@@ -14,6 +14,8 @@ const api = {
     ipcRenderer.on(channel, handler);
     return () => void ipcRenderer.off(channel, handler);
   },
+  theme: () => ipcRenderer.invoke("theme:get") as Promise<"dark" | "light" | "system">,
+  setTheme: (theme: "dark" | "light" | "system") => ipcRenderer.invoke("theme:set", theme),
   platform: process.platform,
 };
 

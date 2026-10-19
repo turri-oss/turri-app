@@ -41,6 +41,75 @@ export function relativeDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** The theme as it shows now: dark or light, the system's when it follows the system. */
+function useShownTheme(): "dark" | "light" {
+  const read = (): "dark" | "light" => {
+    const chosen = document.documentElement.dataset.theme;
+    if (chosen === "light" || chosen === "dark") return chosen;
+    return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  };
+  const [shown, setShown] = useState(read);
+  useEffect(() => {
+    const update = () => setShown(read());
+    const media = matchMedia("(prefers-color-scheme: light)");
+    media.addEventListener("change", update);
+    const observer = new MutationObserver(update);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => {
+      media.removeEventListener("change", update);
+      observer.disconnect();
+    };
+  }, []);
+  return shown;
+}
+
+const FRAMES = 12;
+
+/**
+ * The jellyfish turri is named after, from turri's own frames (assets/jellyfish): a stroke every three seconds, a
+ * quarter second a frame. At rest it hangs open; `swimming`, it strokes - while turri works.
+ */
+export function Jellyfish({ size = 48, swimming = true, className = "" }: { size?: number; swimming?: boolean; className?: string }) {
+  const theme = useShownTheme();
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    if (!swimming) {
+      setFrame(0);
+      return;
+    }
+    const timer = setInterval(() => setFrame((at) => (at + 1) % FRAMES), 250);
+    return () => clearInterval(timer);
+  }, [swimming]);
+  return (
+    <img
+      className={`jellyfish ${className}`}
+      src={`./jellyfish/${theme}-${String(frame).padStart(2, "0")}.png`}
+      width={size}
+      height={Math.round((size * 26) / 24)}
+      alt=""
+      draggable={false}
+    />
+  );
+}
+
+/** Dark, light or as the system is: the same choice as View > Appearance. */
+export function Appearance() {
+  const [theme, setTheme] = useState<string>(document.documentElement.dataset.theme ?? "dark");
+  useEffect(() => {
+    void window.turri.theme().then(setTheme);
+    return window.turri.on("theme", setTheme);
+  }, []);
+  return (
+    <div className="appearance" role="radiogroup" aria-label="Appearance">
+      {(["dark", "light", "system"] as const).map((name) => (
+        <button key={name} role="radio" aria-checked={theme === name} className={theme === name ? "on" : ""} onClick={() => void window.turri.setTheme(name)}>
+          {name === "dark" ? "Dark" : name === "light" ? "Light" : "System"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** SF Symbols-like line icons, drawn inline so the app needs no icon font. */
 const PATHS: Record<string, string> = {
   doc: "M6 2.5h5.5L15 6v11.5H6zM11.5 2.5V6H15",
@@ -68,8 +137,16 @@ export function Icon({ name, size = 16 }: { name: keyof typeof PATHS | string; s
   );
 }
 
+/** Working: four pixels chasing each other round a square. */
 export function Spinner() {
-  return <span className="spinner" aria-label="working" />;
+  return (
+    <span className="spinner" aria-label="working">
+      <i />
+      <i />
+      <i />
+      <i />
+    </span>
+  );
 }
 
 export function Empty({ icon, title, children }: { icon: string; title: string; children?: React.ReactNode }) {
