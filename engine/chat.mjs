@@ -162,6 +162,8 @@ function normalise(message) {
 
 /** What turri's extension asks of the UI, answered by the window - and what only a terminal could do, let pass. */
 function uiContext({ emit, ask }) {
+  /** The components the extension has drawn, by their widget's key: each stopped when it is replaced or cleared. */
+  const widgets = new Map();
   const theme = new Proxy(
     {},
     { get: (_target, key) => (key === "fg" || key === "bg" ? (_colour, text) => text : (text) => text) },
@@ -176,6 +178,13 @@ function uiContext({ emit, ask }) {
     setStatus: (key, text) => emit("chat:status", { key, text: text ?? null }),
     setWorkingMessage: (message) => emit("chat:working", { text: message ?? null }),
     setWidget: (key, content) => {
+      widgets.get(key)?.();
+      widgets.delete(key);
+      if (key === SKILL_WIDGET) {
+        if (typeof content === "function") widgets.set(key, skillProgress(content, theme, emit));
+        else emit("chat:progress", null);
+        return;
+      }
       if (content === undefined || Array.isArray(content)) emit("chat:widget", { key, lines: content ?? null });
     },
     setTitle: () => {},
@@ -192,4 +201,53 @@ function uiContext({ emit, ask }) {
     custom: () => Promise.resolve(undefined),
   };
   return new Proxy(known, { get: (target, key) => (key in target ? target[key] : () => undefined) });
+}
+
+/** The widget turri's extension draws above the input while a skill runs: its phases, and where it is in them. */
+const SKILL_WIDGET = "turri-skill";
+/** Wide enough that the line has every phase, not the compact form a narrow terminal gets. */
+const WIDE = 1000;
+
+/**
+ * A skill's progress, as the window draws it: the extension draws it as a terminal component - one line of its phases,
+ * done, current and to come, and one of what the phase it is in does - so the component is drawn here, plain, and its
+ * lines read back. It is drawn again whenever it asks to be (its spinner, once a second), and the window told when
+ * what it says changes: the skill, its phases and their state, where it is, and what that phase does.
+ */
+function skillProgress(factory, theme, emit) {
+  let said;
+  let component;
+  const draw = () => {
+    let lines;
+    try {
+      lines = component.render(WIDE);
+    } catch {
+      return;
+    }
+    const progress = readProgress(lines);
+    const text = JSON.stringify(progress);
+    if (text === said) return;
+    said = text;
+    emit("chat:progress", progress);
+  };
+  component = factory({ requestRender: draw }, theme);
+  draw();
+  return () => {
+    component.dispose?.();
+    emit("chat:progress", null);
+  };
+}
+
+/**
+ * The progress line read back: `brood   ✓ intent ━━━━ ⠋ stack ──── ○ testing ──── ○ product   phase 2 of 4`, and
+ * under it `stack - the language, frameworks, storage and architecture`. A skill of one phase is its spinner and name.
+ */
+function readProgress([line = "", under = ""]) {
+  const [head = "", bar, where] = line.trim().split(/\s{3,}/);
+  if (where === undefined) return { skill: head.replace(/^\S+\s+/, ""), phases: [], where: bar ?? null, about: null };
+  const phases = bar.split(/ [━─]+ /).map((step) => ({
+    name: step.slice(2),
+    state: step.startsWith("✓") ? "done" : step.startsWith("○") ? "todo" : "now",
+  }));
+  return { skill: head, phases, where: where ?? null, about: under.trim() || null };
 }

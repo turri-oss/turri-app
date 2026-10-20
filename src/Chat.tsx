@@ -9,6 +9,16 @@ export type ChatItem =
   | { role: "command"; text: string }
   | { role: "job"; id: string; summary: string; status: string; duration?: string; spent?: string; text: string };
 
+/** A skill running in the chat, where it is in its phases: what turri's terminal draws above its input. */
+export type SkillProgress = {
+  skill: string;
+  phases: Array<{ name: string; state: "done" | "now" | "todo" }>;
+  /** "phase 2 of 4", "starting", an attempt after a gate sent it back. */
+  where: string | null;
+  /** The phase it is in and what it does: "stack - the language, frameworks, ...". */
+  about: string | null;
+};
+
 export type Question = {
   id: number;
   kind: "select" | "confirm" | "input" | "editor" | "question";
@@ -39,8 +49,10 @@ export function Chat(props: {
   /** What turri asks now - ask_user, a choice, a confirm - answered where the message box is, until it is answered. */
   question?: Question;
   onAnswer: (value: unknown) => void;
+  progress: SkillProgress | null;
 }) {
   const [draft, setDraft] = useState("");
+  const question = useLingering(props.question);
   const end = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -122,8 +134,11 @@ export function Chat(props: {
         )}
         <div ref={end} />
       </div>
-      {props.question ? (
-        <QuestionCard key={props.question.id} question={props.question} onAnswer={props.onAnswer} />
+      {props.progress && <ProgressBar progress={props.progress} />}
+      {question ? (
+        // Known by what it asks, not its id: a question asked again - a box ticked, the rest still to choose - is the
+        // same card, changed in place.
+        <QuestionCard key={question.title} question={question} waiting={props.question === undefined} onAnswer={props.onAnswer} />
       ) : (
       <div className="composer">
         {suggestions.length > 0 && (
@@ -310,19 +325,84 @@ function Inline({ text }: { text: string }) {
 
 /** turri asking: a sheet over the window, as a native app asks - options to pick, or words to type. */
 /**
+ * A skill's phases, above the message box while it runs - brood's intent, stack, testing and product: the ones done
+ * ticked, the one it is in turning, the rest to come, joined by a line filled as far as it has got; and under them
+ * what the phase it is in does.
+ */
+function ProgressBar({ progress }: { progress: SkillProgress }) {
+  const current = progress.phases.find((phase) => phase.state === "now")?.name;
+  // "stack - the language, ..." under a bar that already says stack: what it does, alone.
+  const about = progress.about && current && progress.about.startsWith(`${current} - `) ? progress.about.slice(current.length + 3) : progress.about;
+  return (
+    <div className="skill-progress" role="status" aria-label={`${progress.skill}${progress.where ? `, ${progress.where}` : ""}`}>
+      <div className="skill-progress-head">
+        <strong>{progress.skill}</strong>
+        {progress.phases.length === 0 && <Spinner />}
+        {progress.where && <span className="muted">{progress.where}</span>}
+      </div>
+      {progress.phases.length > 0 && (
+        <ol className="skill-phases">
+          {progress.phases.map((phase) => (
+            <li key={phase.name} className={phase.state}>
+              <span className="skill-phase-mark">{phase.state === "done" ? <Icon name="check" size={12} /> : phase.state === "now" ? <Spinner /> : null}</span>
+              <span className="skill-phase-name">{phase.name}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {about && (
+        <p className="skill-about">
+          {current && <strong>{current}</strong>} {about}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
  * A question of turri's, docked at the foot of the chat in the message box's place: the conversation stays in view
  * above it, and the window is not covered. Its options are buttons; an answer of one's own is typed in it.
  */
-function QuestionCard({ question, onAnswer }: { question: Question; onAnswer: (value: unknown) => void }) {
+/**
+ * The question asked now - or, for a moment after it is answered, the one answered: turri asks again at once when there
+ * is more to choose (another box to tick), and the card stays put for it rather than giving way to the message box
+ * and coming back.
+ */
+function useLingering(question: Question | undefined): Question | undefined {
+  const [held, setHeld] = useState(question);
+  useEffect(() => {
+    if (question !== undefined) {
+      setHeld(question);
+      return;
+    }
+    const timer = setTimeout(() => setHeld(undefined), 400);
+    return () => clearTimeout(timer);
+  }, [question]);
+  return question ?? held;
+}
+
+/** turri's boxes: a question of several answers is asked again after each one, its options ticked and unticked. */
+const BOX = /^([☑☐]) ([\s\S]*)$/;
+
+function QuestionCard({ question, waiting, onAnswer }: { question: Question; waiting: boolean; onAnswer: (value: unknown) => void }) {
   const [text, setText] = useState(question.prefill ?? "");
+  // The box just clicked: shown ticked or unticked at once, before turri asks again with it so.
+  const [toggled, setToggled] = useState<string | null>(null);
+  useEffect(() => setToggled(null), [question.id]);
   const [other, setOther] = useState(question.kind === "input" || question.kind === "editor" || (question.kind === "question" && !question.options?.length));
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (other) field.current?.focus();
   }, [other]);
   const options = question.options ?? [];
+  // A question of boxes: its rows are boxes, and its last option - Done - is the card's button.
+  const boxes = options.some((option) => BOX.test(option));
+  const done = boxes ? options.findLast((option) => !BOX.test(option) && option.startsWith("Done")) : undefined;
+  const answer = (value: unknown) => {
+    if (!waiting) onAnswer(value);
+  };
   return (
-    <div className="question-card" role="dialog" aria-label={question.title}>
+    <div className={`question-card ${waiting ? "waiting" : ""}`} role="dialog" aria-label={question.title}>
       <div className="question-scroll">
         <div className="question-asks">
           <Jellyfish size={16} swimming={false} /> turri asks
@@ -346,11 +426,34 @@ function QuestionCard({ question, onAnswer }: { question: Question; onAnswer: (v
           <>
             {options.length > 0 && (
               <div className="options">
-                {options.map((option) => (
-                  <button key={option} className="option" onClick={() => onAnswer(option)}>
-                    {option}
-                  </button>
-                ))}
+                {options.map((option) => {
+                  if (option === done) return null;
+                  const box = BOX.exec(option);
+                  if (box === null)
+                    return (
+                      <button key={option} className="option" onClick={() => answer(option)}>
+                        {option}
+                      </button>
+                    );
+                  const label = box[2]!;
+                  const ticked = (box[1] === "☑") !== (toggled === label);
+                  return (
+                    <button
+                      key={label}
+                      className={`option check ${ticked ? "on" : ""}`}
+                      role="checkbox"
+                      aria-checked={ticked}
+                      onClick={() => {
+                        if (waiting) return;
+                        setToggled(label);
+                        onAnswer(option);
+                      }}
+                    >
+                      <span className="checkbox">{ticked && <Icon name="check" size={12} />}</span>
+                      {label}
+                    </button>
+                  );
+                })}
                 {question.kind === "question" && !other && (
                   <button className="option muted" onClick={() => setOther(true)}>
                     Something else…
@@ -378,6 +481,11 @@ function QuestionCard({ question, onAnswer }: { question: Question; onAnswer: (v
               <button className="button small" onClick={() => onAnswer(undefined)}>
                 Skip
               </button>
+              {done && !other && (
+                <button className="button small primary" onClick={() => answer(done)}>
+                  Done
+                </button>
+              )}
               {other && (
                 <button className="button small primary" disabled={!text.trim()} onClick={() => onAnswer(text.trim())}>
                   Answer {question.kind !== "editor" && <kbd>↩</kbd>}

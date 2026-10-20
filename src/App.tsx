@@ -9,7 +9,7 @@ import { NewProject } from "./NewProject.tsx";
 import { FileTree } from "./FileTree.tsx";
 import { FileView } from "./FileView.tsx";
 import { Appearance, Empty, Icon, Jellyfish, Spinner } from "./ui.tsx";
-import { Chat, type ChatItem, type Question } from "./Chat.tsx";
+import { Chat, type ChatItem, type Question, type SkillProgress } from "./Chat.tsx";
 
 const EMPTY_STATUS: Status = { modules: [], jobs: [], planned: [] };
 
@@ -67,6 +67,8 @@ export function App() {
   const [toolsRunning, setToolsRunning] = useState<Map<string, boolean>>(new Map());
   const [statuses, setStatuses] = useState<Record<string, string>>({});
   const [questions, setQuestions] = useState<Question[]>([]);
+  // The skill running in the chat - brood, spawn - and where it is in its phases.
+  const [progress, setProgress] = useState<SkillProgress | null>(null);
   const [chatModel, setChatModel] = useState<string | null>(null);
   const [commands, setCommands] = useState<Array<{ name: string; description: string }>>([]);
 
@@ -93,6 +95,7 @@ export function App() {
     setView("spec");
     setStreaming(null);
     setQuestions([]);
+    setProgress(null);
     void window.turri.call<{ messages: ChatItem[]; model: string | null }>("chatHistory").then(({ messages, model }) => {
       // A project just started opens on what turri said of its config: its models, and how to sign in to them.
       setItems(summary.setup ? [...messages, { role: "note", text: summary.setup, level: "info" }] : messages);
@@ -140,6 +143,7 @@ export function App() {
         setItems((all) => [...all, { role: "note", text, level }]);
         if (level === "error") say(text.split("\n")[0]!, "error");
       }),
+      window.turri.on("engine:chat:progress", (next: SkillProgress | null) => setProgress(next)),
       window.turri.on("engine:chat:ask", (question: Question) => {
         setQuestions((all) => [...all, question]);
         setChatOpen(true);
@@ -377,6 +381,7 @@ export function App() {
             onAbort={() => void window.turri.call("abortChat")}
             onClose={() => setChatOpen(false)}
             question={questions[0]}
+            progress={progress}
             onAnswer={(value) => {
               void window.turri.call("answer", { id: questions[0]!.id, value });
               setQuestions((all) => all.slice(1));

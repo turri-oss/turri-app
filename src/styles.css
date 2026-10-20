@@ -1,5 +1,3 @@
-@import "@fontsource/silkscreen/400.css";
-@import "@fontsource/silkscreen/700.css";
 
 /* Zed Mono - Zed's build of Iosevka, SIL Open Font License 1.1 (fonts/zed-mono/LICENSE.md) - for code and the spec. */
 @font-face {
@@ -60,7 +58,7 @@
   --red: #ff7a3d; /* orange */
   --diff-add: #1e3442;
   --diff-del: #732553;
-  --shadow: 3px 3px 0 #000000;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   --overlay: rgba(10, 15, 26, 0.7);
   --plain-section: #ff7fa6;
   --plain-concept: #5ce1e6;
@@ -70,10 +68,10 @@
   --plain-comment: #85a3b2;
   --plain-bullet: #85a3b2;
   --mono: "Zed Mono", ui-monospace, monospace;
-  --pixel: "Silkscreen", monospace;
+  --radius: 6px;
+  --radius-small: 4px;
   --sans: "PP Neue Montreal", "Neue Montreal", system-ui, -apple-system, "Helvetica Neue", sans-serif;
   --body: var(--sans);
-  --shadow-ink: #000000;
 }
 
 :root[data-theme="light"] {
@@ -97,7 +95,7 @@
   --red: #c4501c;
   --diff-add: #8eebee;
   --diff-del: #e9d8c8;
-  --shadow: 3px 3px 0 #1e3442;
+  --shadow: 0 1px 2px rgba(10, 15, 26, 0.12);
   --overlay: rgba(10, 15, 26, 0.35);
   --plain-section: #3e5a6b;
   --plain-concept: #732553;
@@ -130,7 +128,7 @@
     --red: #c4501c;
     --diff-add: #8eebee;
     --diff-del: #e9d8c8;
-    --shadow: 3px 3px 0 #1e3442;
+    --shadow: 0 1px 2px rgba(10, 15, 26, 0.12);
     --overlay: rgba(10, 15, 26, 0.35);
     --plain-section: #3e5a6b;
     --plain-concept: #732553;
@@ -232,7 +230,7 @@ code {
 
 .sidebar {
   background: var(--sidebar);
-  border-right: 2px solid var(--line);
+  border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -273,7 +271,7 @@ code {
   width: 100%;
   border: 0;
   background: none;
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 3px 8px 3px calc(4px + var(--depth) * 12px);
   text-align: left;
   color: var(--fg);
@@ -338,7 +336,7 @@ code {
 .state-dot {
   width: 9px;
   height: 9px;
-  border-radius: 0;
+  border-radius: var(--radius);
   flex: none;
   display: grid;
   place-items: center;
@@ -405,7 +403,7 @@ code {
   align-items: center;
   gap: 16px;
   padding: 0 14px 0 20px;
-  border-bottom: 2px solid var(--line);
+  border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
   flex: none;
 }
@@ -439,14 +437,14 @@ code {
 .segmented {
   display: flex;
   background: var(--hover);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 2px;
 }
 .segmented button {
   border: 0;
   background: none;
   padding: 3px 12px;
-  border-radius: 0;
+  border-radius: var(--radius);
   font-size: 12px;
   font-weight: 500;
   color: var(--fg-2);
@@ -471,8 +469,8 @@ code {
   gap: 6px;
   height: 26px;
   padding: 0 11px;
-  border-radius: 0;
-  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
   background: var(--card);
   box-shadow: var(--shadow);
   font-size: 12.5px;
@@ -509,7 +507,7 @@ code {
 .icon-button {
   border: 0;
   background: none;
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 3px;
   display: grid;
   place-items: center;
@@ -533,7 +531,7 @@ code {
 .tag {
   font-size: 11px;
   padding: 0 6px;
-  border-radius: 0;
+  border-radius: var(--radius);
   background: var(--hover);
   color: var(--fg-2);
 }
@@ -541,8 +539,8 @@ code {
 .spinner {
   width: 13px;
   height: 13px;
-  border-radius: 0;
-  border: 2px solid currentColor;
+  border-radius: var(--radius);
+  border: 1px solid currentColor;
   border-right-color: transparent;
   animation: spin 0.8s linear infinite;
   display: inline-block;
@@ -562,7 +560,7 @@ code {
   gap: 10px;
   height: 36px;
   padding: 0 14px;
-  border-bottom: 2px solid var(--line);
+  border-bottom: 1px solid var(--line);
   font-weight: 600;
   font-size: 12px;
   color: var(--fg-2);
@@ -603,10 +601,10 @@ code {
   transform: translateX(-50%);
   max-width: 640px;
   background: var(--card);
-  border: 2px solid var(--line);
+  border: 1px solid var(--line);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
   padding: 9px 16px;
-  border-radius: 0;
+  border-radius: var(--radius);
   display: flex;
   gap: 8px;
   align-items: center;
@@ -669,7 +667,7 @@ code {
   align-items: center;
   gap: 8px;
   padding: 7px 8px;
-  border-radius: 0;
+  border-radius: var(--radius);
 }
 .recents button:hover {
   background: var(--hover);
@@ -790,14 +788,14 @@ code {
   padding: 0;
   display: grid;
   place-items: center;
-  border: 2px solid var(--fg-3);
-  border-radius: 0;
+  border: 1px solid var(--fg-3);
+  border-radius: var(--radius);
   background: var(--bg);
   color: var(--bg);
   cursor: pointer;
 }
 .mark:hover {
-  box-shadow: 2px 2px 0 var(--shadow-ink);
+  box-shadow: var(--shadow);
 }
 .gutter.built .mark {
   border-color: var(--green);
@@ -819,7 +817,7 @@ code {
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius);
   background: none;
   color: var(--fg-3);
   cursor: pointer;
@@ -837,8 +835,8 @@ code {
   pointer-events: auto;
   margin-left: 1ch;
   padding: 0 6px;
-  border: 2px dashed var(--fg-3);
-  border-radius: 0;
+  border: 1px dashed var(--fg-3);
+  border-radius: var(--radius);
   background: var(--bg);
   color: var(--fg-2);
   font: 11px/1.5 var(--body);
@@ -902,7 +900,7 @@ code {
   margin: 12px 18px 0 68px;
   max-width: 868px;
   padding: 8px 12px;
-  border: 2px solid var(--accent);
+  border: 1px solid var(--accent);
   background: var(--card);
 }
 .disk-banner .button {
@@ -915,7 +913,7 @@ code {
   margin: 12px 18px 0 68px;
   max-width: 868px;
   padding: 12px;
-  border-radius: 0;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--red) 10%, var(--card));
   color: var(--red);
 }
@@ -964,7 +962,7 @@ code {
 .planned-index {
   width: 18px;
   height: 18px;
-  border-radius: 0;
+  border-radius: var(--radius);
   background: var(--hover);
   display: grid;
   place-items: center;
@@ -975,8 +973,8 @@ code {
 
 .job {
   background: var(--card);
-  border: 2px solid var(--line);
-  border-radius: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   padding: 10px 12px;
   margin-bottom: 8px;
   box-shadow: var(--shadow);
@@ -995,7 +993,7 @@ code {
 .job-icon {
   width: 22px;
   height: 22px;
-  border-radius: 0;
+  border-radius: var(--radius);
   display: grid;
   place-items: center;
   flex: none;
@@ -1046,7 +1044,7 @@ code {
 .pulse-dot {
   width: 7px;
   height: 7px;
-  border-radius: 0;
+  border-radius: var(--radius);
   background: var(--accent);
   animation: breathe 1.4s ease-in-out infinite;
 }
@@ -1063,7 +1061,7 @@ code {
   list-style: none;
   margin: 6px 0 0;
   padding: 6px 8px;
-  border-radius: 0;
+  border-radius: var(--radius);
   background: var(--bg-2);
   font: 11.5px/1.55 var(--mono);
   color: var(--fg-2);
@@ -1091,7 +1089,7 @@ code {
   gap: 8px;
   margin: 8px 0 0 32px;
   padding: 8px 10px;
-  border-radius: 0;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--amber) 12%, var(--card));
   white-space: pre-wrap;
   user-select: text;
@@ -1114,7 +1112,7 @@ code {
 .agent-chip {
   font-size: 11px;
   padding: 1px 7px;
-  border-radius: 0;
+  border-radius: var(--radius);
   background: var(--hover);
   color: var(--fg-2);
 }
@@ -1122,7 +1120,7 @@ code {
 .transcript {
   width: 46%;
   min-width: 380px;
-  border-left: 2px solid var(--line);
+  border-left: 1px solid var(--line);
   background: var(--bg-2);
   display: flex;
   flex-direction: column;
@@ -1150,21 +1148,21 @@ code {
   padding: 8px 10px;
   border-left: 3px solid var(--plain-section);
   background: var(--card);
-  border-radius: 0;
+  border-radius: var(--radius);
   margin: 6px 0;
   white-space: pre-wrap;
 }
 .t-bubble {
   max-width: 92%;
   padding: 8px 11px;
-  border-radius: 0;
+  border-radius: var(--radius);
   margin: 6px 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .t-bubble.prompt {
   background: var(--card);
-  border: 2px solid var(--line);
+  border: 1px solid var(--line);
   cursor: pointer;
 }
 .t-bubble.reply {
@@ -1200,7 +1198,7 @@ code {
   white-space: pre-wrap;
   background: var(--card);
   padding: 6px 8px;
-  border-radius: 0;
+  border-radius: var(--radius);
 }
 .t-result pre {
   margin: 2px 0 6px 18px;
@@ -1215,7 +1213,7 @@ code {
 .t-diff {
   font: 11.5px/1.5 var(--mono);
   background: var(--card);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 8px 0;
   margin: 6px 0;
   overflow-x: auto;
@@ -1252,8 +1250,8 @@ code {
   max-height: calc(100vh - 90px);
   overflow-y: auto;
   background: var(--bg);
-  border: 2px solid var(--line);
-  border-radius: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   padding: 20px 24px;
   animation: drop 0.22s ease-out;
@@ -1278,7 +1276,7 @@ code {
   font: 11.5px/1.5 var(--mono);
   white-space: pre-wrap;
   background: var(--bg-2);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 10px 12px;
   max-height: 320px;
   overflow: auto;
@@ -1297,7 +1295,7 @@ code {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-left: 2px solid var(--line);
+  border-left: 1px solid var(--line);
   background: var(--sidebar);
 }
 .chat-top {
@@ -1305,7 +1303,7 @@ code {
   align-items: center;
   gap: 8px;
   padding: 0 10px 0 16px;
-  border-bottom: 2px solid var(--line);
+  border-bottom: 1px solid var(--line);
   height: 52px;
 }
 .chat-top button {
@@ -1344,9 +1342,9 @@ code {
   display: block;
   width: 100%;
   margin-top: 6px;
-  border: 2px solid var(--line);
+  border: 1px solid var(--line);
   background: var(--card);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 7px 10px;
   text-align: left;
 }
@@ -1362,7 +1360,7 @@ code {
   background: var(--accent);
   color: var(--on-accent);
   padding: 7px 12px;
-  border-radius: 0;
+  border-radius: var(--radius);
   white-space: pre-wrap;
 }
 .msg.user.command {
@@ -1383,8 +1381,8 @@ code {
   font-size: 12px;
   color: var(--fg-2);
   background: var(--card);
-  border: 2px solid var(--line);
-  border-radius: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   padding: 8px 10px;
 }
 .msg.note.error {
@@ -1395,9 +1393,9 @@ code {
 }
 .msg.job-note {
   background: var(--card);
-  border: 2px solid var(--line);
+  border: 1px solid var(--line);
   border-left: 3px solid var(--green);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 8px 10px;
   font-size: 12.5px;
 }
@@ -1440,14 +1438,14 @@ code {
   font: 11.5px/1.5 var(--mono);
   background: var(--bg-2);
   padding: 8px 10px;
-  border-radius: 0;
+  border-radius: var(--radius);
   overflow-x: auto;
   white-space: pre-wrap;
 }
 .prose code {
   background: var(--hover);
   padding: 0 4px;
-  border-radius: 0;
+  border-radius: var(--radius);
 }
 .thinking-toggle {
   border: 0;
@@ -1463,7 +1461,7 @@ code {
   color: var(--fg-3);
   font-style: italic;
   white-space: pre-wrap;
-  border-left: 2px solid var(--line);
+  border-left: 1px solid var(--line);
   padding-left: 8px;
   margin-bottom: 6px;
 }
@@ -1476,7 +1474,7 @@ code {
   gap: 6px;
   border: 0;
   background: var(--hover);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 3px 8px;
   font-size: 12px;
   color: var(--fg-2);
@@ -1495,8 +1493,8 @@ code {
   font: 11px/1.45 var(--mono);
   white-space: pre-wrap;
   background: var(--card);
-  border: 2px solid var(--line);
-  border-radius: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   padding: 6px 8px;
   margin: 4px 0;
   max-height: 260px;
@@ -1514,16 +1512,16 @@ code {
 }
 .composer {
   position: relative;
-  border-top: 2px solid var(--line);
+  border-top: 1px solid var(--line);
   padding: 10px 12px 12px;
 }
 .composer textarea {
   width: 100%;
   resize: none;
-  border: 2px solid var(--line);
+  border: 1px solid var(--line);
   background: var(--card);
   color: var(--fg);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 8px 10px;
   font: inherit;
   outline: none;
@@ -1556,13 +1554,13 @@ code {
   margin: 0 0 4px;
   padding: 4px;
   background: var(--card);
-  border: 2px solid var(--line);
-  border-radius: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 .suggestions li {
   padding: 4px 8px;
-  border-radius: 0;
+  border-radius: var(--radius);
   font-size: 12px;
 }
 .suggestions li:hover {
@@ -1571,15 +1569,105 @@ code {
 
 /* ---------- questions ---------- */
 
+/* A skill's phases, above the message box while it runs: each phase a step, joined by a line filled as far as it has got. */
+.skill-progress {
+  flex: none;
+  border-top: 1px solid var(--line);
+  padding: 10px 12px 8px;
+  background: var(--bg-2);
+}
+.skill-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+.skill-progress-head strong {
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-right: auto;
+}
+.skill-phases {
+  list-style: none;
+  display: flex;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.skill-phases li {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg-3);
+}
+/* The line into each phase but the first, from the one before: filled once that one is done. */
+.skill-phases li + li::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: calc(50% + 11px);
+  left: calc(-50% + 11px);
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--fg-3) 0 4px, transparent 4px 8px);
+}
+.skill-phases li.done + li::before {
+  background: var(--green);
+}
+.skill-phase-mark {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--fg-3);
+  background: var(--bg-2);
+}
+.skill-phases li.done .skill-phase-mark {
+  border-color: var(--green);
+  background: var(--green);
+  color: var(--bg);
+}
+.skill-phases li.now .skill-phase-mark {
+  border-color: var(--accent);
+}
+.skill-phase-mark .spinner {
+  transform: scale(0.6);
+}
+.skill-phase-name {
+  font-size: 11px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-phases li.done {
+  color: var(--fg-2);
+}
+.skill-phases li.now {
+  color: var(--fg);
+  font-weight: 600;
+}
+.skill-about {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--fg-2);
+}
+.skill-about strong {
+  color: var(--fg);
+}
+
 /* turri's question, docked where the message box is: the conversation stays in view above it. */
 .question-card {
   flex: none;
   max-height: 65%;
   display: flex;
   flex-direction: column;
-  border-top: 2px solid var(--accent);
+  border-top: 1px solid var(--accent);
   background: var(--card);
-  animation: rise 0.2s steps(3);
+  animation: rise 0.2s ease-out;
 }
 @keyframes rise {
   from {
@@ -1618,6 +1706,34 @@ code {
   padding: 10px 12px 12px;
   background: var(--card);
 }
+/* A question of several answers: its options are boxes, ticked as they are chosen. */
+.option.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.checkbox {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--fg-3);
+}
+.option.check.on {
+  border-color: var(--accent);
+}
+.option.check.on .checkbox {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+}
+/* Answered, and turri about to ask again: it stays where it is, its buttons resting. */
+.question-card.waiting .option,
+.question-card.waiting .button {
+  cursor: progress;
+}
+
 .button.asking {
   border-color: var(--accent);
   color: var(--accent);
@@ -1626,7 +1742,7 @@ code {
   max-height: 260px;
   overflow-y: auto;
   background: var(--bg-2);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 10px 12px;
   margin-bottom: 12px;
   font-size: 12.5px;
@@ -1638,9 +1754,9 @@ code {
   gap: 6px;
 }
 .option {
-  border: 2px solid var(--line);
+  border: 1px solid var(--line);
   background: var(--card);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 8px 12px;
   text-align: left;
 }
@@ -1677,10 +1793,10 @@ code {
 .answer {
   width: 100%;
   margin-top: 10px;
-  border: 2px solid var(--line);
+  border: 1px solid var(--line);
   background: var(--card);
   color: var(--fg);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 8px 10px;
   font: inherit;
   resize: vertical;
@@ -1693,7 +1809,7 @@ code {
 .appearance {
   display: flex;
   background: var(--hover);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 2px;
   margin-top: 10px;
 }
@@ -1701,7 +1817,7 @@ code {
   flex: 1;
   border: 0;
   background: none;
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 2px 0;
   font-size: 11.5px;
   color: var(--fg-2);
@@ -1740,14 +1856,7 @@ code {
   }
 }
 
-/* The interface in Neue Montreal - the wordmark on the landing too - code and the spec in Zed Mono; the main buttons -
-   Regenerate, Release, Start a new project, Open a project, Send - in Silkscreen's pixels. The pixels, and the code, are
-   drawn unsmoothed. */
-.button {
-  font-family: var(--pixel);
-  letter-spacing: 0;
-  -webkit-font-smoothing: none;
-}
+/* The interface in Neue Montreal - the buttons and the wordmark on the landing too - code and the spec in Zed Mono. */
 .toolbar-title h1 {
   font-size: 16px;
   font-weight: 700;
@@ -1783,32 +1892,16 @@ code,
 kbd {
   font-family: var(--mono);
 }
-code,
-pre,
-textarea,
-kbd,
-.editor,
-.activity,
-.prompt-preview {
-  -webkit-font-smoothing: none;
-}
 code {
   font-size: 0.95em;
 }
 
 .button {
   height: 30px;
-  border: 2px solid var(--line);
-  box-shadow: var(--shadow);
-  transition: none;
+  transition: background-color 0.12s, border-color 0.12s;
 }
 .button:hover:not(:disabled) {
   border-color: var(--accent);
-}
-.button:active:not(:disabled) {
-  transform: translate(3px, 3px);
-  box-shadow: none;
-  filter: none;
 }
 .button.primary {
   border-color: var(--accent);
@@ -1819,12 +1912,10 @@ code {
 }
 .button.small {
   height: 24px;
-  box-shadow: 2px 2px 0 var(--shadow-ink);
 }
 .segmented,
 .appearance {
-  border: 2px solid var(--line);
-  padding: 0;
+  border: 1px solid var(--line);
 }
 .segmented button.on,
 .appearance button.on {
@@ -1838,99 +1929,57 @@ code {
 .hint,
 .option,
 .toast,
-.sheet,
 .parse-error,
 .diagnosis {
-  border-width: 2px;
   box-shadow: var(--shadow);
 }
-.msg.user {
-  box-shadow: 3px 3px 0 var(--diff-del);
-}
 .sheet {
-  border: 2px solid var(--accent);
-  box-shadow: 6px 6px 0 var(--shadow-ink);
+  border: 1px solid var(--line);
 }
 .composer textarea:focus {
-  box-shadow: 3px 3px 0 var(--accent);
-}
-.progress {
-  height: 8px;
-  background: repeating-linear-gradient(90deg, var(--line) 0 6px, transparent 6px 8px);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .progress div {
-  background: repeating-linear-gradient(90deg, var(--green) 0 6px, transparent 6px 8px);
-  transition: width 0.4s steps(8);
+  transition: width 0.4s ease;
 }
 
-/* Four pixels chasing each other round a square. */
+/* Working: a ring turning. */
 .spinner {
-  width: 12px;
-  height: 12px;
-  border: 0;
-  position: relative;
-  display: inline-block;
-  animation: none;
-  opacity: 1;
+  border-radius: 50%;
 }
 .spinner i {
-  position: absolute;
-  width: 5px;
-  height: 5px;
-  background: currentColor;
-  animation: chase 0.8s steps(1) infinite;
+  display: none;
 }
-.spinner i:nth-child(1) {
-  left: 0;
-  top: 0;
+.state-dot,
+.mark,
+.checkbox,
+.skill-phase-mark {
+  border-radius: var(--radius-small);
 }
-.spinner i:nth-child(2) {
-  right: 0;
-  top: 0;
-  animation-delay: 0.2s;
-}
-.spinner i:nth-child(3) {
-  right: 0;
-  bottom: 0;
-  animation-delay: 0.4s;
-}
-.spinner i:nth-child(4) {
-  left: 0;
-  bottom: 0;
-  animation-delay: 0.6s;
-}
-@keyframes chase {
-  0% {
-    opacity: 1;
-  }
-  25% {
-    opacity: 0.25;
-  }
-}
-.pulse-dot {
-  animation: breathe 1.4s steps(2) infinite;
-}
-.state-dot.new {
-  border-width: 2px;
+.state-dot {
+  border-radius: 50%;
 }
 
-/* Scrollbars: a block on a track. */
+/* Scrollbars: a rounded thumb, clear of the edge. */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-2);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--line);
-  border: 2px solid var(--bg-2);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--fg-3);
+  background-clip: padding-box;
 }
 
-/* The welcome: the deep, with pixel bubbles rising. */
+/* The welcome: the deep, with bubbles rising. */
 .welcome {
   position: relative;
   overflow: hidden;
@@ -1945,7 +1994,8 @@ code {
   bottom: -12px;
   width: 6px;
   height: 6px;
-  border: 2px solid var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 50%;
   opacity: 0.35;
   animation: rise-bubble linear infinite;
 }
@@ -1959,12 +2009,4 @@ code {
     transform: translateY(-110vh);
   }
 }
-.bubbles i {
-  animation-timing-function: steps(60);
-}
-.toast {
-  animation: none;
-}
-.sheet {
-  animation: none;
-}
+

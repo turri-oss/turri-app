@@ -1,4 +1,4 @@
-// The app's icon: turri's pixel glyph (public/jellyfish/logo-glyph.svg) on turri-dark's abyss, in macOS's icon grid - an 824px tile
+// The app's icon: turri's logo mark (public/jellyfish/logo-mark.svg) on turri-dark's abyss, in macOS's icon grid - an 824px tile
 // in a 1024px canvas. Writes build/icon.png and build/icon.icns: `npx electron scripts/icon.cjs`.
 const { app, BrowserWindow } = require("electron");
 const { execFileSync } = require("node:child_process");
@@ -6,7 +6,7 @@ const { mkdirSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
 
 const ROOT = join(__dirname, "..");
-const logo = readFileSync(join(ROOT, "public/jellyfish/logo-glyph.svg")).toString("base64");
+const logo = readFileSync(join(ROOT, "public/jellyfish/logo-mark.svg")).toString("base64");
 
 app.dock?.hide();
 app.whenReady().then(async () => {
@@ -22,8 +22,8 @@ app.whenReady().then(async () => {
       g.beginPath();
       g.roundRect(100, 100, 824, 824, 185);
       g.fill();
-      // The glyph fills its square: drawn in the tile's middle, its pixels whole - 9 of them across, 64 each.
-      const size = 576;
+      // The mark fills its square: drawn in the tile's middle, its pixels whole - 7 of them across, 80 each.
+      const size = 560;
       g.imageSmoothingEnabled = false;
       g.drawImage(image, (1024 - size) / 2, (1024 - size) / 2, size, size);
       done(canvas.toDataURL("image/png").split(",")[1]);
