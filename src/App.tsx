@@ -7,6 +7,7 @@ import { WorkView } from "./WorkView.tsx";
 import { PlanSheet, type Plan } from "./PlanSheet.tsx";
 import { RegenerateSheet, type Regeneration } from "./RegenerateSheet.tsx";
 import { NewProject } from "./NewProject.tsx";
+import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
 import { FileTree } from "./FileTree.tsx";
 import { FileView } from "./FileView.tsx";
 import { PreviewView, savedPane, savePane } from "./PreviewView.tsx";
@@ -55,6 +56,8 @@ export function App() {
   // The conversation with turri.
   const [chatOpen, setChatOpen] = useState(true);
   const [creating, setCreating] = useState(false);
+  /** The open-projects switcher (⇧⌘P), dropped over the window. */
+  const [switcher, setSwitcher] = useState(false);
   /** Another project, being opened: the one shown waits under a spinner, as its engine has already stopped. */
   const [switching, setSwitching] = useState<{ dir: string; name: string } | null>(null);
   const [chatWidth, setChatWidth] = useState(savedChatWidth);
@@ -261,6 +264,7 @@ export function App() {
         else if (action === "release") void release();
         else if (action === "save") void saveRef.current?.();
         else if (action === "new-project") setCreating(true);
+        else if (action === "switch-project") setSwitcher((open) => !open);
         else if (action === "chat") setChatOpen((open) => !open);
         else if (action === "reveal" && project) void window.turri.reveal(project.dir);
       }),
@@ -282,11 +286,13 @@ export function App() {
 
   // In the same place whether a project is open or not, so it is not made again when one opens under it.
   const newProject = creating && <NewProject onOpened={opened} onDone={() => setCreating(false)} />;
+  const projectSwitcher = switcher && <ProjectSwitcher onClose={() => setSwitcher(false)} />;
   if (project === null)
     return (
       <>
         <Welcome onOpened={opened} onNew={() => setCreating(true)} />
         {newProject}
+        {projectSwitcher}
       </>
     );
 
@@ -379,7 +385,7 @@ export function App() {
           <section className="content">
             {view === "preview" ? (
               // A sheet over the window would be under the pane: while one is open, the pane steps aside.
-              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || creating || choosing !== null || switching !== null} pane={pane} onPane={setPane} />
+              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || creating || choosing !== null || switching !== null || switcher} pane={pane} onPane={setPane} />
             ) : view === "work" ? (
               <WorkView
                 status={status}
@@ -513,6 +519,7 @@ export function App() {
         </div>
       )}
       {newProject}
+      {projectSwitcher}
     </>
   );
 }

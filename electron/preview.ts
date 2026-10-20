@@ -34,10 +34,11 @@ const TEXT_KEPT = 20000;
 /** A screenshot wider than this is scaled down before turri sees it: it costs less, and reads the same. */
 const SCREENSHOT_WIDTH = 1280;
 
+/** Each pane's own browser session, kept in memory: a project opened starts with no cookies, storage or cache of another's - in any window. */
+let sessions = 0;
+
 export function createPreview({ windowOf, send }: { windowOf: () => BrowserWindow | undefined; send: (channel: string, data: unknown) => void }) {
   let view: WebContentsView | undefined;
-  /** Each pane's own browser session, kept in memory: a project opened starts with no cookies, storage or cache of another's. */
-  let sessions = 0;
   let shown = false;
   let error: string | null = null;
   let logs: string[] = [];

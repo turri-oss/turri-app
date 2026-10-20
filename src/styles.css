@@ -2415,6 +2415,83 @@ code {
   font-size: 13px;
 }
 
+/* ---------- the open-projects switcher ---------- */
+
+/* Dropped from the top middle of the window, over everything, as the sheets are. */
+.switcher-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  z-index: 20;
+  /* Over the toolbar, which drags the window: here a click is a click. */
+  -webkit-app-region: no-drag;
+}
+.switcher {
+  margin-top: 10px;
+  width: min(560px, 92vw);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  padding: 8px;
+  animation: drop 0.18s ease-out;
+}
+.switcher-search {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.switcher-search:focus {
+  border-color: var(--accent);
+}
+.switcher-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: calc(8 * 36px);
+  overflow-y: auto;
+}
+.switcher-list:empty {
+  display: none;
+}
+.switcher-list button {
+  width: 100%;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-small);
+  text-align: left;
+}
+.switcher-list button.on {
+  background: var(--selected);
+}
+.switcher-tag {
+  font-size: 11.5px;
+  color: var(--fg-2);
+  white-space: nowrap;
+}
+.switcher-tag.running {
+  color: var(--built);
+}
+.switcher-none {
+  margin: 10px 4px 4px;
+  font-size: 13px;
+}
+
 /* ---------- a pulse's part of the spec ---------- */
 
 /* The pulse's panel heads with its two tabs - the pulse's own name is on its card - and its controls. */

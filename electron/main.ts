@@ -7,9 +7,10 @@ import { createTerminal } from "./terminal.ts";
 import { turriVersion } from "./turri-version.ts";
 
 /**
- * The main process: one window, and behind it one turri engine per open project - a Node process that hosts
- * turri's work loop (engine/engine.mjs). The window never shows turri in a terminal: it asks the engine for data and
- * is sent what the jobs do as they do it. The one terminal there is, the preview's, is for the app turri builds.
+ * The main process: a window for each open project, and behind each its own turri engine - a Node process that hosts
+ * turri's work loop (engine/engine.mjs) - and its own preview. A window never shows turri in a terminal: it asks its
+ * engine for data and is sent what the jobs do as they do it. The one terminal there is, the preview's, is for the app
+ * turri builds.
  */
 
 const ROOT = join(__dirname, "..");
@@ -44,7 +45,7 @@ function readTheme(): Theme {
 /** Zoom in, out or back to actual size - the text and everything with it - and remember it. */
 function setZoom(next: number) {
   zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
-  window?.webContents.setZoomLevel(zoom);
+  for (const { window } of workspaces.values()) window.webContents.setZoomLevel(zoom);
   writeAppearance();
 }
 
@@ -58,98 +59,288 @@ function setTheme(next: Theme) {
   writeAppearance();
   // Menus, dialogs and the title bar follow it too.
   nativeTheme.themeSource = theme;
-  window?.setBackgroundColor(backgroundFor());
-  send("theme", theme);
+  for (const workspace of workspaces.values()) {
+    workspace.window.setBackgroundColor(backgroundFor());
+    workspace.send("theme", theme);
+  }
   buildMenu();
 }
 
-let window: BrowserWindow | undefined;
-const preview = createPreview({ windowOf: () => window, send });
-const terminal = createTerminal({ send });
-let engine: ChildProcess | undefined;
-let nextId = 0;
-const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
-let running = 0;
-/** Whether the engine has a project open: one that has not - started for a new project's config - opens one as it is. */
-let engineHasProject = false;
-/** The project being opened, while it is: the window waits under a spinner, and the menu's project items wait too. */
-let opening: string | undefined;
+// ---------- a window and what is behind it ----------
 
-function startEngine(): Promise<void> {
-  engine?.kill();
-  for (const { reject } of pending.values()) reject(new Error("The engine restarted."));
-  pending.clear();
-  // Electron's own Node runs it: turri comes compiled, from the @turri-dev/cli package, so no other Node is needed.
-  const child = fork(join(ROOT, "engine", "engine.mjs"), [], {
-    execPath: process.execPath,
-    execArgv: [],
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
-    stdio: ["ignore", "pipe", "pipe", "ipc"],
+/** A window and what is behind it: the project open in it, its engine, its preview and the preview's terminal. */
+interface Workspace {
+  window: BrowserWindow;
+  preview: ReturnType<typeof createPreview>;
+  terminal: ReturnType<typeof createTerminal>;
+  send(channel: string, data: unknown): void;
+  /** Its pulses running now. */
+  running: number;
+  /** The project open in it, once one is. */
+  readonly dir: string | undefined;
+  /** The project being opened in it, while it is. */
+  readonly opening: string | undefined;
+  /** Whether a project is open in it and answering - not one whose engine has stopped. */
+  readonly open: boolean;
+  /** Its project's name, once one is open. */
+  readonly name: string | undefined;
+  call(method: string, params?: unknown): Promise<unknown>;
+  openProject(dir: string): Promise<unknown>;
+  startProject(dir: string, vendor: string, bedrock?: { maker: string; region: string }): Promise<unknown>;
+  /** Its engine, started if no project has started it yet: for what it is asked before a project opens. */
+  anEngine(): Promise<void>;
+}
+
+/** Every window, by its id: each with the project open in it, or none yet - the welcome screen. */
+const workspaces = new Map<number, Workspace>();
+/** The window the person was in last: the menu's and the Dock's, even while the app itself is not in front. */
+let lastFocused: Workspace | undefined;
+/** Windows by when they were last in front, the latest first: the project switcher lists them so. */
+let byRecency: Workspace[] = [];
+
+function workspaceOf(sender: Electron.WebContents): Workspace {
+  const workspace = workspaces.get(BrowserWindow.fromWebContents(sender)?.id ?? -1);
+  if (workspace === undefined) throw new Error("This window is closing.");
+  return workspace;
+}
+
+function focused(): Workspace | undefined {
+  const window = BrowserWindow.getFocusedWindow();
+  return (window && workspaces.get(window.id)) ?? lastFocused;
+}
+
+/** Pulses running in every window: the Dock's badge counts them all. */
+function showRunning() {
+  const running = [...workspaces.values()].reduce((sum, workspace) => sum + workspace.running, 0);
+  app.dock?.setBadge(running > 0 ? String(running) : "");
+}
+
+/**
+ * One window - the welcome screen until a project opens in it - with the project's engine, its preview and the
+ * preview's terminal. Closing the window stops them all.
+ */
+function createWorkspace(): Workspace {
+  // A new window a step down and right of the one in front, so both are seen.
+  const [x, y] = focused()?.window.getPosition() ?? [];
+  const window = new BrowserWindow({
+    width: 1560,
+    height: 860,
+    ...(x !== undefined && y !== undefined ? { x: x + 28, y: y + 28 } : {}),
+    minWidth: 1100,
+    minHeight: 620,
+    title: "turri",
+    icon: join(ROOT, "build", "icon.png"),
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 16, y: 18 },
+    backgroundColor: backgroundFor(),
+    show: false,
+    webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: false },
   });
-  engine = child;
-  child.stdout?.on("data", (chunk) => send("engine:log", { level: "stdout", text: String(chunk) }));
-  child.stderr?.on("data", (chunk) => send("engine:log", { level: "stderr", text: String(chunk) }));
-  return new Promise((resolve, reject) => {
-    child.on("message", (message: { id?: number; result?: unknown; error?: string; event?: string; data?: unknown; browser?: string; terminal?: string; params?: unknown }) => {
-      if (message.event === "ready") {
-        // Which turri the engine runs - the package, or a clone's sources (TURRI_DEV) - said where the app was started.
-        console.log(`turri engine: Node ${(message.data as { node: string }).node}, turri from ${(message.data as { turri: string }).turri}`);
-        return resolve();
-      }
-      // One of turri's browser or terminal tools, asked of the preview: done there, and answered.
-      if (message.browser !== undefined || message.terminal !== undefined) {
-        const done = message.browser !== undefined ? preview.request(message.browser, message.params) : terminal.request(message.terminal!, message.params);
-        done.then(
-          (result) => child.connected && child.send({ reply: message.id, result }),
-          (error) => child.connected && child.send({ reply: message.id, error: error instanceof Error ? error.message : String(error) }),
-        );
-        return;
-      }
-      if (message.event !== undefined) return onEngineEvent(message.event, message.data);
-      const call = pending.get(message.id!);
-      if (call === undefined) return;
-      pending.delete(message.id!);
-      if (message.error !== undefined) call.reject(new Error(message.error));
-      else call.resolve(message.result);
+
+  const send = (channel: string, data: unknown) => {
+    if (!window.isDestroyed()) window.webContents.send(channel, data);
+  };
+  const preview = createPreview({ windowOf: () => (window.isDestroyed() ? undefined : window), send });
+  const terminal = createTerminal({ send });
+  let engine: ChildProcess | undefined;
+  let nextId = 0;
+  const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+  /** Whether the engine has a project open: one that has not - started for a new project's config - opens one as it is. */
+  let engineHasProject = false;
+  /** The project open in this window, and its name, once it is. */
+  let dir: string | undefined;
+  let name: string | undefined;
+  /** The project being opened, while it is: the window waits under a spinner, and the menu's project items wait too. */
+  let opening: string | undefined;
+  let closed = false;
+  /** Settled once the page has loaded: a project opened in a new window waits for it. */
+  const loaded = new Promise<void>((resolve) => window.webContents.once("did-finish-load", () => resolve()));
+
+  const workspace: Workspace = {
+    window,
+    preview,
+    terminal,
+    send,
+    running: 0,
+    get dir() {
+      return dir;
+    },
+    get opening() {
+      return opening;
+    },
+    get name() {
+      return name;
+    },
+    get open() {
+      return engine !== undefined && engineHasProject && opening === undefined;
+    },
+    call,
+    openProject,
+    startProject,
+    anEngine,
+  };
+
+  function startEngine(): Promise<void> {
+    engine?.kill();
+    for (const { reject } of pending.values()) reject(new Error("The engine restarted."));
+    pending.clear();
+    // Electron's own Node runs it: turri comes compiled, from the @turri-dev/cli package, so no other Node is needed.
+    const child = fork(join(ROOT, "engine", "engine.mjs"), [], {
+      execPath: process.execPath,
+      execArgv: [],
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
-    child.on("exit", (code) => {
-      reject(new Error(`The turri engine exited (${code}). ${process.env.TURRI_DEV ? `Is TURRI_DEV=${process.env.TURRI_DEV} a turri clone, with its packages installed (npm install there)?` : "Is @turri-dev/cli installed (npm install)?"}`));
-      // One replaced by another - a project opened after another - was stopped on purpose: only the current one's end is news.
-      if (engine !== child) return;
-      engine = undefined;
-      engineHasProject = false;
-      send("engine:exit", { code });
+    engine = child;
+    child.stdout?.on("data", (chunk) => send("engine:log", { level: "stdout", text: String(chunk) }));
+    child.stderr?.on("data", (chunk) => send("engine:log", { level: "stderr", text: String(chunk) }));
+    return new Promise((resolve, reject) => {
+      child.on("message", (message: { id?: number; result?: unknown; error?: string; event?: string; data?: unknown; browser?: string; terminal?: string; params?: unknown }) => {
+        if (message.event === "ready") {
+          // Which turri the engine runs - the package, or a clone's sources (TURRI_DEV) - said where the app was started.
+          console.log(`turri engine: Node ${(message.data as { node: string }).node}, turri from ${(message.data as { turri: string }).turri}`);
+          return resolve();
+        }
+        // One of turri's browser or terminal tools, asked of the preview: done there, and answered.
+        if (message.browser !== undefined || message.terminal !== undefined) {
+          const done = message.browser !== undefined ? preview.request(message.browser, message.params) : terminal.request(message.terminal!, message.params);
+          done.then(
+            (result) => child.connected && child.send({ reply: message.id, result }),
+            (error) => child.connected && child.send({ reply: message.id, error: error instanceof Error ? error.message : String(error) }),
+          );
+          return;
+        }
+        if (message.event !== undefined) return onEngineEvent(message.event, message.data);
+        const call = pending.get(message.id!);
+        if (call === undefined) return;
+        pending.delete(message.id!);
+        if (message.error !== undefined) call.reject(new Error(message.error));
+        else call.resolve(message.result);
+      });
+      child.on("exit", (code) => {
+        reject(new Error(`The turri engine exited (${code}). ${process.env.TURRI_DEV ? `Is TURRI_DEV=${process.env.TURRI_DEV} a turri clone, with its packages installed (npm install there)?` : "Is @turri-dev/cli installed (npm install)?"}`));
+        // One replaced by another, or stopped with its window, was stopped on purpose: only the current one's end is news.
+        if (engine !== child || closed) return;
+        engine = undefined;
+        engineHasProject = false;
+        workspace.running = 0;
+        showRunning();
+        send("engine:exit", { code });
+        buildMenu();
+      });
     });
-  });
-}
-
-function call(method: string, params?: unknown): Promise<unknown> {
-  if (engine === undefined) return Promise.reject(new Error("No project is open."));
-  const id = ++nextId;
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    engine!.send({ id, method, params });
-  });
-}
-
-function send(channel: string, data: unknown) {
-  window?.webContents.send(channel, data);
-}
-
-function onEngineEvent(event: string, data: any) {
-  send(`engine:${event}`, data);
-  // New code under the preview: it is loaded again.
-  if (event === "finished" && data.status === "succeeded") preview.reloadSoon();
-  if (event === "status") {
-    running = (data.jobs as Array<{ status: string }>).filter((job) => job.status === "running").length;
-    app.dock?.setBadge(running > 0 ? String(running) : "");
-    window?.setProgressBar(running > 0 ? 2 : -1); // 2: indeterminate on macOS
   }
-  if (event === "finished" && !window?.isFocused()) {
-    const done = data.status === "succeeded";
-    new Notification({ title: done ? `${data.module ?? "turri"}: regenerated` : `${data.module ?? "turri"}: ${data.status}`, body: data.title ?? "", silent: done }).show();
-    if (!done) app.dock?.bounce("informational");
+
+  function call(method: string, params?: unknown): Promise<unknown> {
+    if (engine === undefined) return Promise.reject(new Error("No project is open."));
+    const id = ++nextId;
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      engine!.send({ id, method, params });
+    });
   }
+
+  function onEngineEvent(event: string, data: any) {
+    send(`engine:${event}`, data);
+    // New code under the preview: it is loaded again.
+    if (event === "finished" && data.status === "succeeded") preview.reloadSoon();
+    if (event === "status") {
+      workspace.running = (data.jobs as Array<{ status: string }>).filter((job) => job.status === "running").length;
+      showRunning();
+      if (!window.isDestroyed()) window.setProgressBar(workspace.running > 0 ? 2 : -1); // 2: indeterminate on macOS
+    }
+    if (event === "finished" && !window.isDestroyed() && !window.isFocused()) {
+      const done = data.status === "succeeded";
+      // Which project's, with several open.
+      const subtitle = dir === undefined ? undefined : basename(dir);
+      const notice = new Notification({ title: done ? `${data.module ?? "turri"}: regenerated` : `${data.module ?? "turri"}: ${data.status}`, subtitle, body: data.title ?? "", silent: done });
+      // A click brings the window the pulse ran in forward.
+      notice.on("click", () => !window.isDestroyed() && (window.show(), window.focus()));
+      notice.show();
+      if (!done) app.dock?.bounce("informational");
+    }
+  }
+
+  async function openProject(named: string) {
+    const next = canonical(named);
+    await loaded;
+    // The project open now stops answering as soon as its engine is stopped: the window says it is opening another.
+    opening = next;
+    send("project:opening", { dir: next, name: basename(next) });
+    buildMenu();
+    try {
+      if (engine === undefined || engineHasProject) await startEngine();
+      engineHasProject = true;
+      // Another project's app is not this one's: the preview starts empty, and its terminal in this project's folder.
+      preview.dispose();
+      terminal.setDir(next);
+      const summary = await call("open", { dir: next });
+      dir = next;
+      name = (summary as { name: string }).name;
+      writeFileSync(RECENTS_FILE, JSON.stringify([next, ...recents().filter((other) => other !== next)].slice(0, RECENTS_KEPT)));
+      app.addRecentDocument(next);
+      if (!window.isDestroyed()) {
+        window.setRepresentedFilename(next);
+        // The Window menu, ⌘` and the Dock name each window by it.
+        window.setTitle(name);
+      }
+      return summary;
+    } catch (error) {
+      // Not opened: the window stops waiting. Opened, it stops once it has the project - sooner, the last one shows again.
+      send("project:opening", null);
+      throw error;
+    } finally {
+      opening = undefined;
+      buildMenu();
+    }
+  }
+
+  /** The engine, started if no project has started it yet: for what it is asked before a project opens. */
+  async function anEngine() {
+    if (engine === undefined) await startEngine();
+  }
+
+  /** A new project's config.turri.yaml, written by turri with the models chosen - then the project, opened on them. */
+  async function startProject(dir: string, vendor: string, bedrock?: { maker: string; region: string }) {
+    await anEngine();
+    const { message } = (await call("initConfig", { dir, vendor, bedrock })) as { message: string };
+    return { ...((await openProject(dir)) as object), setup: message };
+  }
+
+  workspaces.set(window.id, workspace);
+  window.once("ready-to-show", () => window.show());
+  window.on("focus", () => {
+    lastFocused = workspace;
+    byRecency = [workspace, ...byRecency.filter((other) => other !== workspace)];
+    buildMenu();
+  });
+  // The zoom chosen last time, kept across reloads and launches.
+  window.webContents.on("did-finish-load", () => window.webContents.setZoomLevel(zoom));
+  // Links leave the app for the browser; the window only ever shows the app.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  if (process.env.VITE_DEV_SERVER_URL) void window.loadURL(process.env.VITE_DEV_SERVER_URL);
+  else void window.loadFile(join(ROOT, "dist", "index.html"));
+  window.on("closed", () => {
+    // Gone first: the preview's clean-up must not reach for a window already destroyed, nor send to it.
+    closed = true;
+    workspaces.delete(window.id);
+    if (lastFocused === workspace) lastFocused = undefined;
+    byRecency = byRecency.filter((other) => other !== workspace);
+    engine?.kill();
+    preview.dispose();
+    terminal.dispose();
+    showRunning();
+    buildMenu();
+  });
+  return workspace;
+}
+
+/** Every window's engine and terminal stopped: the app is quitting. */
+function closeAll() {
+  for (const { window } of workspaces.values()) if (!window.isDestroyed()) window.destroy();
 }
 
 // ---------- projects ----------
@@ -176,54 +367,59 @@ function recents(): string[] {
   }
 }
 
-async function openProject(named: string) {
+/**
+ * Where a project opens: the window it is open in already, brought forward - one engine to a project, never two
+ * work loops on the same files - or else the window asking, if it has no project yet, or else a window of its own.
+ * What is opened is the window's to show; nothing is when the project was open already.
+ */
+function openWhere(from: Workspace | undefined, named: string): { into: Workspace; opened: Promise<unknown> } {
   const dir = canonical(named);
-  // The project open now stops answering as soon as its engine is stopped: the window says it is opening another.
-  opening = dir;
-  send("project:opening", { dir, name: basename(dir) });
-  buildMenu();
-  try {
-    if (engine === undefined || engineHasProject) await startEngine();
-    engineHasProject = true;
-    // Another project's app is not this one's: the preview starts empty, and its terminal in this project's folder.
-    preview.dispose();
-    terminal.setDir(dir);
-    const summary = await call("open", { dir });
-    writeFileSync(RECENTS_FILE, JSON.stringify([dir, ...recents().filter((other) => other !== dir)].slice(0, RECENTS_KEPT)));
-    app.addRecentDocument(dir);
-    window?.setRepresentedFilename(dir);
-    window?.setTitle((summary as { name: string }).name);
-    return summary;
-  } catch (error) {
-    // Not opened: the window stops waiting. Opened, it stops once it has the project - sooner, the last one shows again.
-    send("project:opening", null);
-    throw error;
-  } finally {
-    opening = undefined;
-    buildMenu();
+  const there = [...workspaces.values()].find((workspace) => workspace.dir === dir || workspace.opening === dir);
+  if (there !== undefined) {
+    there.window.show();
+    there.window.focus();
+    // Its engine stopped: it is opened again there.
+    if (there.open || there.opening !== undefined) return { into: there, opened: Promise.resolve(null) };
+    return { into: there, opened: there.openProject(dir) };
   }
+  const into = from !== undefined && from.dir === undefined && from.opening === undefined ? from : createWorkspace();
+  return { into, opened: into.openProject(dir) };
 }
 
-/** A project opened from the menu or the Dock: the window is sent it, or why it did not open. */
-function openedFromMenu(summary: Promise<unknown>) {
-  summary.then(
-    (opened) => opened && send("project:opened", opened),
-    (error) => send("project:failed", { text: error instanceof Error ? error.message : String(error) }),
+/** A project opened from the menu, the Dock or a welcome screen into another window: that window is sent it, or why not. */
+function deliver({ into, opened }: { into: Workspace; opened: Promise<unknown> }) {
+  opened.then(
+    (summary) => summary && into.send("project:opened", summary),
+    (error) => {
+      const text = error instanceof Error ? error.message : String(error);
+      // A window made for it, still on its welcome screen, says it there; one with a project, in its notice.
+      into.send("project:failed", { text });
+      if (into.dir === undefined) void dialog.showMessageBox(into.window, { type: "warning", message: "The project did not open.", detail: text });
+    },
   );
 }
 
-async function chooseProject() {
-  const result = await dialog.showOpenDialog(window!, { title: "Open a turri project", properties: ["openDirectory", "createDirectory"], buttonLabel: "Open Project" });
+/** A project opened from a welcome screen: its summary when it opened there, null when it opened - or was open - in another window. */
+async function openFrom(from: Workspace, named: string) {
+  const where = openWhere(from, named);
+  if (where.into === from) return where.opened;
+  deliver(where);
+  return null;
+}
+
+async function chooseProject(from: Workspace | undefined) {
+  const options = { title: "Open a turri project", properties: ["openDirectory", "createDirectory"] as Array<"openDirectory" | "createDirectory">, buttonLabel: "Open Project" };
+  const result = from ? await dialog.showOpenDialog(from.window, options) : await dialog.showOpenDialog(options);
   if (result.canceled || result.filePaths.length === 0) return null;
-  return openProject(result.filePaths[0]!);
+  return result.filePaths[0]!;
 }
 
 /**
  * A new project's folder: named and placed in the save sheet, and made. A folder of that name with anything in it
  * already is not taken over. Nothing is opened yet - the window asks which models it runs on first (startProject).
  */
-async function newProjectFolder() {
-  const result = await dialog.showSaveDialog(window!, {
+async function newProjectFolder(from: Workspace) {
+  const result = await dialog.showSaveDialog(from.window, {
     title: "Start a new turri project",
     buttonLabel: "Create",
     nameFieldLabel: "Project name:",
@@ -239,92 +435,51 @@ async function newProjectFolder() {
   return dir;
 }
 
-/** The engine, started if no project has started it yet: for what it is asked before a project opens. */
-async function anEngine() {
-  if (engine === undefined) await startEngine();
+/** The projects open in every window, the one last in front first - each with its window's id, and whether it is the asking one. */
+function openProjects(from: Workspace) {
+  const all = [...byRecency, ...[...workspaces.values()].filter((workspace) => !byRecency.includes(workspace))];
+  return all
+    .filter((workspace) => workspace.dir !== undefined)
+    .map((workspace) => ({ id: workspace.window.id, name: workspace.name ?? basename(workspace.dir!), dir: workspace.dir!, running: workspace.running, here: workspace === from }));
 }
 
-/** A new project's config.turri.yaml, written by turri with the models chosen - then the project, opened on them. */
-async function startProject(dir: string, vendor: string, bedrock?: { maker: string; region: string }) {
-  await anEngine();
-  const { message } = (await call("initConfig", { dir, vendor, bedrock })) as { message: string };
-  return { ...((await openProject(dir)) as object), setup: message };
+/** A new project is started in a window with none yet: the one in front if it has none, a new one otherwise. */
+async function newProject() {
+  const front = focused();
+  const into = front !== undefined && front.dir === undefined && front.opening === undefined ? front : createWorkspace();
+  await new Promise<void>((resolve) => (into.window.webContents.isLoading() ? into.window.webContents.once("did-finish-load", () => resolve()) : resolve()));
+  into.send("menu", "new-project");
 }
 
-// ---------- the window ----------
-
-function createWindow() {
-  window = new BrowserWindow({
-    width: 1560,
-    height: 860,
-    minWidth: 1100,
-    minHeight: 620,
-    title: "turri",
-    icon: join(ROOT, "build", "icon.png"),
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 16, y: 18 },
-    backgroundColor: backgroundFor(),
-    show: false,
-    webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: false },
-  });
-  window.once("ready-to-show", () => window?.show());
-  // The zoom chosen last time, kept across reloads and launches.
-  window.webContents.on("did-finish-load", () => window?.webContents.setZoomLevel(zoom));
-  // For development: TURRI_APP_OPEN opens a project at start, TURRI_APP_SCREENSHOT=<file.png> captures the window and quits.
-  window.webContents.once("did-finish-load", async () => {
-    if (process.env.TURRI_APP_OPEN) send("project:opened", await openProject(process.env.TURRI_APP_OPEN));
-    if (process.env.TURRI_APP_SCREENSHOT) {
-      if (process.env.TURRI_APP_VIEW) setTimeout(() => send("menu", `view:${process.env.TURRI_APP_VIEW}`), 300);
-      setTimeout(async () => {
-        writeFileSync(process.env.TURRI_APP_SCREENSHOT!, (await window!.webContents.capturePage()).toPNG());
-        app.quit();
-      }, 2500);
-    }
-  });
-  // Links leave the app for the browser; the window only ever shows the app.
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
-    return { action: "deny" };
-  });
-  if (process.env.VITE_DEV_SERVER_URL) void window.loadURL(process.env.VITE_DEV_SERVER_URL);
-  else void window.loadFile(join(ROOT, "dist", "index.html"));
-  window.on("closed", () => {
-    // Gone first: the preview's clean-up must not reach for a window already destroyed, nor send to it.
-    window = undefined;
-    preview.dispose();
-    terminal.dispose();
-  });
-}
+// ---------- the menu ----------
 
 function buildMenu() {
-  const menuAction = (action: string) => () => send("menu", action);
+  const front = focused();
+  const menuAction = (action: string) => () => focused()?.send("menu", action);
+  const ready = front?.open === true;
   const template: MenuItemConstructorOptions[] = [
     { role: "appMenu" },
     {
       label: "File",
       submenu: [
-        { label: "New Project…", accelerator: "CmdOrCtrl+N", click: menuAction("new-project") },
-        { label: "Open Project…", accelerator: "CmdOrCtrl+O", click: () => openedFromMenu(chooseProject()), enabled: opening === undefined },
+        { label: "New Project…", accelerator: "CmdOrCtrl+N", click: () => void newProject() },
+        { label: "Open Project…", accelerator: "CmdOrCtrl+O", click: async () => {
+          const from = focused();
+          const dir = await chooseProject(from);
+          if (dir !== null) deliver(openWhere(from, dir));
+        } },
         { role: "recentDocuments", submenu: [{ role: "clearRecentDocuments" }] } as MenuItemConstructorOptions,
+        { label: "New Window", accelerator: "CmdOrCtrl+Shift+N", click: () => void createWorkspace() },
+        { label: "Switch Project…", accelerator: "CmdOrCtrl+Shift+P", click: menuAction("switch-project") },
         { type: "separator" },
-        { label: "Save Spec", accelerator: "CmdOrCtrl+S", click: menuAction("save"), enabled: engine !== undefined && opening === undefined },
+        { label: "Save Spec", accelerator: "CmdOrCtrl+S", click: menuAction("save"), enabled: ready },
         { type: "separator" },
-        { label: "Reveal Project in Finder", click: menuAction("reveal"), enabled: engine !== undefined && opening === undefined },
+        { label: "Reveal Project in Finder", click: menuAction("reveal"), enabled: ready },
         { type: "separator" },
         { role: "close" },
       ],
     },
     { role: "editMenu" },
-    {
-      label: "Spec",
-      submenu: [
-        { label: "Regenerate…", accelerator: "CmdOrCtrl+R", click: menuAction("regenerate-how"), enabled: engine !== undefined && opening === undefined },
-        { label: "Regenerate What Changed", accelerator: "CmdOrCtrl+Shift+R", click: menuAction("regenerate"), enabled: engine !== undefined && opening === undefined },
-        { label: "Preview the Plan", accelerator: "CmdOrCtrl+Shift+P", click: menuAction("glimpse"), enabled: engine !== undefined && opening === undefined },
-        { label: "Write Conformance Tests", click: menuAction("conform"), enabled: engine !== undefined && opening === undefined },
-        { label: "Release to Try", click: menuAction("release"), enabled: engine !== undefined && opening === undefined },
-      ],
-    },
     {
       label: "View",
       submenu: [
@@ -355,18 +510,39 @@ function buildMenu() {
         { role: "togglefullscreen" },
       ],
     },
+    // macOS lists the open windows here, each by its project's name, and ⌘` goes from one to the next.
     { role: "windowMenu" },
+    // Last, at the right: what turri does with the spec in front.
+    {
+      label: "Spec",
+      submenu: [
+        { label: "Regenerate…", accelerator: "CmdOrCtrl+R", click: menuAction("regenerate-how"), enabled: ready },
+        { label: "Regenerate What Changed", accelerator: "CmdOrCtrl+Shift+R", click: menuAction("regenerate"), enabled: ready },
+        { label: "Preview the Plan", click: menuAction("glimpse"), enabled: ready },
+        { label: "Write Conformance Tests", click: menuAction("conform"), enabled: ready },
+        { label: "Release to Try", click: menuAction("release"), enabled: ready },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 // ---------- the bridge ----------
 
-ipcMain.handle("engine:call", (_event, method: string, params: unknown) => call(method, params));
-ipcMain.handle("project:choose", () => chooseProject());
-ipcMain.handle("project:new", () => newProjectFolder());
-ipcMain.handle("project:vendors", async () => (await anEngine(), call("vendors")));
-ipcMain.handle("project:start", (_event, dir: string, vendor: string, bedrock?: { maker: string; region: string }) => startProject(dir, vendor, bedrock));
+// Each window asks of its own workspace: its engine, its preview, its terminal.
+ipcMain.handle("engine:call", (event, method: string, params: unknown) => workspaceOf(event.sender).call(method, params));
+ipcMain.handle("project:choose", async (event) => {
+  const from = workspaceOf(event.sender);
+  const dir = await chooseProject(from);
+  return dir === null ? null : openFrom(from, dir);
+});
+ipcMain.handle("project:new", (event) => newProjectFolder(workspaceOf(event.sender)));
+ipcMain.handle("project:vendors", async (event) => {
+  const workspace = workspaceOf(event.sender);
+  await workspace.anEngine();
+  return workspace.call("vendors");
+});
+ipcMain.handle("project:start", (event, dir: string, vendor: string, bedrock?: { maker: string; region: string }) => workspaceOf(event.sender).startProject(dir, vendor, bedrock));
 // A new project given up before it started: its folder, made for it and still empty, taken away again.
 ipcMain.handle("project:abandon", (_event, dir: string) => {
   try {
@@ -375,24 +551,33 @@ ipcMain.handle("project:abandon", (_event, dir: string) => {
     /* something is in it now: it stays */
   }
 });
-ipcMain.handle("project:open", (_event, dir: string) => openProject(dir));
+ipcMain.handle("project:open", (event, dir: string) => openFrom(workspaceOf(event.sender), dir));
 ipcMain.handle("project:recents", () => recents());
+ipcMain.handle("projects:list", (event) => openProjects(workspaceOf(event.sender)));
+// Another open project's window, brought forward.
+ipcMain.handle("projects:switch", (_event, id: number) => {
+  const workspace = workspaces.get(id);
+  if (workspace === undefined) return;
+  workspace.window.show();
+  workspace.window.focus();
+});
 ipcMain.handle("shell:reveal", (_event, path: string) => shell.showItemInFolder(path));
 ipcMain.handle("shell:open", (_event, path: string) => shell.openPath(path));
-ipcMain.handle("preview:place", (_event, rect: Rectangle | null) => preview.place(rect));
-ipcMain.handle("preview:open", (_event, url: string) => preview.open(url));
-ipcMain.handle("preview:go", (_event, action: "back" | "forward" | "reload" | "stop" | "devtools") => preview.go(action));
-ipcMain.handle("preview:state", () => preview.state());
-ipcMain.handle("terminal:open", () => terminal.open());
-ipcMain.handle("terminal:write", (_event, data: string) => terminal.write(data));
-ipcMain.handle("terminal:resize", (_event, cols: number, rows: number) => terminal.resize(cols, rows));
-ipcMain.handle("terminal:restart", () => terminal.restart());
+ipcMain.handle("preview:place", (event, rect: Rectangle | null) => workspaceOf(event.sender).preview.place(rect));
+ipcMain.handle("preview:open", (event, url: string) => workspaceOf(event.sender).preview.open(url));
+ipcMain.handle("preview:go", (event, action: "back" | "forward" | "reload" | "stop" | "devtools") => workspaceOf(event.sender).preview.go(action));
+ipcMain.handle("preview:state", (event) => workspaceOf(event.sender).preview.state());
+ipcMain.handle("terminal:open", (event) => workspaceOf(event.sender).terminal.open());
+ipcMain.handle("terminal:write", (event, data: string) => workspaceOf(event.sender).terminal.write(data));
+ipcMain.handle("terminal:resize", (event, cols: number, rows: number) => workspaceOf(event.sender).terminal.resize(cols, rows));
+ipcMain.handle("terminal:restart", (event) => workspaceOf(event.sender).terminal.restart());
 // Which turri the app runs - worked out once: it does not change while the app runs.
 const turri = turriVersion(ROOT);
 ipcMain.handle("turri:version", () => turri);
 ipcMain.handle("theme:get", () => theme);
-ipcMain.handle("theme:set", (_event, next: Theme) => setTheme(next));
-nativeTheme.on("updated", () => window?.setBackgroundColor(backgroundFor()));
+nativeTheme.on("updated", () => {
+  for (const { window } of workspaces.values()) window.setBackgroundColor(backgroundFor());
+});
 // A native context menu: the window lists what it offers, and is told which was chosen.
 ipcMain.handle("menu:popup", (event, items: Array<{ id: string; label: string; enabled?: boolean } | { type: "separator" }>) => {
   return new Promise<string | null>((resolve) => {
@@ -404,9 +589,10 @@ ipcMain.handle("menu:popup", (event, items: Array<{ id: string; label: string; e
   });
 });
 
+// A project from the Dock, Finder or the recent documents: in the window in front if it has none, a new one otherwise.
 app.on("open-file", (event, path) => {
   event.preventDefault();
-  if (window && opening === undefined) openedFromMenu(openProject(path));
+  void app.whenReady().then(() => deliver(openWhere(focused(), path)));
 });
 
 app.whenReady().then(() => {
@@ -414,22 +600,28 @@ app.whenReady().then(() => {
   app.setName("turri");
   // The bundle carries the icon once scripts/brand.mjs has run; the Dock is given it as well, for when it has not.
   app.dock?.setIcon(join(ROOT, "build", "icon.png"));
+  // The Dock's menu lists the windows on its own; a new one is opened from it too.
+  app.dock?.setMenu(Menu.buildFromTemplate([{ label: "New Window", click: () => void createWorkspace() }]));
   nativeTheme.themeSource = theme;
   buildMenu();
-  createWindow();
-  app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());
+  const first = createWorkspace();
+  // For development: TURRI_APP_OPEN opens a project at start, TURRI_APP_SCREENSHOT=<file.png> captures the window and quits.
+  first.window.webContents.once("did-finish-load", async () => {
+    if (process.env.TURRI_APP_OPEN) first.send("project:opened", await first.openProject(process.env.TURRI_APP_OPEN));
+    if (process.env.TURRI_APP_SCREENSHOT) {
+      if (process.env.TURRI_APP_VIEW) setTimeout(() => first.send("menu", `view:${process.env.TURRI_APP_VIEW}`), 300);
+      setTimeout(async () => {
+        writeFileSync(process.env.TURRI_APP_SCREENSHOT!, (await first.window.webContents.capturePage()).toPNG());
+        app.quit();
+      }, 2500);
+    }
+  });
+  app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWorkspace());
 });
 
 app.on("window-all-closed", () => {
-  engine?.kill();
-  terminal.dispose();
   if (process.platform !== "darwin") app.quit();
 });
 
-// Quitting - ⌘Q, the menu, app.quit() - closes no window first, so the engine is stopped here too.
-app.on("will-quit", () => {
-  engine?.kill();
-  terminal.dispose();
-});
-
-app.on("before-quit", () => engine?.kill());
+// Quitting - ⌘Q, the menu, app.quit() - closes no window first, so each window's engine and terminal are stopped here.
+app.on("will-quit", closeAll);
