@@ -230,8 +230,8 @@ export function App() {
     () =>
       window.turri.on("menu", (action: string) => {
         if (action.startsWith("view:")) setView(action.slice(5) as View);
-        else if (action === "regenerate") void regenerate();
         else if (action === "regenerate-how" && spec?.ok) setChoosing([]);
+        else if (action === "regenerate") void regenerate();
         else if (action === "glimpse") void glimpse();
         else if (action === "conform") void conform();
         else if (action === "release") void release();
@@ -321,25 +321,14 @@ export function App() {
                 <Icon name="release" /> Release
               </button>
               {/* Only turri halts a pulse: while one regenerates this module, Regenerate waits for it. */}
-              <div className="split">
-                <button
-                  className="button primary"
-                  disabled={spec === null || !spec.ok || busy || runningFor(spec.module) !== undefined}
-                  onClick={() => void regenerate()}
-                  title={spec && runningFor(spec.module) ? "turri is regenerating this module" : "Regenerate what changed in the spec (⌘R)"}
-                >
-                  {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} Regenerate
-                </button>
-                <button
-                  className="button primary split-more"
-                  disabled={spec === null || !spec.ok || busy || runningFor(spec.module) !== undefined}
-                  onClick={() => setChoosing([])}
-                  title="Regenerate another way - chosen functional specs, or from scratch (⇧⌘R)"
-                  aria-label="Regenerate another way"
-                >
-                  <Icon name="down" size={14} />
-                </button>
-              </div>
+              <button
+                className="button primary"
+                disabled={spec === null || !spec.ok || busy || runningFor(spec.module) !== undefined}
+                onClick={() => setChoosing([])}
+                title={spec && runningFor(spec.module) ? "turri is regenerating this module" : "Regenerate - what changed, chosen functional specs, or from scratch (⌘R)"}
+              >
+                {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} Regenerate…
+              </button>
             </div>
           </header>
 

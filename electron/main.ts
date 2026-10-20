@@ -271,8 +271,8 @@ function buildMenu() {
     {
       label: "Spec",
       submenu: [
-        { label: "Regenerate What Changed", accelerator: "CmdOrCtrl+R", click: menuAction("regenerate"), enabled: engine !== undefined },
-        { label: "Regenerate…", accelerator: "CmdOrCtrl+Shift+R", click: menuAction("regenerate-how"), enabled: engine !== undefined },
+        { label: "Regenerate…", accelerator: "CmdOrCtrl+R", click: menuAction("regenerate-how"), enabled: engine !== undefined },
+        { label: "Regenerate What Changed", accelerator: "CmdOrCtrl+Shift+R", click: menuAction("regenerate"), enabled: engine !== undefined },
         { label: "Preview the Plan", accelerator: "CmdOrCtrl+Shift+P", click: menuAction("glimpse"), enabled: engine !== undefined },
         { label: "Write Conformance Tests", click: menuAction("conform"), enabled: engine !== undefined },
         { label: "Release to Try", click: menuAction("release"), enabled: engine !== undefined },

@@ -2135,23 +2135,6 @@ code {
 
 /* ---------- regenerate, chosen how ---------- */
 
-/* Regenerate and its chevron, one button in two. */
-.split {
-  display: flex;
-}
-.split > .button:first-child {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-.split-more {
-  padding: 0 6px;
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-  border-left: 1px solid color-mix(in srgb, var(--on-accent) 25%, transparent);
-}
-.split-more .icon {
-  margin: 0;
-}
 .regenerate-specs {
   margin-top: 14px;
 }
