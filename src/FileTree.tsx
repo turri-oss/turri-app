@@ -37,11 +37,10 @@ export function FileTree(props: { root: string; specs: Spec[]; selected: string 
   listedRef.current = listed;
 
   const list = useCallback(async (dir: string) => {
-    try {
-      const entries = await window.turri.call<FileEntry[]>("listFiles", { dir });
-      setListed((all) => new Map(all).set(dir, entries));
-    } catch {
-      // Gone: a folder deleted while open is simply not listed any more.
+    const entries = await window.turri.call<FileEntry[] | null>("listFiles", { dir }).catch(() => null);
+    if (entries) setListed((all) => new Map(all).set(dir, entries));
+    else {
+      // Gone: a folder deleted while open, or left open in a project since reset, is simply not listed.
       setListed((all) => {
         const next = new Map(all);
         next.delete(dir);

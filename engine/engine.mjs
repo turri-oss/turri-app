@@ -248,9 +248,10 @@ function inProject(path) {
   return full;
 }
 
-/** One folder of the project, folders first: the tree lists a folder when it is opened. */
+/** One folder of the project, folders first: the tree lists a folder when it is opened. Null for one not there (any more). */
 function listFiles({ dir }) {
   const at = inProject(dir ?? projectDir);
+  if (!existsSync(at) || !statSync(at).isDirectory()) return null;
   const entries = readdirSync(at, { withFileTypes: true })
     .filter((entry) => !UNLISTED.has(entry.name) && (entry.isDirectory() || entry.isFile()))
     .map((entry) => ({ name: entry.name, path: join(at, entry.name), dir: entry.isDirectory() }));
