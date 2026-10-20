@@ -16,16 +16,20 @@ type How = "continue" | "changed" | "again" | "scratch" | "chain";
  * choice while there are any - what changed in the spec (the button's own), chosen functional specs again though they did
  * not change, the whole module from scratch, or it and every module it requires from scratch - and, for any of them,
  * how to cut the work, in the person's words. It says what the person would type: from scratch, turri asks in the chat
- * before it deletes anything.
+ * before it deletes anything. A module with nothing built has one way of its own - all of it, each functional spec built
+ * on the ones before it, so none alone and nothing to start over - and, on a chain, its chain from scratch.
  */
 export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec: Spec; initial?: string[]; onClose: () => void; onRegenerate: (regeneration: Regeneration) => void }) {
   // Some of its functional specs built and some not - a regeneration stopped, or halted, part of the way: carry on.
   const left = spec.functionalSpecs.filter((entry) => !entry.built).map((entry) => entry.frid);
   const partly = left.length > 0 && left.length < spec.functionalSpecs.length;
-  const [how, setHow] = useState<How>(initial?.length ? "again" : partly ? "continue" : "changed");
+  const none = !spec.functionalSpecs.some((entry) => entry.built);
+  const [how, setHow] = useState<How>(initial?.length && !none ? "again" : partly ? "continue" : "changed");
   const [frids, setFrids] = useState<Set<string>>(new Set(initial ?? []));
   const [guidance, setGuidance] = useState("");
   const chained = spec.requires.length > 0;
+  // Only what is built is regenerated again: what is not is built by continuing, or by what changed.
+  const builtSpecs = spec.functionalSpecs.filter((entry) => entry.built);
 
   const toggle = (frid: string) =>
     setFrids((now) => {
@@ -35,7 +39,18 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
       return next;
     });
 
-  const ways: Array<{ id: How; title: string; detail: string }> = [
+  const ways: Array<{ id: How; title: string; detail: string }> = none
+    ? [
+        {
+          id: "changed",
+          title: `all of ${spec.module}`,
+          detail: `nothing of it is built yet: its ${spec.functionalSpecs.length === 1 ? "functional spec" : `${spec.functionalSpecs.length} functional specs`} regenerated from the spec, in pulses - each built on the ones before it.`,
+        },
+        ...(chained
+          ? [{ id: "chain" as const, title: `${spec.module}, and its whole chain from scratch`, detail: `the modules it requires - ${spec.requires.join(", ")} - deleted and built again from the bottom first, then ${spec.module} on them.` }]
+          : []),
+      ]
+    : [
     ...(partly
       ? [
           {
@@ -50,14 +65,14 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
       title: "what changed",
       detail: spec.drifted === false ? "the code is built from the spec as it is now: there is nothing to bring up to it." : "the code brought up to the spec as it is now - only what changed is built.",
     },
-    { id: "again", title: "chosen functional specs again", detail: "built again though they did not change - the code for them rewritten from the spec." },
+    { id: "again", title: "chosen functional specs again", detail: "built ones, built again though they did not change - the code for them rewritten from the spec." },
     { id: "scratch", title: `all of ${spec.module} from scratch`, detail: "its code and conformance tests deleted - committed first, so its history keeps them - and every functional spec built again." },
     ...(chained
       ? [{ id: "chain" as const, title: `${spec.module} and its whole chain from scratch`, detail: `the same for every module it requires too - ${spec.requires.join(", ")} - built again from the bottom.` }]
       : []),
-  ];
+      ];
 
-  const ordered = spec.functionalSpecs.filter((entry) => frids.has(entry.frid)).map((entry) => entry.frid);
+  const ordered = builtSpecs.filter((entry) => frids.has(entry.frid)).map((entry) => entry.frid);
   const ready = how !== "again" || ordered.length > 0;
   const go = () => {
     if (!ready) return;
@@ -83,21 +98,21 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
           <div className="regenerate-specs">
             <div className="regenerate-specs-head">
               <span className="muted">
-                {ordered.length} of {spec.functionalSpecs.length} chosen
+                {ordered.length} of {builtSpecs.length} built chosen
               </span>
-              <button className="link" onClick={() => setFrids(new Set(ordered.length === spec.functionalSpecs.length ? [] : spec.functionalSpecs.map((entry) => entry.frid)))}>
-                {ordered.length === spec.functionalSpecs.length ? "none" : "all"}
+              <button className="link" onClick={() => setFrids(new Set(ordered.length === builtSpecs.length ? [] : builtSpecs.map((entry) => entry.frid)))}>
+                {ordered.length === builtSpecs.length ? "none" : "all"}
               </button>
             </div>
             <div className="options">
-              {spec.functionalSpecs.map((entry) => (
+              {builtSpecs.map((entry) => (
                 <button key={entry.frid} role="checkbox" aria-checked={frids.has(entry.frid)} className={`option check ${frids.has(entry.frid) ? "on" : ""}`} onClick={() => toggle(entry.frid)}>
                   <span className="checkbox">{frids.has(entry.frid) && <Icon name="check" size={12} />}</span>
                   <span className="regenerate-spec">
                     <span className="regenerate-frid">{entry.frid}</span>
                     <span className="regenerate-text">{entry.text.split("\n")[0]}</span>
                   </span>
-                  <span className="muted small">{entry.conformed ? "tested" : entry.built ? "built" : "to build"}</span>
+                  <span className="muted small">{entry.conformed ? "tested" : "built"}</span>
                 </button>
               ))}
             </div>

@@ -217,14 +217,24 @@ export function SpecView(props: {
   };
   useEffect(() => () => clearTimeout(hoverTimer.current), []);
 
+  /**
+   * A functional spec's mark, clicked. Built, it is regenerated again, or its conformance tests written. Not built - new,
+   * or changed since - it is regenerated, not again: with the others not built yet, as each is built on the ones before
+   * it and turri builds them in order. Its conformance tests wait for its code.
+   */
   const markerMenu = async (frid: string) => {
+    const built = spec.functionalSpecs.find((entry) => entry.frid === frid)?.built === true;
+    const left = spec.functionalSpecs.filter((entry) => !entry.built).map((entry) => entry.frid);
     const chosen = await window.turri.popup([
-      { id: "again", label: `regenerate functional spec ${frid} again` },
-      { id: "conform", label: `write conformance tests for ${frid}` },
+      built
+        ? { id: "again", label: `regenerate functional spec ${frid} again` }
+        : { id: "build", label: left.length > 1 ? `regenerate functional specs ${left.join(", ")} - not built yet` : `regenerate functional spec ${frid}` },
+      built ? { id: "conform", label: `write conformance tests for ${frid}` } : { id: "conform", label: `write conformance tests for ${frid} - once it is built`, enabled: false },
       { type: "separator" },
       { id: "copy", label: "copy text" },
     ]);
     if (chosen === "again") props.onRegenerate([frid]);
+    else if (chosen === "build") props.onRegenerate();
     else if (chosen === "conform") props.onConform([frid]);
     else if (chosen === "copy") void navigator.clipboard.writeText(spec.functionalSpecs.find((entry) => entry.frid === frid)?.text ?? "");
   };

@@ -375,7 +375,13 @@ export function App() {
                 className="button primary"
                 disabled={spec === null || !spec.ok || busy || runningFor(spec.module) !== undefined}
                 onClick={() => setChoosing([])}
-                title={spec && runningFor(spec.module) ? "turri is regenerating this module" : "regenerate - what changed, chosen functional specs, or from scratch (⌘R)"}
+                title={
+                  spec && runningFor(spec.module)
+                    ? "turri is regenerating this module"
+                    : spec && !spec.functionalSpecs.some((entry) => entry.built)
+                      ? "regenerate all of it - nothing is built yet (⌘R)"
+                      : "regenerate - what changed, chosen functional specs, or from scratch (⌘R)"
+                }
               >
                 {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} regenerate…
               </button>
