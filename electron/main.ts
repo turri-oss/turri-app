@@ -72,6 +72,8 @@ const pending = new Map<number, { resolve: (value: unknown) => void; reject: (er
 let running = 0;
 /** Whether the engine has a project open: one that has not - started for a new project's config - opens one as it is. */
 let engineHasProject = false;
+/** The project being opened, while it is: the window waits under a spinner, and the menu's project items wait too. */
+let opening: string | undefined;
 
 function startEngine(): Promise<void> {
   engine?.kill();
@@ -176,18 +178,38 @@ function recents(): string[] {
 
 async function openProject(named: string) {
   const dir = canonical(named);
-  if (engine === undefined || engineHasProject) await startEngine();
-  engineHasProject = true;
-  // Another project's app is not this one's: the preview starts empty, and its terminal in this project's folder.
-  preview.dispose();
-  terminal.setDir(dir);
-  const summary = await call("open", { dir });
-  writeFileSync(RECENTS_FILE, JSON.stringify([dir, ...recents().filter((other) => other !== dir)].slice(0, RECENTS_KEPT)));
-  app.addRecentDocument(dir);
-  window?.setRepresentedFilename(dir);
-  window?.setTitle((summary as { name: string }).name);
+  // The project open now stops answering as soon as its engine is stopped: the window says it is opening another.
+  opening = dir;
+  send("project:opening", { dir, name: basename(dir) });
   buildMenu();
-  return summary;
+  try {
+    if (engine === undefined || engineHasProject) await startEngine();
+    engineHasProject = true;
+    // Another project's app is not this one's: the preview starts empty, and its terminal in this project's folder.
+    preview.dispose();
+    terminal.setDir(dir);
+    const summary = await call("open", { dir });
+    writeFileSync(RECENTS_FILE, JSON.stringify([dir, ...recents().filter((other) => other !== dir)].slice(0, RECENTS_KEPT)));
+    app.addRecentDocument(dir);
+    window?.setRepresentedFilename(dir);
+    window?.setTitle((summary as { name: string }).name);
+    return summary;
+  } catch (error) {
+    // Not opened: the window stops waiting. Opened, it stops once it has the project - sooner, the last one shows again.
+    send("project:opening", null);
+    throw error;
+  } finally {
+    opening = undefined;
+    buildMenu();
+  }
+}
+
+/** A project opened from the menu or the Dock: the window is sent it, or why it did not open. */
+function openedFromMenu(summary: Promise<unknown>) {
+  summary.then(
+    (opened) => opened && send("project:opened", opened),
+    (error) => send("project:failed", { text: error instanceof Error ? error.message : String(error) }),
+  );
 }
 
 async function chooseProject() {
@@ -282,12 +304,12 @@ function buildMenu() {
       label: "File",
       submenu: [
         { label: "New Project…", accelerator: "CmdOrCtrl+N", click: menuAction("new-project") },
-        { label: "Open Project…", accelerator: "CmdOrCtrl+O", click: () => void chooseProject().then((summary) => summary && send("project:opened", summary)) },
+        { label: "Open Project…", accelerator: "CmdOrCtrl+O", click: () => openedFromMenu(chooseProject()), enabled: opening === undefined },
         { role: "recentDocuments", submenu: [{ role: "clearRecentDocuments" }] } as MenuItemConstructorOptions,
         { type: "separator" },
-        { label: "Save Spec", accelerator: "CmdOrCtrl+S", click: menuAction("save"), enabled: engine !== undefined },
+        { label: "Save Spec", accelerator: "CmdOrCtrl+S", click: menuAction("save"), enabled: engine !== undefined && opening === undefined },
         { type: "separator" },
-        { label: "Reveal Project in Finder", click: menuAction("reveal"), enabled: engine !== undefined },
+        { label: "Reveal Project in Finder", click: menuAction("reveal"), enabled: engine !== undefined && opening === undefined },
         { type: "separator" },
         { role: "close" },
       ],
@@ -296,11 +318,11 @@ function buildMenu() {
     {
       label: "Spec",
       submenu: [
-        { label: "Regenerate…", accelerator: "CmdOrCtrl+R", click: menuAction("regenerate-how"), enabled: engine !== undefined },
-        { label: "Regenerate What Changed", accelerator: "CmdOrCtrl+Shift+R", click: menuAction("regenerate"), enabled: engine !== undefined },
-        { label: "Preview the Plan", accelerator: "CmdOrCtrl+Shift+P", click: menuAction("glimpse"), enabled: engine !== undefined },
-        { label: "Write Conformance Tests", click: menuAction("conform"), enabled: engine !== undefined },
-        { label: "Release to Try", click: menuAction("release"), enabled: engine !== undefined },
+        { label: "Regenerate…", accelerator: "CmdOrCtrl+R", click: menuAction("regenerate-how"), enabled: engine !== undefined && opening === undefined },
+        { label: "Regenerate What Changed", accelerator: "CmdOrCtrl+Shift+R", click: menuAction("regenerate"), enabled: engine !== undefined && opening === undefined },
+        { label: "Preview the Plan", accelerator: "CmdOrCtrl+Shift+P", click: menuAction("glimpse"), enabled: engine !== undefined && opening === undefined },
+        { label: "Write Conformance Tests", click: menuAction("conform"), enabled: engine !== undefined && opening === undefined },
+        { label: "Release to Try", click: menuAction("release"), enabled: engine !== undefined && opening === undefined },
       ],
     },
     {
@@ -384,7 +406,7 @@ ipcMain.handle("menu:popup", (event, items: Array<{ id: string; label: string; e
 
 app.on("open-file", (event, path) => {
   event.preventDefault();
-  if (window) void openProject(path).then((summary) => send("project:opened", summary));
+  if (window && opening === undefined) openedFromMenu(openProject(path));
 });
 
 app.whenReady().then(() => {

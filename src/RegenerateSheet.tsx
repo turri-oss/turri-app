@@ -4,20 +4,25 @@ import { Icon } from "./ui.tsx";
 
 /** How to regenerate a module: each one of /regenerate's ways, said as turri takes it. */
 export type Regeneration =
+  | { how: "continue"; left: string[]; guidance: string }
   | { how: "changed"; guidance: string }
   | { how: "again"; frids: string[]; guidance: string }
   | { how: "scratch"; chain: boolean; guidance: string };
 
-type How = "changed" | "again" | "scratch" | "chain";
+type How = "continue" | "changed" | "again" | "scratch" | "chain";
 
 /**
- * Regenerate, chosen how: what changed in the spec (the button's own), chosen functional specs again though they did
+ * Regenerate, chosen how: on where a module partly built stopped - its functional specs not built yet, and the first
+ * choice while there are any - what changed in the spec (the button's own), chosen functional specs again though they did
  * not change, the whole module from scratch, or it and every module it requires from scratch - and, for any of them,
  * how to cut the work, in the person's words. It says what the person would type: from scratch, turri asks in the chat
  * before it deletes anything.
  */
 export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec: Spec; initial?: string[]; onClose: () => void; onRegenerate: (regeneration: Regeneration) => void }) {
-  const [how, setHow] = useState<How>(initial?.length ? "again" : "changed");
+  // Some of its functional specs built and some not - a regeneration stopped, or halted, part of the way: carry on.
+  const left = spec.functionalSpecs.filter((entry) => !entry.built).map((entry) => entry.frid);
+  const partly = left.length > 0 && left.length < spec.functionalSpecs.length;
+  const [how, setHow] = useState<How>(initial?.length ? "again" : partly ? "continue" : "changed");
   const [frids, setFrids] = useState<Set<string>>(new Set(initial ?? []));
   const [guidance, setGuidance] = useState("");
   const chained = spec.requires.length > 0;
@@ -31,6 +36,15 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
     });
 
   const ways: Array<{ id: How; title: string; detail: string }> = [
+    ...(partly
+      ? [
+          {
+            id: "continue" as const,
+            title: "continue where it stopped",
+            detail: `${spec.functionalSpecs.length - left.length} of ${spec.functionalSpecs.length} functional specs are built: the ${left.length === 1 ? "one" : left.length} left - ${left.join(", ")} - built now, on top of what is built.`,
+          },
+        ]
+      : []),
     {
       id: "changed",
       title: "what changed",
@@ -48,7 +62,7 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
   const go = () => {
     if (!ready) return;
     const said = guidance.trim();
-    onRegenerate(how === "changed" ? { how, guidance: said } : how === "again" ? { how, frids: ordered, guidance: said } : { how: "scratch", chain: how === "chain", guidance: said });
+    onRegenerate(how === "continue" ? { how, left, guidance: said } : how === "changed" ? { how, guidance: said } : how === "again" ? { how, frids: ordered, guidance: said } : { how: "scratch", chain: how === "chain", guidance: said });
   };
   const deletes = how === "scratch" || how === "chain";
 

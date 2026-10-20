@@ -81,6 +81,42 @@ export interface Job {
   environment?: string;
   note?: string;
   specGaps: Array<{ question: string; assumption: string }>;
+  /** What failed in it that the work went on past - a healer, the model provider - each once: a mark on its card. */
+  failures: Failure[];
+}
+
+/** A failure of a pulse's, from the ledger: `mark` is what its card says, `text` the whole of it. */
+export interface Failure {
+  mark: string;
+  text: string;
+}
+
+/** A pulse of an earlier session, as the ledger has it: read only, nothing of it live. */
+export interface PastPulse {
+  id: string;
+  run: string;
+  kind: string;
+  summary: string;
+  module: string | null;
+  pulse: number | null;
+  title: string | null;
+  /** How it ended - or that it never did, its run stopped while it ran (unended) or before it started (unstarted). */
+  status: "succeeded" | "failed" | "stopped" | "unended" | "unstarted";
+  landed: boolean | null;
+  stoppedBy: "person" | "turri" | null;
+  ms: number | null;
+  usage: Usage | null;
+  error: string | null;
+  failures: Failure[];
+}
+
+/** A run of turri's in the project - a session of the app's, a chat in a terminal, a headless regenerate - and its pulses. */
+export interface PastRun {
+  run: string;
+  mode: string | null;
+  started: string | null;
+  version: string | null;
+  pulses: PastPulse[];
 }
 
 export interface ModuleStatus {

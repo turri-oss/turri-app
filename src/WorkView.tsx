@@ -1,33 +1,46 @@
 import { useEffect, useRef, useState } from "react";
-import type { Job, Status, TranscriptEntry } from "./types.ts";
+import type { Failure, Job, PastPulse, PastRun, Status, TranscriptEntry } from "./types.ts";
 import { cost, elapsed, Empty, Icon, Spinner, tokens, useTick } from "./ui.tsx";
 import { hasSpecPart, PulseSpec, stageOf, turriSays } from "./PulseSpec.tsx";
 import { Prose } from "./Chat.tsx";
 
-/** The work: each codebase's plan, and every pulse - running, planned and done - opened into its agents' conversation. */
+/** Earlier sessions' runs shown at first: the last few, and more on asking. */
+const RUNS_SHOWN = 3;
+
+/**
+ * The work: each codebase's plan, and every pulse - running, planned and done - opened into its agents' conversation;
+ * below them, earlier sessions' pulses, from the ledger, opened into what it says of each.
+ */
 export function WorkView({
   status,
   jobs,
+  earlier,
   onShowInSpec,
   focus,
 }: {
   status: Status;
   jobs: Job[];
+  earlier: PastRun[];
   onShowInSpec: (file: string, lines: number[]) => void;
   /** A pulse to open and bring into view - one the chat says ended. */
   focus?: { id: string; at: number };
 }) {
   const [open, setOpen] = useState<string | null>(focus?.id ?? null);
+  const [runsShown, setRunsShown] = useState(RUNS_SHOWN);
   useEffect(() => {
     if (focus === undefined) return;
     setOpen(focus.id);
+    // An earlier pulse in a run not shown yet: the runs down to it are.
+    const run = earlier.findIndex((entry) => entry.pulses.some((pulse) => pulse.id === focus.id));
+    if (run >= runsShown) setRunsShown(run + 1);
     requestAnimationFrame(() => document.querySelector(`.job[data-id="${CSS.escape(focus.id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   }, [focus?.at]);
   const anyRunning = jobs.some((job) => job.status === "running");
   useTick(anyRunning);
   const selected = jobs.find((job) => job.id === open) ?? null;
+  const past = selected === null ? (earlier.flatMap((run) => run.pulses).find((pulse) => pulse.id === open) ?? null) : null;
 
-  if (jobs.length === 0 && status.modules.length === 0)
+  if (jobs.length === 0 && status.modules.length === 0 && earlier.length === 0)
     return (
       <Empty icon="layers" title="nothing has run yet">
         press regenerate and turri plans the work into pulses and starts them. each one shows up here, live.
@@ -62,14 +75,37 @@ export function WorkView({
           </div>
         ))}
 
-        <div className="sidebar-section inline">
-          Pulses {total > 0 && <span className="muted">· ${total.toFixed(2)} so far</span>}
-        </div>
+        {(jobs.length > 0 || earlier.length === 0) && (
+          <div className="sidebar-section inline">
+            Pulses {total > 0 && <span className="muted">· ${total.toFixed(2)} so far</span>}
+          </div>
+        )}
         {jobs.map((job) => (
           <JobCard key={job.id} job={job} open={job.id === open} onOpen={() => setOpen(job.id === open ? null : job.id)} />
         ))}
+
+        {earlier.length > 0 && <div className="sidebar-section inline">earlier sessions</div>}
+        {earlier.slice(0, runsShown).map((run) => (
+          <div key={run.run} className="past-run">
+            <div className="past-run-head">
+              <span>{when(run.started)}</span>
+              <span className="muted">· {MODES[run.mode ?? ""] ?? run.mode ?? "run"}</span>
+              {run.version && <span className="muted">· turri {run.version}</span>}
+              {runCost(run) && <span className="muted">· {runCost(run)}</span>}
+            </div>
+            {run.pulses.map((pulse) => (
+              <PastPulseCard key={pulse.id} pulse={pulse} open={pulse.id === open} onOpen={() => setOpen(pulse.id === open ? null : pulse.id)} />
+            ))}
+          </div>
+        ))}
+        {earlier.length > runsShown && (
+          <button className="link past-more" onClick={() => setRunsShown((now) => now + 5)}>
+            <Icon name="chevron" size={12} /> show earlier runs <span className="muted">· {earlier.length - runsShown} more</span>
+          </button>
+        )}
       </div>
       {selected && <Transcript key={selected.id} job={selected} onClose={() => setOpen(null)} onShowInSpec={onShowInSpec} />}
+      {past && <PastPulseDetail key={past.id} pulse={past} onClose={() => setOpen(null)} />}
     </div>
   );
 }
@@ -162,6 +198,7 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
           <Icon name="spark" /> <div>{job.diagnosis}</div>
         </div>
       )}
+      <FailureMarks failures={job.failures} />
       {job.agents.length > 0 && (
         <div className="agents">
           {job.agents.map((agent) => (
@@ -173,6 +210,130 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
         </div>
       )}
     </div>
+  );
+}
+
+/** What failed in a pulse that the work went on past - a healer, the model provider, a commit - each once, its whole on hover. */
+function FailureMarks({ failures }: { failures: Failure[] }) {
+  if (failures.length === 0) return null;
+  return (
+    <div className="failure-marks">
+      {failures.map((failure) => (
+        <span key={failure.mark} className="failure-mark" title={failure.text}>
+          <Icon name="warn" size={12} /> {failure.mark}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** How a run was started, as the ledger's `run.started` names it. */
+const MODES: Record<string, string> = { host: "in the app", chat: "in the terminal", regenerate: "turri regenerate, headless" };
+
+/** When a run started: today's and yesterday's by their time, older ones by their date too. */
+function when(ts: string | null): string {
+  if (ts === null) return "a run";
+  const at = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const time = `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  const day = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const ago = Math.round((day(new Date()) - day(at)) / 86_400_000);
+  if (ago === 0) return `today, ${time}`;
+  if (ago === 1) return `yesterday, ${time}`;
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}, ${time}`;
+}
+
+function runCost(run: PastRun): string {
+  const spent = run.pulses.reduce((sum, pulse) => sum + (pulse.usage?.cost ?? 0), 0);
+  return spent > 0 ? `$${spent.toFixed(2)}` : "";
+}
+
+/** How an earlier pulse ended: its status, whether it landed, who stopped it - or that its run stopped under it. */
+function outcome(pulse: PastPulse): string {
+  if (pulse.status === "unended") return "never ended - its session stopped while it ran";
+  if (pulse.status === "unstarted") return "never started - its session stopped first";
+  const by = pulse.status === "stopped" && pulse.stoppedBy !== null ? ` by ${pulse.stoppedBy === "turri" ? "turri" : "you"}` : "";
+  const landed = pulse.landed === true ? ", landed" : pulse.landed === false ? ", did not land" : "";
+  return `${pulse.status}${by}${landed}`;
+}
+
+/** A pulse of an earlier session: read only - how it ended, how long, what it cost - and opened into the ledger's facts. */
+function PastPulseCard({ pulse, open, onOpen }: { pulse: PastPulse; open: boolean; onOpen: () => void }) {
+  const kind = pulse.kind === "conformance" ? "conformance" : "regenerate";
+  const icon =
+    pulse.status === "succeeded" ? (
+      <Icon name={kind === "conformance" ? "checks" : "check"} />
+    ) : pulse.status === "failed" ? (
+      <Icon name="x" />
+    ) : pulse.status === "stopped" ? (
+      <Icon name="stop" />
+    ) : (
+      <Icon name="clock" />
+    );
+  return (
+    <div className={`job past ${kind} ${pulse.status} ${open ? "open" : ""}`} data-id={pulse.id} onClick={onOpen}>
+      <div className="job-head">
+        <span className={`job-icon ${pulse.status}`}>{icon}</span>
+        <div className="job-title">
+          <strong>{pulse.title ?? pulse.summary}</strong>
+          <span className="muted">
+            {pulse.module ?? ""}
+            {pulse.pulse !== null ? ` · pulse ${pulse.pulse}` : ""} <span className="kind-tag">{pulse.kind}</span>
+          </span>
+        </div>
+        <div className="job-meta">
+          <span>{pulse.ms !== null ? elapsed(0, pulse.ms) : ""}</span>
+          {cost(pulse.usage ?? undefined) && <span className="muted">{cost(pulse.usage ?? undefined)}</span>}
+        </div>
+      </div>
+      <div className={`past-outcome ${pulse.status}`}>{outcome(pulse)}</div>
+      <FailureMarks failures={pulse.failures} />
+    </div>
+  );
+}
+
+/** An earlier pulse, opened: what the ledger says of it - as `turri ledger <pulse>` prints it - and its log, to open. */
+function PastPulseDetail({ pulse, onClose }: { pulse: PastPulse; onClose: () => void }) {
+  const [detail, setDetail] = useState<{ lines: string[]; log: string | null } | { error: string } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    window.turri.call<{ lines: string[]; log: string | null }>("pastPulseDetail", { id: pulse.id, run: pulse.run }).then(
+      (next) => alive && setDetail(next),
+      (error: Error) => alive && setDetail({ error: error.message }),
+    );
+    return () => void (alive = false);
+  }, [pulse.id, pulse.run]);
+  // Its first line names it, as the card does; the log is a button, not a path to copy.
+  const lines = detail !== null && "lines" in detail ? detail.lines.slice(1).filter((line) => !/^\s*log: /.test(line)) : [];
+  return (
+    <aside className="transcript">
+      <div className="pane-header transcript-head">
+        <span className="past-detail-title">
+          {pulse.title ?? pulse.summary} <span className="muted">· from the ledger</span>
+        </span>
+        <span className="pane-header-right">
+          {detail !== null && "log" in detail && detail.log !== null && (
+            <button className="link" title={detail.log} onClick={() => void window.turri.openPath(detail.log!)}>
+              <Icon name="file" size={14} /> open its log
+            </button>
+          )}
+          <button className="icon-button" onClick={onClose} aria-label="close">
+            <Icon name="x" />
+          </button>
+        </span>
+      </div>
+      <div className="transcript-body">
+        {detail === null && <p className="muted pad">reading the ledger…</p>}
+        {detail !== null && "error" in detail && <p className="muted pad">{detail.error}</p>}
+        <ul className="ledger-lines">
+          {lines.map((line, index) => (
+            <li key={index} className={`${/^\s{4}/.test(line) ? "sub" : ""} ${/FAILED/.test(line) ? "failed" : ""}`}>
+              {line.trim()}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </aside>
   );
 }
 

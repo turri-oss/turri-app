@@ -1236,6 +1236,89 @@ code {
   background: var(--hover);
   color: var(--fg-2);
 }
+/* What failed in a pulse that the work went on past - a healer, the model provider, a commit: the whole of it on hover. */
+.failure-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 8px 0 0 32px;
+}
+.failure-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+  color: var(--red);
+}
+
+/* Earlier sessions' pulses, from the ledger: grouped by run, quieter than this session's, and read only. */
+.past-run {
+  margin-bottom: 10px;
+}
+.past-run-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 2px 2px 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.job.past {
+  background: var(--bg-2);
+  box-shadow: none;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+}
+.past-outcome {
+  margin: 4px 0 0 32px;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+.past-outcome.failed {
+  color: var(--red);
+}
+.past-more {
+  font-size: 12px;
+  padding: 2px;
+}
+.past-more .muted {
+  margin-left: -2px;
+}
+.past-detail-title {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.past-detail-title .muted {
+  font-weight: 400;
+}
+/* What the ledger says of a pulse, a fact a line - as `turri ledger <pulse>` prints it. */
+.ledger-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.ledger-lines li {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.ledger-lines li.sub {
+  padding-left: 14px;
+  border-bottom: 0;
+  font: 11.5px/1.55 var(--mono);
+  color: var(--fg-2);
+}
+.ledger-lines li.failed {
+  color: var(--red);
+}
 
 .transcript {
   width: 46%;
@@ -1351,6 +1434,32 @@ code {
 }
 .t-diff .hunk {
   color: var(--plain-section);
+}
+
+/* ---------- another project opening ---------- */
+
+/* Over the project shown, which no longer answers: it is dimmed, and nothing in it can be used until the next one opens. */
+.switching {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--overlay);
+  color: var(--fg);
+  font-size: 13px;
+  animation: fade-in 0.15s ease-out;
+}
+.switching .spinner {
+  width: 16px;
+  height: 16px;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
 }
 
 /* ---------- plan sheet ---------- */

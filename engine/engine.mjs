@@ -47,6 +47,7 @@ const host = {
     announced.add(job.id);
     if (job.replacedBy === undefined) emit("finished", { id: job.id, status: job.status, title: job.title ?? job.summary, module: job.module });
     emit("status", statusNow());
+    readEarlier();
   },
   onPlanChange: () => emit("status", statusNow()),
   // ask_user's questions, put in the window: a choice of options, or words to type.
@@ -67,9 +68,125 @@ async function open({ dir }) {
     const line = turri.describeTurnIncident(event);
     if (line !== undefined) emit("incident", { job: event.job, text: line });
   });
+  stopHearing();
+  stopHearing = turri.onLedgerEvent?.(heard) ?? (() => {});
   await chatAnew();
   watchSpecs();
+  readEarlier();
   return { ...summary(), orphans, chatModel: chat.model() };
+}
+
+// ---------- the ledger: what turri did, as facts ----------
+
+// turri records what it does in the project's ledger (.turri/ledger/, turri's docs/hosting.md) on its own. The window
+// shows it - the pulses of earlier sessions, and a failure the work goes on past - and never decides anything from it:
+// what is running and planned is the registry's and the work loop's. A turri with no ledger (0.1.x) shows none of it.
+
+let stopHearing = () => {};
+/** The failures said of each pulse, by its id: each said once, however often it happens - and a mark on its card. */
+const failures = new Map();
+/** The project's earlier pulses, as the ledger has them: read as it opens and as each pulse ends, never on each event. */
+let earlier = [];
+/** Runs sent to the window: it shows the last few, and more on asking. */
+const EARLIER_RUNS = 40;
+
+/** A failure the person is to hear of, as it happens: a healer failing, the model provider for good, landed work not committed. */
+function failureOf(entry) {
+  if (entry.kind === "healer.failed") return { mark: `the ${entry.healer} failed`, text: `the ${entry.healer} failed: ${entry.error}` };
+  if (entry.kind === "provider.error" && !entry.transient) return { mark: "the model provider failed", text: `the model provider failed: ${entry.error}` };
+  if (entry.kind === "history.failed" && entry.landing) return { mark: "not committed", text: `the pulse's work could not be committed, so it does not land: ${entry.said}` };
+  return undefined;
+}
+
+/** Each event as turri records it: a failure is said in the window - once a pulse - and marked on the pulse's card. */
+function heard(entry, project) {
+  if (resolve(project) !== projectDir) return;
+  const failure = failureOf(entry);
+  if (failure === undefined) return;
+  const key = entry.job ?? `run ${entry.run}`;
+  const said = failures.get(key) ?? [];
+  if (said.some((one) => one.mark === failure.mark)) return;
+  failures.set(key, [...said, failure]);
+  const job = entry.job !== undefined ? registry?.get(entry.job) : undefined;
+  const name = job !== undefined ? pulseName(job) : undefined;
+  emit("incident", { job: entry.job, text: name !== undefined ? `${name}: ${failure.text}` : failure.text });
+  if (job !== undefined) jobChanged(job, true);
+}
+
+function pulseName(job) {
+  if (job.module === undefined) return job.title ?? job.summary;
+  return job.pulse !== undefined ? `${job.module} · pulse ${job.pulse}` : `${job.module} ${job.kind}`;
+}
+
+/**
+ * The project's runs and their pulses, the most recent first - but for this session's, which the window has live - each
+ * a plain object, as the window is sent it.
+ */
+function readEarlier() {
+  if (turri.runViews === undefined) return;
+  const live = new Set((registry?.list() ?? []).map((job) => job.id));
+  let runs;
+  let failed;
+  try {
+    runs = turri.runViews(projectDir);
+    failed = turri.readLedger(projectDir, { kinds: ["healer.failed", "provider.error", "history.failed"] });
+  } catch (error) {
+    emit("log", { level: "error", text: `the ledger could not be read: ${error instanceof Error ? error.message : String(error)}` });
+    return;
+  }
+  const marks = new Map();
+  for (const entry of failed) {
+    const failure = entry.job !== undefined ? failureOf(entry) : undefined;
+    if (failure === undefined) continue;
+    const own = marks.get(entry.job) ?? [];
+    if (!own.some((one) => one.mark === failure.mark)) marks.set(entry.job, [...own, failure]);
+  }
+  earlier = runs
+    .map((view) => ({
+      run: view.run,
+      mode: view.started?.mode ?? null,
+      started: view.started?.ts ?? view.pulses[0]?.queued?.ts ?? null,
+      version: view.started?.version ?? null,
+      pulses: view.pulses.filter((pulse) => !live.has(pulse.id)).map((pulse) => pastPulse(pulse, marks.get(pulse.id) ?? [])),
+    }))
+    .filter((run) => run.pulses.length > 0)
+    .slice(0, EARLIER_RUNS);
+  emit("earlier", earlier);
+}
+
+/** A pulse of an earlier session, as its card says it: what it was, how it ended, how long it ran, what it cost. */
+function pastPulse(view, failed) {
+  const { queued, started, finished } = view;
+  return {
+    id: view.id,
+    run: view.run,
+    kind: queued?.jobKind ?? "regenerate",
+    summary: queued?.summary ?? view.id,
+    module: queued?.module ?? null,
+    pulse: queued?.pulse ?? null,
+    title: queued?.title ?? null,
+    // Never ended: its run stopped - quit, killed - while it ran, or before it started.
+    status: finished?.status ?? (started !== undefined ? "unended" : "unstarted"),
+    landed: finished?.landed ?? null,
+    stoppedBy: finished?.stoppedBy ?? null,
+    ms: finished?.ms ?? null,
+    usage: finished?.usage ?? null,
+    error: finished?.error ?? null,
+    failures: failed,
+  };
+}
+
+function earlierPulses() {
+  return earlier;
+}
+
+/** One earlier pulse, opened: what `turri ledger <pulse>` says of it, and its log, when it is still there. */
+function pastPulseDetail({ id, run }) {
+  const view = turri.pulseView(id, turri.readLedger(projectDir, { run }));
+  if (view === undefined) throw new Error(`The ledger has nothing of pulse ${id} now.`);
+  const named = view.finished?.logFile ?? view.started?.logFile;
+  const log = named !== undefined ? resolve(projectDir, named) : undefined;
+  return { lines: turri.describePulseView(view).split("\n"), log: log !== undefined && existsSync(log) ? log : null };
 }
 
 /**
@@ -342,7 +459,7 @@ function statusNow() {
 /** A job as the app shows it: everything but its transcript, which is fetched when it is opened. */
 function jobView(job) {
   const { transcript, tail, details, ...rest } = job;
-  return { ...rest, transcriptLength: transcript?.length ?? 0, specGaps: details?.specGaps ?? [] };
+  return { ...rest, transcriptLength: transcript?.length ?? 0, specGaps: details?.specGaps ?? [], failures: failures.get(job.id) ?? [] };
 }
 
 const lastSent = new Map();
@@ -437,6 +554,8 @@ async function newChat() {
   loop = undefined;
   await chatAnew();
   emit("status", statusNow());
+  // The last session's pulses are an earlier session's now.
+  readEarlier();
   return { messages: chat.history(), model: chat.model(), stats: chat.stats() };
 }
 
@@ -466,13 +585,16 @@ function transcript({ id }) {
 
 // ---------- the wire ----------
 
-const methods = { newChat, look, open, vendors, initConfig, summary, listFiles, readFile, writeFile, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, sendChat, abortChat, chatHistory, commands, answer };
+const methods = { newChat, look, open, vendors, initConfig, summary, listFiles, readFile, writeFile, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, earlierPulses, pastPulseDetail, sendChat, abortChat, chatHistory, commands, answer };
 
 // What the window may ask before a project is open: to open one, or to start a new one.
 const BEFORE_A_PROJECT = new Set(["open", "vendors", "initConfig"]);
 
 // The app gone - quit, crashed, killed - the engine goes with it: never a chat left running with no window.
-process.on("disconnect", () => process.exit(0));
+process.on("disconnect", () => {
+  stopHearing();
+  process.exit(0);
+});
 
 process.on("message", async ({ id, method, params, reply, result, error }) => {
   if (reply !== undefined) {

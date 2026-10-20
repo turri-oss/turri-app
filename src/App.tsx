@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./types.ts";
-import type { Job, Pane, Project, Spec, Status, View } from "./types.ts";
+import type { Job, Pane, PastRun, Project, Spec, Status, View } from "./types.ts";
 import { Welcome } from "./Welcome.tsx";
 import { SpecView } from "./SpecView.tsx";
 import { WorkView } from "./WorkView.tsx";
@@ -39,6 +39,8 @@ export function App() {
   const [pane, setPane] = useState<Pane>("browser");
   const [status, setStatus] = useState<Status>(EMPTY_STATUS);
   const [jobs, setJobs] = useState<Map<string, Job>>(new Map());
+  /** Earlier sessions' pulses, from the ledger: read when the project opens and again as each pulse ends. */
+  const [earlier, setEarlier] = useState<PastRun[]>([]);
   const [toast, setToast] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [plan, setPlan] = useState<Plan | "loading" | null>(null);
   // Regenerate, chosen how - open with the functional specs it starts on, if any.
@@ -53,6 +55,8 @@ export function App() {
   // The conversation with turri.
   const [chatOpen, setChatOpen] = useState(true);
   const [creating, setCreating] = useState(false);
+  /** Another project, being opened: the one shown waits under a spinner, as its engine has already stopped. */
+  const [switching, setSwitching] = useState<{ dir: string; name: string } | null>(null);
   const [chatWidth, setChatWidth] = useState(savedChatWidth);
   const [resizing, setResizing] = useState(false);
   // The window resized: the chat's width is held to it again.
@@ -98,10 +102,13 @@ export function App() {
 
   const opened = useCallback((summary: Project | null) => {
     if (summary === null) return;
+    setSwitching(null);
     setProject(summary);
     setSelected(summary.specs[0]?.file ?? null);
     setStatus(EMPTY_STATUS);
     setJobs(new Map());
+    setEarlier([]);
+    void window.turri.call<PastRun[]>("earlierPulses").then(setEarlier);
     setView("spec");
     setPane(savedPane(summary.dir));
     setStreaming(null);
@@ -128,9 +135,12 @@ export function App() {
         say(`${done.module ?? "job"} - ${done.title}: ${done.status}`, done.status === "failed" ? "error" : "info");
         void refreshProject();
       }),
+      window.turri.on("engine:earlier", (runs: PastRun[]) => setEarlier(runs)),
       window.turri.on("engine:incident", (incident: { job?: string; text: string }) => say(incident.text, "error")),
       window.turri.on("engine:exit", () => say("the turri engine stopped. open the project again to restart it.", "error")),
       window.turri.on("project:opened", opened),
+      window.turri.on("project:opening", setSwitching),
+      window.turri.on("project:failed", ({ text }: { text: string }) => say(text, "error")),
       // A .plain file changed on disk - turri edited it, say: what it says now, in the sidebar; a new one, listed.
       window.turri.on("engine:spec", ({ spec: next }: { spec: Spec }) =>
         setProject((now) => {
@@ -183,7 +193,11 @@ export function App() {
           frids: how?.how === "again" ? how.frids : undefined,
           scratch: how?.how === "scratch",
           chain: how?.how === "scratch" && how.chain,
-          guidance: how?.guidance,
+          // Continued: what changed, as turri brings a module up to its spec - with the planner told where it stopped.
+          guidance:
+            how?.how === "continue"
+              ? `carry on where it stopped: build the functional specs not built yet - ${how.left.join(", ")}${how.guidance ? `. ${how.guidance}` : ""}`
+              : how?.guidance,
         });
       } catch (error) {
         say(String((error as Error).message ?? error), "error");
@@ -278,7 +292,7 @@ export function App() {
 
   return (
     <>
-      <div className={`app ${chatOpen ? "with-chat" : ""} ${resizing ? "resizing" : ""}`} style={{ "--chat-width": `${clampChat(chatWidth)}px` } as React.CSSProperties}>
+      <div className={`app ${chatOpen ? "with-chat" : ""} ${resizing ? "resizing" : ""}`} style={{ "--chat-width": `${clampChat(chatWidth)}px` } as React.CSSProperties} inert={switching !== null}>
         <aside className="sidebar">
           <div className="titlebar-space" />
           <div className="project-name" title={project.dir}>
@@ -355,11 +369,12 @@ export function App() {
           <section className="content">
             {view === "preview" ? (
               // A sheet over the window would be under the pane: while one is open, the pane steps aside.
-              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || creating || choosing !== null} pane={pane} onPane={setPane} />
+              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || creating || choosing !== null || switching !== null} pane={pane} onPane={setPane} />
             ) : view === "work" ? (
               <WorkView
                 status={status}
                 jobs={allJobs}
+                earlier={earlier}
                 focus={focusPulse}
                 onShowInSpec={(rel, lines) => {
                   const shown = project.specs.find((entry) => entry.rel === rel);
@@ -387,7 +402,6 @@ export function App() {
                 onDirty={setDirty}
                 saveRef={saveRef}
                 onRegenerate={(frids) => void regenerate(frids?.length ? { how: "again", frids, guidance: "" } : undefined)}
-                onRegenerateHow={(frids) => setChoosing(frids)}
                 onConform={(frids) => void conform(frids)}
                 say={say}
               />
@@ -437,7 +451,7 @@ export function App() {
             stats={chatStats}
             newSessionBlocked={running.length > 0 ? `${running.length} pulse${running.length === 1 ? " is" : "s are"} running: start a new session once ${running.length === 1 ? "it has" : "they have"} finished` : null}
             onShowPulse={(id) => {
-              if (!jobs.has(id)) return say("that pulse ran in an earlier session: the work view shows this session's pulses.");
+              if (!jobs.has(id) && !earlier.some((run) => run.pulses.some((pulse) => pulse.id === id))) return say("that pulse ran in an earlier session, and the ledger has nothing of it now.");
               setView("work");
               setFocusPulse({ id, at: Date.now() });
             }}
@@ -483,6 +497,11 @@ export function App() {
           </div>
         )}
       </div>
+      {switching !== null && (
+        <div className="switching" role="status">
+          <Spinner /> opening {switching.name}…
+        </div>
+      )}
       {newProject}
     </>
   );
