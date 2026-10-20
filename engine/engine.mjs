@@ -342,6 +342,8 @@ function summary() {
       "conformance-tests": String(project.conformanceTests ?? false),
       review: project.review === true,
       "parallel-jobs": project.parallelJobs ?? turri.defaultParallelJobs(),
+      // As turri has it - TURRI_DEBUG over the file's - where the turri running has a debug mode at all.
+      ...(turri.debugMode !== undefined ? { debug: turri.debugMode(projectDir) } : {}),
     },
     specs: plainFiles(projectDir).map((file) => describeSpec(file)),
   };

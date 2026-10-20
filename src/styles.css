@@ -431,6 +431,27 @@ code {
   text-align: right;
 }
 
+/* debug: a switch, as the one setting the window changes - through /turri-config, as the person would. */
+.setting-switch {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: none;
+  color: var(--fg-2);
+  font: inherit;
+  line-height: 16px;
+  padding: 0 7px;
+  direction: ltr;
+}
+.setting-switch:hover {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--fg) 25%, transparent);
+}
+.setting-switch.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
 .sidebar-footer {
   margin-top: auto;
   padding: 12px 8px 0;

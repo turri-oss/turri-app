@@ -315,7 +315,22 @@ export function App() {
             {Object.entries(project.settings).map(([key, value]) => (
               <div key={key}>
                 <dt>{key}</dt>
-                <dd title={String(value)}>{value === null ? "-" : String(value)}</dd>
+                {key === "debug" ? (
+                  // What the person would type: /turri-config writes it, and the sidebar shows it once the file changes.
+                  <dd>
+                    <button
+                      className={`setting-switch ${value === true ? "on" : ""}`}
+                      role="switch"
+                      aria-checked={value === true}
+                      title="keep what turri writes for debugging it - every agent's log and session, each pulse's log, the test runs' outputs"
+                      onClick={() => void window.turri.call("sendChat", { text: `/turri-config debug ${value !== true}` })}
+                    >
+                      {value === true ? "on" : "off"}
+                    </button>
+                  </dd>
+                ) : (
+                  <dd title={String(value)}>{value === null ? "-" : String(value)}</dd>
+                )}
               </div>
             ))}
           </dl>
