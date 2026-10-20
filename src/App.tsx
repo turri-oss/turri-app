@@ -349,10 +349,6 @@ export function App() {
 
         <main className="main">
           <header className="toolbar">
-            <div className="toolbar-title">
-              <h1>{spec?.module ?? file?.slice(file.lastIndexOf("/") + 1) ?? project.name}</h1>
-              {spec?.description && <span className="subtitle">{spec.description}</span>}
-            </div>
             <div className="segmented" role="tablist">
               {(["spec", "work", "preview"] as View[]).map((name) => (
                 <button key={name} role="tab" aria-selected={view === name} className={view === name ? "on" : ""} onClick={() => setView(name)}>

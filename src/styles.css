@@ -480,25 +480,8 @@ code {
 .toolbar .segmented {
   -webkit-app-region: no-drag;
 }
-.toolbar-title {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-.toolbar-title h1 {
-  font-size: 15px;
-  margin: 0;
-  font-weight: 600;
-}
-.subtitle {
-  color: var(--fg-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .toolbar-actions {
+  margin-left: auto;
   display: flex;
   gap: 8px;
 }
@@ -2122,10 +2105,6 @@ code {
 }
 
 /* The interface in Neue Montreal - the buttons and the wordmark on the landing too - code and the spec in Zed Mono. */
-.toolbar-title h1 {
-  font-size: 16px;
-  font-weight: 700;
-}
 .sidebar-section,
 .pane-header {
   font-size: 11px;
