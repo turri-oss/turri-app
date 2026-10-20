@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ModuleStatus, Spec } from "./types.ts";
 import { Icon } from "./ui.tsx";
+import { turriSays } from "./PulseSpec.tsx";
 
 export interface Plan {
   spec: Spec;
@@ -15,9 +16,9 @@ export function PlanSheet({ plan, onClose, onRegenerate }: { plan: Plan; onClose
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(event) => event.stopPropagation()}>
-        <h2>The plan for {plan.spec.module}</h2>
+        <h2>the plan for {plan.spec.module}</h2>
         {work.length === 0 ? (
-          <p className="muted">Nothing to regenerate: every codebase is built from the spec as it is.</p>
+          <p className="muted">nothing to regenerate: every codebase is built from the spec as it is.</p>
         ) : (
           work.map((status) => (
             <div key={status.module} className="module-plan">
@@ -35,7 +36,7 @@ export function PlanSheet({ plan, onClose, onRegenerate }: { plan: Plan; onClose
               </ol>
               {status.planNotes?.map((note, index) => (
                 <p key={index} className="muted small">
-                  {note}
+                  {turriSays(note)}
                 </p>
               ))}
             </div>
@@ -44,11 +45,11 @@ export function PlanSheet({ plan, onClose, onRegenerate }: { plan: Plan; onClose
         {plan.firsts.map((first) => (
           <div key={first.module} className="first">
             <p>
-              <strong>First:</strong> {first.title} <span className="muted">- {first.reason}</span>
+              <strong>first:</strong> {first.title} <span className="muted">- {first.reason}</span>
             </p>
             {first.prompt && (
               <button className="link" onClick={() => setPrompt(prompt === null ? first.prompt : null)}>
-                {prompt === null ? "Show what the coding agent will be told" : "Hide the prompt"}
+                {prompt === null ? "show what the coding agent will be told" : "hide the prompt"}
               </button>
             )}
           </div>
@@ -56,10 +57,10 @@ export function PlanSheet({ plan, onClose, onRegenerate }: { plan: Plan; onClose
         {prompt && <pre className="prompt-preview">{prompt}</pre>}
         <div className="sheet-actions">
           <button className="button" onClick={onClose}>
-            Close
+            close
           </button>
           <button className="button primary" onClick={onRegenerate} disabled={work.length === 0}>
-            <Icon name="play" /> Regenerate
+            <Icon name="play" /> regenerate
           </button>
         </div>
       </div>

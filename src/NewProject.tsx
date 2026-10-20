@@ -72,7 +72,7 @@ export function NewProject({ onOpened, onDone }: { onOpened: (project: Project) 
       <div className="sheet new-project">
         {dir === null ? (
           <>
-            <h2>The project was not made</h2>
+            <h2>the project was not made</h2>
             <p className="error-text">{error}</p>
             <div className="sheet-actions">
               <button className="button primary" onClick={onDone} autoFocus>
@@ -82,7 +82,7 @@ export function NewProject({ onOpened, onDone }: { onOpened: (project: Project) 
           </>
         ) : (
           <>
-            <h2>Which models does {name} use?</h2>
+            <h2>which models does {name} use?</h2>
             <p className="muted">turri writes them into its config.turri.yaml: a strong one you talk to, and a smaller one that writes the code. The file can change them later.</p>
             {vendors === null ? (
               <Spinner />
@@ -106,7 +106,7 @@ export function NewProject({ onOpened, onDone }: { onOpened: (project: Project) 
             {vendor === "amazon-bedrock" && vendors && (
               <div className="bedrock">
                 <div className="bedrock-row">
-                  <span className="muted">Whose models</span>
+                  <span className="muted">whose models</span>
                   <div className="segmented">
                     {(["anthropic", "openai"] as Maker[]).map((each) => (
                       <button
@@ -123,7 +123,7 @@ export function NewProject({ onOpened, onDone }: { onOpened: (project: Project) 
                   </div>
                 </div>
                 <div className="bedrock-row">
-                  <span className="muted">Where</span>
+                  <span className="muted">where</span>
                   <div className="segmented">
                     {vendors.regions[maker].map((each) => (
                       <button key={each} className={region === each ? "on" : ""} onClick={() => setRegion(each)}>
@@ -137,15 +137,15 @@ export function NewProject({ onOpened, onDone }: { onOpened: (project: Project) 
             {error && <p className="error-text">{error}</p>}
             <div className="sheet-actions">
               <button className="button" onClick={cancel} disabled={starting}>
-                Cancel
+                cancel
               </button>
               <button className="button primary" onClick={() => void start()} disabled={vendor === null || starting}>
                 {starting ? (
                   <>
-                    <Spinner /> Starting turri…
+                    <Spinner /> starting turri…
                   </>
                 ) : (
-                  "Create"
+                  "create"
                 )}
               </button>
             </div>

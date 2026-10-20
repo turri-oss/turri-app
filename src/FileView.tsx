@@ -80,7 +80,7 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
       setSaved(text);
       setOnDisk(null);
     } catch (error) {
-      props.say(`Not saved: ${(error as Error).message}`, "error");
+      props.say(`not saved: ${(error as Error).message}`, "error");
     } finally {
       setSaving(false);
     }
@@ -93,24 +93,24 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
         <Icon name={plain ? "doc" : "file"} /> {rel}
       </span>
       <span className="pane-header-right">
-        <button className="link" onClick={() => void window.turri.openPath(file)} title="Open it in the app your Mac opens it with">
-          Open
+        <button className="link" onClick={() => void window.turri.openPath(file)} title="open it in the app your mac opens it with">
+          open
         </button>
         <span className="muted">·</span>
         <button className="link" onClick={() => void window.turri.reveal(file)}>
-          Reveal
+          reveal
         </button>
         <span className="muted">·</span>
         {readOnly ? (
           <span className="muted" title="turri writes this file: an edit here would be lost to the next pulse">
-            Generated - read only
+            generated - read only
           </span>
         ) : dirty ? (
           <button className="button small" onClick={() => void save()} disabled={saving}>
-            {saving ? <Spinner /> : null} Save <kbd>⌘S</kbd>
+            {saving ? <Spinner /> : null} save <kbd>⌘S</kbd>
           </button>
         ) : (
-          <span className="muted">Saved</span>
+          <span className="muted">saved</span>
         )}
       </span>
     </div>
@@ -119,7 +119,7 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
   if (failed !== null)
     return (
       <div className="editor-pane">
-        <Empty icon="warn" title="Cannot read this file">
+        <Empty icon="warn" title="cannot read this file">
           {failed}
         </Empty>
       </div>
@@ -134,8 +134,8 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
     return (
       <div className="editor-pane">
         {header}
-        <Empty icon="file" title={read.reason === "large" ? `Too large to show here (${kilobytes(read.size)})` : "Not a text file"}>
-          Open it in the app your Mac opens it with, or reveal it in Finder.
+        <Empty icon="file" title={read.reason === "large" ? `too large to show here (${kilobytes(read.size)})` : "not a text file"}>
+          open it in the app your Mac opens it with, or reveal it in Finder.
         </Empty>
       </div>
     );
@@ -155,7 +155,7 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
               setOnDisk(null);
             }}
           >
-            Load the new version
+            load the new version
           </button>
         </div>
       )}

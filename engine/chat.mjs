@@ -1,15 +1,19 @@
 // The conversation: pi's agent session with turri's extension loaded - the same chat `turri` opens in the terminal, its
 // tools, slash commands, rules and skills - with the window in place of the terminal. What the extension would draw in
 // the terminal (dialogs, notices, the working line) comes here as UI calls and goes to the window as events.
-import { createTurriExtension, pi } from "@turri-dev/cli/host";
+import turri from "./turri.mjs";
 import { browserExtension, retriedWithoutImages } from "./browser.mjs";
+import { APP_SURFACE, withWhere } from "./app.mjs";
+
+const { createTurriExtension, pi } = turri;
 
 /**
  * Start a chat in `cwd`. `host` is what turri's extension tells of its jobs and asks its questions in (TurriHost);
  * `emit` sends an event to the window; `ask` puts a question to the person there and resolves with the answer
- * (undefined when they dismiss it); `browser` asks the window's preview pane for one of the browser tools' actions.
+ * (undefined when they dismiss it); `browser` asks the window's preview pane for one of the browser tools' actions;
+ * `whereNow` says what the person has open in the window; `onStep` is called as each of its tools ends, and as it settles.
  */
-export async function startChat({ cwd, harnessModel, host, emit, ask, browser }) {
+export async function startChat({ cwd, harnessModel, host, emit, ask, browser, whereNow, onStep }) {
   process.env.PI_SKIP_VERSION_CHECK = "1";
 
   // The window is told when the conversation's model changes - /turri-config switches it as it runs.
@@ -17,7 +21,12 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser })
   const loader = new pi.DefaultResourceLoader({
     cwd,
     agentDir: pi.getAgentDir(),
-    extensionFactories: [createTurriExtension(host), browserExtension(browser), modelWatch],
+    // turri is told it is in the app: the window's views in place of the terminal's, and what the person has open now.
+    extensionFactories: [
+      createTurriExtension({ ...host, surface: APP_SURFACE, systemPrompt: (prompt) => withWhere(prompt, whereNow()) }),
+      browserExtension(browser),
+      modelWatch,
+    ],
   });
   await loader.reload();
   const { session } = await pi.createAgentSession({ cwd, resourceLoader: loader, sessionManager: pi.SessionManager.create(cwd) });
@@ -41,6 +50,13 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser })
 
   let streaming = null;
   let lastDelta = 0;
+  /** How full the conversation's context is, and what it has cost - its own model's calls, not the pulses'. */
+  const stats = () => {
+    const usage = session.getContextUsage();
+    const { cost, tokens } = session.getSessionStats();
+    return { percent: usage?.percent ?? null, tokens: usage?.tokens ?? null, contextWindow: usage?.contextWindow ?? null, cost, spent: tokens.total };
+  };
+  const tellStats = () => emit("chat:stats", stats());
   session.subscribe((event) => {
     switch (event.type) {
       case "agent_start":
@@ -48,6 +64,8 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser })
         break;
       case "agent_settled":
         emit("chat:busy", { busy: false });
+        onStep?.();
+        tellStats();
         break;
       case "message_update": {
         // The reply as it is written: sent whole, at most ten times a second.
@@ -60,6 +78,7 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser })
         break;
       }
       case "message_end":
+        tellStats();
         streaming = null;
         emit("chat:streaming", null);
         for (const item of [normalise(event.message)].flat()) if (item) emit("chat:message", item);
@@ -69,6 +88,7 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser })
         break;
       case "tool_execution_end":
         emit("chat:tool", { id: event.toolCallId, name: event.toolName, running: false, isError: event.isError === true });
+        onStep?.();
         break;
       case "entry_appended": {
         // What the extension puts in the chat outside a turn: a slash command's echo and outcome, a job's announcement.
@@ -101,6 +121,7 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser })
         .map((command) => ({ name: `/${command.name}`, description: command.description ?? "" })),
     abort: () => session.abort(),
     model: () => (session.model ? `${session.model.provider}/${session.model.id}` : null),
+    stats,
     dispose: () => session.dispose(),
   };
 }

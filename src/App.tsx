@@ -10,8 +10,8 @@ import { NewProject } from "./NewProject.tsx";
 import { FileTree } from "./FileTree.tsx";
 import { FileView } from "./FileView.tsx";
 import { PreviewView } from "./PreviewView.tsx";
-import { Appearance, Empty, Icon, Jellyfish, Spinner } from "./ui.tsx";
-import { Chat, type ChatItem, type Question, type SkillProgress } from "./Chat.tsx";
+import { Appearance, Empty, Icon, Jellyfish, Spinner, TurriVersionLine } from "./ui.tsx";
+import { Chat, type ChatItem, type ChatStats, type Question, type SkillProgress } from "./Chat.tsx";
 
 const EMPTY_STATUS: Status = { modules: [], jobs: [], planned: [] };
 
@@ -42,6 +42,10 @@ export function App() {
   const [plan, setPlan] = useState<Plan | "loading" | null>(null);
   // Regenerate, chosen how - open with the functional specs it starts on, if any.
   const [choosing, setChoosing] = useState<string[] | null>(null);
+  // Lines of a spec to bring into view and light: a pulse's part of it, shown from the work.
+  const [reveal, setReveal] = useState<{ file: string; lines: number[]; at: number } | null>(null);
+  // A pulse to open in the work view: one the chat says ended, clicked there.
+  const [focusPulse, setFocusPulse] = useState<{ id: string; at: number } | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const saveRef = useRef<(() => Promise<void>) | null>(null);
@@ -74,6 +78,7 @@ export function App() {
   // The skill running in the chat - brood, spawn - and where it is in its phases.
   const [progress, setProgress] = useState<SkillProgress | null>(null);
   const [chatModel, setChatModel] = useState<string | null>(null);
+  const [chatStats, setChatStats] = useState<ChatStats | null>(null);
   const [commands, setCommands] = useState<Array<{ name: string; description: string }>>([]);
 
   // What is selected in the tree: one of the project's specs, or any other file of it.
@@ -100,7 +105,8 @@ export function App() {
     setStreaming(null);
     setQuestions([]);
     setProgress(null);
-    void window.turri.call<{ messages: ChatItem[]; model: string | null }>("chatHistory").then(({ messages, model }) => {
+    void window.turri.call<{ messages: ChatItem[]; model: string | null; stats: ChatStats }>("chatHistory").then(({ messages, model, stats }) => {
+      setChatStats(stats);
       // A project just started opens on what turri said of its config: its models, and how to sign in to them.
       setItems(summary.setup ? [...messages, { role: "note", text: summary.setup, level: "info" }] : messages);
       setChatModel(model);
@@ -117,11 +123,11 @@ export function App() {
         setJobs(new Map(next.jobs.map((job) => [job.id, job])));
       }),
       window.turri.on("engine:finished", (done: { status: string; title: string; module?: string }) => {
-        say(`${done.module ?? "Job"} - ${done.title}: ${done.status}`, done.status === "failed" ? "error" : "info");
+        say(`${done.module ?? "job"} - ${done.title}: ${done.status}`, done.status === "failed" ? "error" : "info");
         void refreshProject();
       }),
       window.turri.on("engine:incident", (incident: { job?: string; text: string }) => say(incident.text, "error")),
-      window.turri.on("engine:exit", () => say("The turri engine stopped. Open the project again to restart it.", "error")),
+      window.turri.on("engine:exit", () => say("the turri engine stopped. open the project again to restart it.", "error")),
       window.turri.on("project:opened", opened),
       // A .plain file changed on disk - turri edited it, say: what it says now, in the sidebar; a new one, listed.
       window.turri.on("engine:spec", ({ spec: next }: { spec: Spec }) =>
@@ -151,6 +157,7 @@ export function App() {
       // The config changed - /turri-config, say: its settings in the sidebar, and the model the chat runs on now.
       window.turri.on("engine:config", () => void refreshProject()),
       window.turri.on("engine:chat:model", ({ model }: { model: string }) => setChatModel(model)),
+      window.turri.on("engine:chat:stats", (stats: ChatStats) => setChatStats(stats)),
       // turri works in the preview with its browser tools: the window shows it, so the person sees what it does.
       window.turri.on("preview:reveal", () => setView("preview")),
       window.turri.on("engine:chat:ask", (question: Question) => {
@@ -243,6 +250,12 @@ export function App() {
     [regenerate, glimpse, conform, release, project, spec],
   );
 
+  // What the person is looking at, for turri to know: the view, and the file open in it.
+  useEffect(() => {
+    if (project === null) return;
+    void window.turri.call("look", { view, file: view === "spec" ? selected : null }).catch(() => {});
+  }, [project?.dir, view, selected]);
+
   const allJobs = useMemo(() => [...jobs.values()].sort((a, b) => b.sequence - a.sequence), [jobs]);
   const runningFor = (module: string) => allJobs.find((job) => job.module === module && job.status === "running");
   const running = allJobs.filter((job) => job.status === "running");
@@ -266,7 +279,7 @@ export function App() {
             <Jellyfish size={18} swimming={running.length > 0} />
             <span>{project.name}</span>
           </div>
-          <div className="sidebar-section">Files</div>
+          <div className="sidebar-section">files</div>
           <FileTree
             root={project.dir}
             specs={project.specs}
@@ -277,7 +290,7 @@ export function App() {
               setView("spec");
             }}
           />
-          <div className="sidebar-section">Settings</div>
+          <div className="sidebar-section">settings</div>
           <dl className="settings">
             {Object.entries(project.settings).map(([key, value]) => (
               <div key={key}>
@@ -292,8 +305,9 @@ export function App() {
                 <Jellyfish size={22} /> {running.length} pulse{running.length === 1 ? "" : "s"} running
               </button>
             ) : (
-              <span className="muted">Idle</span>
+              <span className="muted">idle</span>
             )}
+            <TurriVersionLine />
             <Appearance />
           </div>
         </aside>
@@ -313,21 +327,21 @@ export function App() {
             </div>
             <div className="toolbar-actions">
               {!chatOpen && (
-                <button className={`button ${questions.length > 0 ? "asking" : ""}`} onClick={() => setChatOpen(true)} title={questions.length > 0 ? "turri is asking you something" : "Talk to turri (⌘J)"}>
+                <button className={`button ${questions.length > 0 ? "asking" : ""}`} onClick={() => setChatOpen(true)} title={questions.length > 0 ? "turri is asking you something" : "talk to turri (⌘J)"}>
                   <Icon name="spark" /> turri{questions.length > 0 && " · asks"}
                 </button>
               )}
-              <button className="button" disabled={!releasable} onClick={() => void release()} title={releasable ? "Release what is built to try, and hear from turri what to test" : "Nothing is built yet: regenerate first"}>
-                <Icon name="release" /> Release
+              <button className="button" disabled={!releasable} onClick={() => void release()} title={releasable ? "release what is built to try, and hear from turri what to test" : "nothing is built yet: regenerate first"}>
+                <Icon name="release" /> release
               </button>
               {/* Only turri halts a pulse: while one regenerates this module, Regenerate waits for it. */}
               <button
                 className="button primary"
                 disabled={spec === null || !spec.ok || busy || runningFor(spec.module) !== undefined}
                 onClick={() => setChoosing([])}
-                title={spec && runningFor(spec.module) ? "turri is regenerating this module" : "Regenerate - what changed, chosen functional specs, or from scratch (⌘R)"}
+                title={spec && runningFor(spec.module) ? "turri is regenerating this module" : "regenerate - what changed, chosen functional specs, or from scratch (⌘R)"}
               >
-                {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} Regenerate…
+                {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} regenerate…
               </button>
             </div>
           </header>
@@ -335,15 +349,26 @@ export function App() {
           <section className="content">
             {view === "preview" ? (
               // A sheet over the window would be under the pane: while one is open, the pane steps aside.
-              <PreviewView dir={project.dir} covered={plan !== null || creating || choosing !== null} />
+              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || creating || choosing !== null} />
             ) : view === "work" ? (
-              <WorkView status={status} jobs={allJobs} />
+              <WorkView
+                status={status}
+                jobs={allJobs}
+                focus={focusPulse}
+                onShowInSpec={(rel, lines) => {
+                  const shown = project.specs.find((entry) => entry.rel === rel);
+                  if (shown === undefined) return say(`${rel} is not one of the project's specs now.`, "error");
+                  setSelected(shown.file);
+                  setView("spec");
+                  setReveal({ file: shown.file, lines, at: Date.now() });
+                }}
+              />
             ) : file !== null ? (
               <FileView key={file} root={project.dir} file={file} onDirty={setDirty} saveRef={saveRef} say={say} />
             ) : spec === null ? (
               project.specs.length === 0 && (
-                <Empty icon="doc" title="No spec yet">
-                  Tell turri what you want to build. It writes the first spec with you, then builds the code from it.
+                <Empty icon="doc" title="no spec yet">
+                  tell turri what you want to build. it writes the first spec with you, then builds the code from it.
                 </Empty>
               )
             ) : (
@@ -351,6 +376,7 @@ export function App() {
                 key={spec.file}
                 spec={spec}
                 running={runningFor(spec.module)}
+                reveal={reveal?.file === spec.file ? reveal : undefined}
                 onSaved={(next: Spec) => setProject((now) => now && { ...now, specs: now.specs.map((entry) => (entry.file === next.file ? next : entry)) })}
                 onDirty={setDirty}
                 saveRef={saveRef}
@@ -369,8 +395,8 @@ export function App() {
             className="chat-resize"
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize the chat"
-            title="Drag to resize the chat - double-click to reset"
+            aria-label="resize the chat"
+            title="drag to resize the chat - double-click to reset"
             onPointerDown={(event) => {
               event.preventDefault();
               event.currentTarget.setPointerCapture(event.pointerId);
@@ -402,6 +428,31 @@ export function App() {
             onClose={() => setChatOpen(false)}
             question={questions[0]}
             progress={progress}
+            stats={chatStats}
+            newSessionBlocked={running.length > 0 ? `${running.length} pulse${running.length === 1 ? " is" : "s are"} running: start a new session once ${running.length === 1 ? "it has" : "they have"} finished` : null}
+            onShowPulse={(id) => {
+              if (!jobs.has(id)) return say("that pulse ran in an earlier session: the work view shows this session's pulses.");
+              setView("work");
+              setFocusPulse({ id, at: Date.now() });
+            }}
+            onNewSession={() =>
+              void window.turri
+                .call<{ messages: ChatItem[]; model: string | null; stats: ChatStats }>("newChat")
+                .then(({ messages, model, stats }) => {
+                  setItems(messages);
+                  setChatModel(model);
+                  setChatStats(stats);
+                  setStreaming(null);
+                  setQuestions([]);
+                  setProgress(null);
+                  setWorking(null);
+                  setStatuses({});
+                  setToolsRunning(new Map());
+                  setChatBusy(false);
+                  say("A new session: turri starts with nothing of the last conversation.");
+                })
+                .catch((error) => say(String((error as Error).message ?? error).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""), "error"))
+            }
             onAnswer={(value) => {
               void window.turri.call("answer", { id: questions[0]!.id, value });
               setQuestions((all) => all.slice(1));

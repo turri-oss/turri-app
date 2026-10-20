@@ -30,6 +30,8 @@ function addressOf(typed: string): string {
 export function PreviewView({ dir, covered }: { dir: string; covered: boolean }) {
   const [state, setState] = useState<PreviewState>(BLANK);
   const [typed, setTyped] = useState("");
+  // The address this project had last: offered, not opened - another project's app may answer there now.
+  const [last, setLast] = useState("");
   const page = useRef<HTMLDivElement>(null);
   const address = useRef<HTMLInputElement>(null);
 
@@ -37,10 +39,11 @@ export function PreviewView({ dir, covered }: { dir: string; covered: boolean })
     const off = window.turri.on("preview:state", (next: PreviewState) => setState(next));
     void window.turri.preview.state().then((now) => {
       setState(now);
-      // Nothing open yet: the address this project had last.
+      // Nothing open yet: the address this project had last, in the bar to open - or the bar, to type one.
       const saved = savedUrl(dir);
-      if (!now.url && saved) void window.turri.preview.open(saved);
-      else if (!now.url) address.current?.focus();
+      setLast(saved);
+      if (!now.url) setTyped(saved);
+      if (!now.url) address.current?.focus();
     });
     return off;
   }, [dir]);
@@ -55,7 +58,9 @@ export function PreviewView({ dir, covered }: { dir: string; covered: boolean })
   }, [dir, state.url, state.error]);
 
   // The address bar says where the page is: wherever it goes - a link, turri - what was typed gives way to it.
-  useEffect(() => setTyped(state.url), [state.url]);
+  useEffect(() => {
+    if (state.url) setTyped(state.url);
+  }, [state.url]);
 
   // The pane over the space below the bar: placed while there is a page to show and nothing over it, and moved with it.
   const showing = state.url !== "" && state.error === null && !covered;
@@ -90,13 +95,13 @@ export function PreviewView({ dir, covered }: { dir: string; covered: boolean })
   return (
     <div className="preview">
       <div className="preview-bar">
-        <button className="icon-button" disabled={!state.canGoBack} onClick={() => void window.turri.preview.go("back")} title="Back">
+        <button className="icon-button" disabled={!state.canGoBack} onClick={() => void window.turri.preview.go("back")} title="back">
           <Icon name="back" />
         </button>
-        <button className="icon-button" disabled={!state.canGoForward} onClick={() => void window.turri.preview.go("forward")} title="Forward">
+        <button className="icon-button" disabled={!state.canGoForward} onClick={() => void window.turri.preview.go("forward")} title="forward">
           <Icon name="forward" />
         </button>
-        <button className="icon-button" disabled={!state.url} onClick={() => void window.turri.preview.go(state.loading ? "stop" : "reload")} title={state.loading ? "Stop" : "Reload"}>
+        <button className="icon-button" disabled={!state.url} onClick={() => void window.turri.preview.go(state.loading ? "stop" : "reload")} title={state.loading ? "stop" : "reload"}>
           <Icon name={state.loading ? "x" : "reload"} />
         </button>
         <form
@@ -121,22 +126,29 @@ export function PreviewView({ dir, covered }: { dir: string; covered: boolean })
             }}
           />
         </form>
-        <button className="icon-button" disabled={!state.url} onClick={() => void window.turri.preview.go("devtools")} title="Developer tools for the page">
+        <button className="icon-button" disabled={!state.url} onClick={() => void window.turri.preview.go("devtools")} title="developer tools for the page">
           <Icon name="code" />
         </button>
         {state.loading && <span className="preview-loading" />}
       </div>
       <div className="preview-page" ref={page}>
         {!state.url ? (
-          <Empty icon="globe" title="Open the app you are building">
-            Type its address above - <kbd>localhost:8000</kbd>, say. turri can open it here too, and see and try it as you watch.
+          <Empty icon="globe" title="open the app you are building">
+            type its address above - <kbd>localhost:8000</kbd>, say. turri can open it here too, and see and try it as you watch.
+            {last && (
+              <span className="preview-retry">
+                <button className="button" onClick={() => open(last)}>
+                  <Icon name="globe" /> open {last.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+                </button>
+              </span>
+            )}
           </Empty>
         ) : state.error !== null ? (
-          <Empty icon="warn" title="Nothing answers there">
+          <Empty icon="warn" title="nothing answers there">
             {state.error}. Start the app - or ask turri to release it - then reload.
             <span className="preview-retry">
               <button className="button" onClick={() => void window.turri.preview.go("reload")}>
-                <Icon name="reload" /> Reload
+                <Icon name="reload" /> reload
               </button>
             </span>
           </Empty>

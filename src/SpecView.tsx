@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
 import type { Job, Spec } from "./types.ts";
-import { Icon, Spinner } from "./ui.tsx";
+import { elapsed, Icon, Spinner, useTick } from "./ui.tsx";
+import { stageOf } from "./PulseSpec.tsx";
 
 type Token = { text: string; role: string | null };
 type State = "conformed" | "built" | "now" | "todo";
@@ -74,8 +75,9 @@ const STATE_LABEL: Record<State, string> = { conformed: "built and conformance t
 
 /**
  * The lines of this file the running work renders now, from 0: a code pulse's are what its spec change adds here - its
- * diff's added lines, placed in the files - and a conformance run's the functional spec it builds. A placed line whose
- * text is not what the file has there now is left out: the file moved on.
+ * diff's added lines, placed in the files - and the functional specs it carries unchanged, as context: a functional spec
+ * regenerated again is in its diff so, its text the same. A conformance run's are the functional spec it builds. A placed
+ * line whose text is not what the file has there now is left out: the file moved on.
  */
 function renderingLines(job: Job | undefined, spec: Spec, text: string, specLines: Map<number, SpecLine>): Set<number> {
   const found = new Set<number>();
@@ -85,7 +87,9 @@ function renderingLines(job: Job | undefined, spec: Spec, text: string, specLine
     const diffLines = job.diff.split("\n");
     for (const [index, where] of Object.entries(job.diffWhere)) {
       const line = diffLines[Number(index)];
-      if (where.file !== spec.rel || line === undefined || !line.startsWith("+")) continue;
+      if (where.file !== spec.rel || line === undefined) continue;
+      const again = line.startsWith(" ") && specLines.has(where.line - 1);
+      if (!line.startsWith("+") && !again) continue;
       if (lines[where.line - 1]?.trimEnd() === line.slice(1).trimEnd()) found.add(where.line - 1);
     }
   }
@@ -101,6 +105,8 @@ function renderingLines(job: Job | undefined, spec: Spec, text: string, specLine
 export function SpecView(props: {
   spec: Spec;
   running?: Job;
+  /** Lines to bring into view and light for a moment, from 1: a pulse's part of the spec, shown from the work. */
+  reveal?: { lines: number[]; at: number };
   onSaved: (spec: Spec) => void;
   onDirty: (dirty: boolean) => void;
   saveRef: MutableRefObject<(() => Promise<void>) | null>;
@@ -166,7 +172,7 @@ export function SpecView(props: {
       setSaved(text);
       setOnDisk(null);
       props.onSaved(next);
-      if (!next.ok) props.say(`Saved, but the spec does not parse: ${next.error}`, "error");
+      if (!next.ok) props.say(`saved, but the spec does not parse: ${next.error}`, "error");
     } finally {
       setSaving(false);
     }
@@ -186,13 +192,40 @@ export function SpecView(props: {
     if (building !== undefined && building === `${spec.module} functionality ${entry.frid}`) return "now";
     return entry.conformed ? "conformed" : entry.built ? "built" : "todo";
   };
+  // The functional spec the pointer rests on, for a moment: its state, said beside it.
+  const [hover, setHover] = useState<{ frid: string; line: string; x: number; y: number } | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const leave = () => {
+    clearTimeout(hoverTimer.current);
+    setHover(null);
+  };
+  /**
+   * The functional spec under the pointer - its text or its mark - after a pause. The coloured lines take no pointer -
+   * the textarea over them has it - so the line is the one whose rows the pointer's height is in.
+   */
+  const pointAt = (x: number, y: number) => {
+    const rows = editorRef.current?.querySelectorAll<HTMLElement>(".editor-colours > div") ?? [];
+    const row = [...rows].find((element) => {
+      const box = element.getBoundingClientRect();
+      return y >= box.top && y < box.bottom && x >= box.left - 60 && x <= box.right;
+    });
+    const mark = row ? specLines.get(Number(row.dataset.line)) : undefined;
+    if (mark === undefined) return leave();
+    if (hover?.frid === mark.frid) return;
+    clearTimeout(hoverTimer.current);
+    setHover(null);
+    const box = row!.getBoundingClientRect();
+    hoverTimer.current = setTimeout(() => setHover({ frid: mark.frid, line: all[mark.line] ?? "", x, y: box.bottom }), 350);
+  };
+  useEffect(() => () => clearTimeout(hoverTimer.current), []);
+
   const markerMenu = async (frid: string) => {
     const chosen = await window.turri.popup([
-      { id: "again", label: `Regenerate functional spec ${frid} again` },
-      { id: "how", label: "Regenerate another way…" },
-      { id: "conform", label: `Write conformance tests for ${frid}` },
+      { id: "again", label: `regenerate functional spec ${frid} again` },
+      { id: "how", label: "regenerate another way…" },
+      { id: "conform", label: `write conformance tests for ${frid}` },
       { type: "separator" },
-      { id: "copy", label: "Copy text" },
+      { id: "copy", label: "copy text" },
     ]);
     if (chosen === "again") props.onRegenerate([frid]);
     else if (chosen === "how") props.onRegenerateHow([frid]);
@@ -295,9 +328,22 @@ export function SpecView(props: {
   useEffect(() => {
     if (firstRendering !== undefined && document.activeElement !== areaRef.current) showLine(firstRendering);
   }, [running?.id, firstRendering]);
+  // A pulse's part, shown from the work: in view once the text is here, and lit for a few seconds.
+  const [revealed, setRevealed] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    if (props.reveal === undefined || text === null || props.reveal.lines.length === 0) return;
+    const lines = new Set(props.reveal.lines.map((line) => line - 1));
+    setRevealed(lines);
+    requestAnimationFrame(() => showLine(Math.min(...lines)));
+    const timer = setTimeout(() => setRevealed(new Set()), 4000);
+    return () => clearTimeout(timer);
+  }, [props.reveal?.at, text === null]);
+
+  const hovered = hover !== null ? { ...hover, state: stateOf(hover.frid, hover.line), entry: entryFor(hover.frid, hover.line) } : null;
 
   return (
     <div className="spec-view">
+      {hovered && <SpecStatePop {...hovered} module={spec.module} running={running} isNew={dirty && hovered.entry === undefined} />}
       <div className="editor-pane">
         <div className="pane-header">
           <span>
@@ -310,24 +356,24 @@ export function SpecView(props: {
               </span>
             )}
             {spec.ok && conformedCount > 0 && (
-              <span className="conformed-count" title="Built, and their conformance tests written and passing">
+              <span className="conformed-count" title="built, and their conformance tests written and passing">
                 <Icon name="checks" size={12} /> {conformedCount} conformed ·
               </span>
             )}
             {foldable.length > 0 && (
               <>
-                <button className="link" onClick={() => foldAll(!allFolded)} title={allFolded ? "Show every functional spec whole" : "Show only the first line of each functional spec"}>
-                  {allFolded ? "Expand all" : "Collapse all"}
+                <button className="link" onClick={() => foldAll(!allFolded)} title={allFolded ? "show every functional spec whole" : "show only the first line of each functional spec"}>
+                  {allFolded ? "expand all" : "collapse all"}
                 </button>
                 <span className="muted">·</span>
               </>
             )}
             {dirty ? (
               <button className="button small" onClick={() => void save()} disabled={saving}>
-                {saving ? <Spinner /> : null} Save <kbd>⌘S</kbd>
+                {saving ? <Spinner /> : null} save <kbd>⌘S</kbd>
               </button>
             ) : (
-              <span className="muted">Saved</span>
+              <span className="muted">saved</span>
             )}
           </span>
         </div>
@@ -340,7 +386,7 @@ export function SpecView(props: {
           <div className="parse-error">
             <Icon name="warn" />
             <div>
-              <strong>The spec does not parse</strong>
+              <strong>the spec does not parse</strong>
               <p>{spec.error}</p>
             </div>
           </div>
@@ -357,7 +403,7 @@ export function SpecView(props: {
                 setOnDisk(null);
               }}
             >
-              Load the new version
+              load the new version
             </button>
           </div>
         )}
@@ -370,7 +416,14 @@ export function SpecView(props: {
           // in the flow, giving the height, and the textarea laid exactly over it. A line is drawn as typed at once,
           // and coloured once its colours, a moment behind, are for the same text. The gutter, left of both, is drawn
           // by the coloured lines, so each functional spec's mark stays beside its lines however they wrap.
-          <div className="editor" ref={editorRef}>
+          <div
+            className="editor"
+            ref={editorRef}
+            onMouseMove={(event) => pointAt(event.clientX, event.clientY)}
+            onMouseLeave={leave}
+            onScroll={leave}
+            onKeyDown={leave}
+          >
             <div className="editor-sheet">
             <pre className="editor-colours" aria-hidden>
               {shown.map((index) => {
@@ -383,7 +436,7 @@ export function SpecView(props: {
                 const isFolded = canFold && folded.has(index);
                 const hidden = isFolded ? (lastOf.get(index) ?? index) - index : 0;
                 // A collapsed spec is lit while the work renders any of its lines.
-                const lit = rendering.has(index) || (isFolded && [...rendering].some((at) => hiddenBy.get(at) === index));
+                const lit = rendering.has(index) || revealed.has(index) || (isFolded && [...rendering, ...revealed].some((at) => hiddenBy.get(at) === index));
                 return (
                   <div key={index} data-line={index} className={[lit ? "rendering" : "", isFolded ? "folded" : ""].join(" ").trim() || undefined}>
                     {mark && state && (
@@ -391,8 +444,8 @@ export function SpecView(props: {
                         {canFold && (
                           <button
                             className={`fold ${isFolded ? "" : "open"}`}
-                            title={isFolded ? `Show all of functional spec ${mark.frid}` : `Show only the first line of functional spec ${mark.frid}`}
-                            aria-label={isFolded ? `Expand functional spec ${mark.frid}` : `Collapse functional spec ${mark.frid}`}
+                            title={isFolded ? `show all of functional spec ${mark.frid}` : `show only the first line of functional spec ${mark.frid}`}
+                            aria-label={isFolded ? `expand functional spec ${mark.frid}` : `collapse functional spec ${mark.frid}`}
                             aria-expanded={!isFolded}
                             onClick={() => toggle(index)}
                           >
@@ -402,8 +455,7 @@ export function SpecView(props: {
                         {mark.first && (
                           <button
                             className="mark"
-                            title={`Functional spec ${mark.frid} - ${STATE_LABEL[state]}`}
-                            aria-label={`Functional spec ${mark.frid}, ${STATE_LABEL[state]}`}
+                            aria-label={`functional spec ${mark.frid}, ${STATE_LABEL[state]}`}
                             onClick={() => void markerMenu(mark.frid)}
                             onContextMenu={(event) => {
                               event.preventDefault();
@@ -418,7 +470,7 @@ export function SpecView(props: {
                     {line === "" ? "\u200b" : coloured ? tokens.map((token, at) => (token.role ? <span key={at} className={`plain-${token.role}`}>{token.text}</span> : token.text)) : line}
                     {isFolded && (
                       // Out of the flow, so it never changes where the line wraps: the two layers stay alike.
-                      <button className="fold-more" onClick={() => toggle(index)} title={`Show all of functional spec ${mark.frid}`}>
+                      <button className="fold-more" onClick={() => toggle(index)} title={`show all of functional spec ${mark.frid}`}>
                         +{hidden} line{hidden === 1 ? "" : "s"}
                       </button>
                     )}
@@ -459,6 +511,50 @@ export function SpecView(props: {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A functional spec's state, beside it as the pointer rests on it: what is being done with it now - regenerated, or its
+ * conformance tests written and run, and at what stage - or what has been done: regenerated, conformance tested, or
+ * neither yet.
+ */
+function SpecStatePop(props: { frid: string; x: number; y: number; state: State; module: string; running?: Job; isNew: boolean }) {
+  const { frid, state, running } = props;
+  const working = state === "now" && running !== undefined;
+  useTick(working);
+  const conformance = running?.kind === "conformance";
+  // The stage as the pulse says it, without the module it is said of: "server: running the unit tests".
+  const stage = (running && stageOf(running))?.replace(new RegExp(`^${props.module.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}( functionality \\S+)?: `), "");
+  const [title, detail] = props.isNew
+    ? ["new - not saved yet", "save the spec, then regenerate builds it."]
+    : working
+      ? [conformance ? "conformance testing" : "regenerating", stage ?? (conformance ? "its conformance tests are being written and run." : "its code is being regenerated from the spec.")]
+      : state === "now"
+        ? ["regenerating", "a pulse is building it now."]
+        : state === "conformed"
+          ? ["regenerated and conformance tested", "its code is built from the spec as it is, and its conformance tests pass."]
+          : state === "built"
+            ? ["regenerated", "its code is built from the spec as it is. it has no passing conformance tests yet."]
+            : ["not regenerated yet", "regenerate builds it - or click its mark to build it alone."];
+  // Kept inside the window: below the line, or above it near the bottom.
+  const left = Math.min(props.x + 12, window.innerWidth - 340);
+  const below = props.y + 120 < window.innerHeight;
+  return (
+    <div className={`spec-pop ${state}`} style={{ left, ...(below ? { top: props.y + 6 } : { bottom: window.innerHeight - props.y + 30 }) }} role="tooltip">
+      <div className="spec-pop-head">
+        <span className={`spec-pop-mark ${props.isNew ? "todo" : state}`}>{working || state === "now" ? <Spinner /> : state === "conformed" ? <Icon name="checks" size={12} /> : state === "built" ? <Icon name="check" size={12} /> : null}</span>
+        <strong>{title}</strong>
+        <span className="muted">functional spec {frid}</span>
+      </div>
+      <div className="spec-pop-detail">{detail}</div>
+      {working && running && (
+        <div className="spec-pop-pulse muted">
+          {running.title ?? running.summary}
+          {running.pulse !== undefined ? ` · pulse ${running.pulse}` : ""} · {elapsed(running.building?.since ?? running.startedAt)}
+        </div>
+      )}
     </div>
   );
 }

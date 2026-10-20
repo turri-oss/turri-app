@@ -89,11 +89,11 @@ export function FileTree(props: { root: string; specs: Spec[]; selected: string 
 
   const menu = async (entry: FileEntry) => {
     const chosen = await window.turri.popup([
-      ...(entry.dir ? [] : [{ id: "open", label: "Open with Default App" }]),
-      { id: "reveal", label: "Reveal in Finder" },
+      ...(entry.dir ? [] : [{ id: "open", label: "open with default app" }]),
+      { id: "reveal", label: "reveal in Finder" },
       { type: "separator" as const },
-      { id: "copy", label: "Copy Path" },
-      { id: "copy-rel", label: "Copy Relative Path" },
+      { id: "copy", label: "copy path" },
+      { id: "copy-rel", label: "copy relative path" },
     ]);
     if (chosen === "open") void window.turri.openPath(entry.path);
     else if (chosen === "reveal") void window.turri.reveal(entry.path);

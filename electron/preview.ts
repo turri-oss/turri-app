@@ -36,6 +36,8 @@ const SCREENSHOT_WIDTH = 1280;
 
 export function createPreview({ windowOf, send }: { windowOf: () => BrowserWindow | undefined; send: (channel: string, data: unknown) => void }) {
   let view: WebContentsView | undefined;
+  /** Each pane's own browser session, kept in memory: a project opened starts with no cookies, storage or cache of another's. */
+  let sessions = 0;
   let shown = false;
   let error: string | null = null;
   let logs: string[] = [];
@@ -55,7 +57,7 @@ export function createPreview({ windowOf, send }: { windowOf: () => BrowserWindo
   const tell = () => send("preview:state", state());
 
   function make(): WebContentsView {
-    const made = new WebContentsView({ webPreferences: { partition: "persist:turri-preview", sandbox: true, contextIsolation: true } });
+    const made = new WebContentsView({ webPreferences: { partition: `turri-preview-${++sessions}`, sandbox: true, contextIsolation: true } });
     const page = made.webContents;
     made.setBackgroundColor("#ffffff");
     page.on("did-start-loading", tell);

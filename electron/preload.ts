@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { PreviewState } from "./preview.ts";
+import type { TurriVersion } from "./turri-version.ts";
 
 /** What the window may ask of the app: the engine's methods, a few native services, and the events it is sent. */
 const api = {
@@ -26,6 +27,8 @@ const api = {
     go: (action: "back" | "forward" | "reload" | "stop" | "devtools") => ipcRenderer.invoke("preview:go", action),
     state: () => ipcRenderer.invoke("preview:state") as Promise<PreviewState>,
   },
+  /** Which turri the app runs: from npm, or a clone's sources - and anything to do about it. */
+  turriVersion: () => ipcRenderer.invoke("turri:version") as Promise<TurriVersion>,
   theme: () => ipcRenderer.invoke("theme:get") as Promise<"dark" | "light" | "system">,
   setTheme: (theme: "dark" | "light" | "system") => ipcRenderer.invoke("theme:set", theme),
   platform: process.platform,

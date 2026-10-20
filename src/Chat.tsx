@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import MarkdownIt from "markdown-it";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, Jellyfish, Spinner } from "./ui.tsx";
 
 export type ChatItem =
@@ -18,6 +19,9 @@ export type SkillProgress = {
   /** The phase it is in and what it does: "stack - the language, frameworks, ...". */
   about: string | null;
 };
+
+/** How full the conversation's context is, and what its own model has cost - the pulses' cost is the work view's. */
+export type ChatStats = { percent: number | null; tokens: number | null; contextWindow: number | null; cost: number; spent: number };
 
 export type Question = {
   id: number;
@@ -50,6 +54,12 @@ export function Chat(props: {
   question?: Question;
   onAnswer: (value: unknown) => void;
   progress: SkillProgress | null;
+  stats: ChatStats | null;
+  /** Start the conversation over - unless pulses run, when it says why not. */
+  onNewSession: () => void;
+  /** A pulse the chat says ended, opened in the work view. */
+  onShowPulse: (id: string) => void;
+  newSessionBlocked: string | null;
 }) {
   const [draft, setDraft] = useState("");
   const question = useLingering(props.question);
@@ -85,7 +95,16 @@ export function Chat(props: {
           <Jellyfish size={22} swimming={props.busy} /> turri
         </span>
         {props.model && <span className="chat-model" title={props.model}>{props.model.split("/").at(-1)}</span>}
-        <button className="icon-button" onClick={props.onClose} title="Hide the chat (⌘J)">
+        <button
+          className="icon-button"
+          onClick={() => void newSession(props)}
+          disabled={props.newSessionBlocked !== null}
+          title={props.newSessionBlocked ?? "new session - start the conversation over, forgetting this one"}
+          aria-label="new session"
+        >
+          <Icon name="reload" />
+        </button>
+        <button className="icon-button" onClick={props.onClose} title="hide the chat (⌘J)">
           <Icon name="x" />
         </button>
       </div>
@@ -100,7 +119,7 @@ export function Chat(props: {
         {props.items.every((item) => item.role === "note") && !props.streaming && (
           <div className="chat-empty">
             <Jellyfish size={110} lifecycle />
-            <p>Tell turri what you want to build, or what to change. It writes the spec with you, then regenerates the code from it.</p>
+            <p>tell turri what you want to build, or what to change. it writes the spec with you, then regenerates the code from it.</p>
             {props.fresh ? (
               <>
                 <button
@@ -110,14 +129,14 @@ export function Chat(props: {
                     requestAnimationFrame(() => input.current?.focus());
                   }}
                 >
-                  I want to build…
+                  i want to build…
                 </button>
                 <button className="hint" onClick={() => props.onSend("Help me work out what to build: ask me what you need to know, then write the first spec.")}>
-                  Help me work out what to build
+                  help me work out what to build
                 </button>
               </>
             ) : (
-              ["What does this project do?", "Add a way to delete a message", "Regenerate what changed"].map((hint) => (
+              ["what does this project do?", "add a way to delete a message", "regenerate what changed"].map((hint) => (
                 <button key={hint} className="hint" onClick={() => props.onSend(hint)}>
                   {hint}
                 </button>
@@ -125,7 +144,7 @@ export function Chat(props: {
             )}
           </div>
         )}
-        {props.items.map((item, index) => (item.role === "toolResult" ? null : <Message key={index} item={item} results={results} running={props.running} />))}
+        {props.items.map((item, index) => (item.role === "toolResult" ? null : <Message key={index} item={item} results={results} running={props.running} onShowPulse={props.onShowPulse} />))}
         {props.streaming && <Message item={props.streaming} results={results} running={props.running} live />}
         {props.busy && !props.streaming && (
           <div className="chat-working">
@@ -153,7 +172,7 @@ export function Chat(props: {
         <textarea
           ref={input}
           rows={Math.min(8, Math.max(2, draft.split("\n").length))}
-          placeholder={props.busy ? "turri hears this when it finishes its turn…" : "Talk to turri - or / for a command"}
+          placeholder={props.busy ? "turri hears this when it finishes its turn…" : "talk to turri - or / for a command"}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
@@ -168,14 +187,15 @@ export function Chat(props: {
           }}
         />
         <div className="composer-bar">
-          <span className="muted small">{statusLine}</span>
+          {props.stats && <ChatMeter stats={props.stats} />}
+          <span className="muted small composer-status">{statusLine}</span>
           {props.busy ? (
             <button className="button small" onClick={props.onAbort}>
-              <Icon name="stop" size={13} /> Stop
+              <Icon name="stop" size={13} /> stop
             </button>
           ) : (
             <button className="button small primary" onClick={send} disabled={draft.trim() === ""}>
-              Send <kbd>↩</kbd>
+              send <kbd>↩</kbd>
             </button>
           )}
         </div>
@@ -185,26 +205,40 @@ export function Chat(props: {
   );
 }
 
-function Message({ item, results, running, live }: { item: ChatItem; results: Map<string, Extract<ChatItem, { role: "toolResult" }>>; running: Map<string, boolean>; live?: boolean }) {
+function Message({
+  item,
+  results,
+  running,
+  live,
+  onShowPulse,
+}: {
+  item: ChatItem;
+  results: Map<string, Extract<ChatItem, { role: "toolResult" }>>;
+  running: Map<string, boolean>;
+  live?: boolean;
+  onShowPulse?: (id: string) => void;
+}) {
   const [thinking, setThinking] = useState(false);
   if (item.role === "user") return <div className="msg user">{item.text}</div>;
   if (item.role === "command") return <div className="msg user command">{item.text}</div>;
-  // A pulse that ended: one line - what it was, how it ended, how long and what it cost. Its report - the agent's own
-  // account, often long - is there for the asking: a click on the line opens it.
-  if (item.role === "job")
+  // A pulse that ended: one line - what it was, how it ended, how long and what it cost - coloured by its kind, as the
+  // work view colours it. A click opens it there, its report and its spec a click away: the chat stays a conversation.
+  if (item.role === "job") {
+    const kind = /\bconformance\b/.test(item.summary) ? "conformance" : "regenerate";
     return (
-      <div className={`msg job-note ${item.status}`}>
-        <button className="job-note-head" onClick={() => setThinking(!thinking)} disabled={!item.text} aria-expanded={item.text ? thinking : undefined} title={item.text ? (thinking ? "Hide the report" : "Show the report") : undefined}>
-          {item.status === "succeeded" ? <Icon name="check" size={14} /> : item.status === "stopped" ? <Icon name="stop" size={14} /> : <Icon name="warn" size={14} />}
+      <div className={`msg job-note ${kind} ${item.status}`}>
+        <button className="job-note-head" onClick={() => onShowPulse?.(item.id)} title="open it in the work view">
+          {item.status === "succeeded" ? <Icon name={kind === "conformance" ? "checks" : "check"} size={14} /> : item.status === "stopped" ? <Icon name="stop" size={14} /> : <Icon name="warn" size={14} />}
           <strong>{item.summary}</strong>
           <span className="muted">
             {item.status} · {item.duration}
             {item.spent ? ` · ${item.spent}` : ""}
           </span>
+          <Icon name="chevron" size={12} />
         </button>
-        {thinking && item.text && <Prose text={item.text} />}
       </div>
     );
+  }
   if (item.role === "note")
     return (
       <div className={`msg note ${item.level ?? ""} ${item.customType === "turri_command_echo" ? "echo" : ""}`}>
@@ -216,7 +250,7 @@ function Message({ item, results, running, live }: { item: ChatItem; results: Ma
     <div className={`msg assistant ${live ? "live" : ""}`}>
       {item.thinking && (
         <button className="thinking-toggle" onClick={() => setThinking(!thinking)}>
-          {thinking ? "Hide thinking" : "Thought about it"}
+          {thinking ? "hide thinking" : "thought about it"}
         </button>
       )}
       {thinking && item.thinking && <div className="thinking">{item.thinking}</div>}
@@ -234,27 +268,27 @@ function describeTool(name: string, args: any): string {
   const file = args?.path ?? args?.file ?? args?.plain_file ?? args?.plainFile;
   switch (name) {
     case "read":
-      return `Read ${file ?? "a file"}`;
+      return `read ${file ?? "a file"}`;
     case "write":
-      return `Wrote ${file ?? "a file"}`;
+      return `wrote ${file ?? "a file"}`;
     case "edit":
-      return `Edited ${file ?? "a file"}`;
+      return `edited ${file ?? "a file"}`;
     case "bash":
-      return `Ran ${String(args?.command ?? "a command").split("\n")[0]}`;
+      return `ran ${String(args?.command ?? "a command").split("\n")[0]}`;
     case "ask_user":
-      return `Asked you: ${args?.question ?? ""}`;
+      return `asked you: ${args?.question ?? ""}`;
     case "browser_navigate":
-      return `Opened ${args?.url ?? "the app"} in the preview`;
+      return `opened ${args?.url ?? "the app"} in the preview`;
     case "browser_screenshot":
-      return "Looked at the preview";
+      return "looked at the preview";
     case "browser_read":
-      return "Read the preview";
+      return "read the preview";
     case "browser_console":
-      return "Read the preview's console";
+      return "read the preview's console";
     case "browser_click":
-      return `Clicked ${args?.ref !== undefined ? `[${args.ref}]` : (args?.selector ?? "")} in the preview`;
+      return `clicked ${args?.ref !== undefined ? `[${args.ref}]` : (args?.selector ?? "")} in the preview`;
     case "browser_type":
-      return `Typed "${args?.text ?? ""}" in the preview`;
+      return `typed "${args?.text ?? ""}" in the preview`;
     default:
       return `${name.replace(/_/g, " ")}${file ? ` · ${file}` : ""}`;
   }
@@ -271,7 +305,7 @@ function ToolCall({ tool, result, running }: { tool: { id: string; name: string;
       {open && (
         <div className="tool-detail">
           <pre>{JSON.stringify(tool.args, null, 2)}</pre>
-          {result?.image && <img className="tool-image" src={result.image} alt="What turri saw in the preview" />}
+          {result?.image && <img className="tool-image" src={result.image} alt="what turri saw in the preview" />}
           {result && <pre className="tool-result">{result.text}</pre>}
         </div>
       )}
@@ -279,63 +313,22 @@ function ToolCall({ tool, result, running }: { tool: { id: string; name: string;
   );
 }
 
-/** Just enough Markdown for what turri says: paragraphs, lists, headings, code blocks, `code` and **bold**. */
-function Prose({ text }: { text: string }) {
-  const blocks = text.split(/\n```/);
-  return (
-    <div className="prose">
-      {blocks.map((block, index) => {
-        if (index % 2 === 1) {
-          const body = block.replace(/^[^\n]*\n/, "").replace(/```\s*$/, "");
-          return <pre key={index}>{body}</pre>;
-        }
-        return block
-          .trim()
-          .split(/\n{2,}/)
-          .map((paragraph, at) => {
-            const lines = paragraph.split("\n");
-            if (lines.every((line) => /^\s*([-*]|\d+\.)\s/.test(line)))
-              return (
-                <ul key={`${index}-${at}`}>
-                  {lines.map((line, n) => (
-                    <li key={n}>
-                      <Inline text={line.replace(/^\s*([-*]|\d+\.)\s/, "")} />
-                    </li>
-                  ))}
-                </ul>
-              );
-            const heading = /^#{1,4}\s+(.*)$/.exec(paragraph);
-            if (heading) return <h4 key={`${index}-${at}`}>{heading[1]}</h4>;
-            return (
-              <p key={`${index}-${at}`}>
-                {lines.map((line, n) => (
-                  <span key={n}>
-                    {n > 0 && <br />}
-                    <Inline text={line} />
-                  </span>
-                ))}
-              </p>
-            );
-          });
-      })}
-    </div>
-  );
-}
+/**
+ * What turri says, as the Markdown it is written in - paragraphs, lists, headings, tables, code, links, and its
+ * escapes: an escaped ***plain shows as ***plain. Raw HTML in it is shown as text, never run in the window; a link opens
+ * in the browser.
+ */
+const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true });
+const linkOpen = markdown.renderer.rules.link_open ?? ((tokens, index, options, _env, self) => self.renderToken(tokens, index, options));
+markdown.renderer.rules.link_open = (tokens, index, options, env, self) => {
+  tokens[index]!.attrSet("target", "_blank");
+  tokens[index]!.attrSet("rel", "noreferrer");
+  return linkOpen(tokens, index, options, env, self);
+};
 
-function Inline({ text }: { text: string }) {
-  return (
-    <>
-      {text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).map((part, index) =>
-        part.startsWith("`") && part.endsWith("`") && part.length > 1 ? (
-          <code key={index}>{part.slice(1, -1)}</code>
-        ) : part.startsWith("**") && part.endsWith("**") && part.length > 4 ? (
-          <strong key={index}>{part.slice(2, -2)}</strong>
-        ) : (
-          part
-        ),
-      )}
-    </>
-  );
+export function Prose({ text }: { text: string }) {
+  const html = useMemo(() => markdown.render(text), [text]);
+  return <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 /** turri asking: a sheet over the window, as a native app asks - options to pick, or words to type. */
@@ -431,10 +424,10 @@ function QuestionCard({ question, waiting, onAnswer }: { question: Question; wai
         {question.kind === "confirm" ? (
           <div className="sheet-actions">
             <button className="button small" onClick={() => onAnswer(false)}>
-              No
+              no
             </button>
             <button className="button small primary" onClick={() => onAnswer(true)} autoFocus>
-              Yes
+              yes
             </button>
           </div>
         ) : (
@@ -471,7 +464,7 @@ function QuestionCard({ question, waiting, onAnswer }: { question: Question; wai
                 })}
                 {question.kind === "question" && !other && (
                   <button className="option muted" onClick={() => setOther(true)}>
-                    Something else…
+                    something else…
                   </button>
                 )}
               </div>
@@ -481,7 +474,7 @@ function QuestionCard({ question, waiting, onAnswer }: { question: Question; wai
                 ref={field}
                 className="answer"
                 rows={question.kind === "editor" ? 10 : 3}
-                placeholder={question.placeholder ?? "Your answer"}
+                placeholder={question.placeholder ?? "your answer"}
                 value={text}
                 onChange={(event) => setText(event.target.value)}
                 onKeyDown={(event) => {
@@ -494,11 +487,11 @@ function QuestionCard({ question, waiting, onAnswer }: { question: Question; wai
             )}
             <div className="sheet-actions">
               <button className="button small" onClick={() => onAnswer(undefined)}>
-                Skip
+                skip
               </button>
               {done && !other && (
                 <button className="button small primary" onClick={() => answer(done)}>
-                  Done
+                  done
                 </button>
               )}
               {other && (
@@ -511,5 +504,39 @@ function QuestionCard({ question, waiting, onAnswer }: { question: Question; wai
         )}
       </div>
     </div>
+  );
+}
+
+/** A new session is asked for: a native menu says what it does, and choosing it is the yes. */
+async function newSession(props: { onNewSession: () => void }) {
+  const chosen = await window.turri.popup([
+    { id: "new", label: "start a new session - forget this conversation" },
+    { type: "separator" },
+    { id: "keep", label: "keep this one" },
+  ]);
+  if (chosen === "new") props.onNewSession();
+}
+
+/** The context the conversation fills - a ring, and its percent - and what its model has cost so far. */
+function ChatMeter({ stats }: { stats: ChatStats }) {
+  const percent = stats.percent === null ? null : Math.min(100, Math.max(0, stats.percent));
+  const tone = percent === null ? "" : percent >= 85 ? "full" : percent >= 60 ? "filling" : "";
+  const thousands = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+  const context =
+    percent === null
+      ? "context: not known yet - it is measured at the next reply"
+      : `context: ${stats.tokens !== null ? thousands(stats.tokens) : "?"} of ${stats.contextWindow !== null ? thousands(stats.contextWindow) : "?"} tokens (${Math.round(percent)}%)`;
+  const title = `${context}\nthis conversation has cost $${stats.cost.toFixed(2)} so far - its own model's calls; the pulses' cost is in the work view.`;
+  const r = 6;
+  const around = 2 * Math.PI * r;
+  return (
+    <span className={`chat-meter ${tone}`} title={title}>
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
+        <circle cx="8" cy="8" r={r} className="chat-meter-track" />
+        <circle cx="8" cy="8" r={r} className="chat-meter-fill" strokeDasharray={`${((percent ?? 0) / 100) * around} ${around}`} transform="rotate(-90 8 8)" />
+      </svg>
+      <span>{percent === null ? "–" : `${Math.round(percent)}%`}</span>
+      <span className="chat-meter-cost">${stats.cost.toFixed(2)}</span>
+    </span>
   );
 }

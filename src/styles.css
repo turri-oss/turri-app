@@ -60,6 +60,9 @@
   --diff-del: #732553;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   --overlay: rgba(10, 15, 26, 0.7);
+  /* A pulse's kind and a functional spec's state, alike: regenerated pink, conformance tested cyan. */
+  --built: #ff5c8d;
+  --tested: #5ce1e6;
   --plain-section: #ff7fa6;
   --plain-concept: #5ce1e6;
   --plain-literal: #e9d8c8;
@@ -99,6 +102,8 @@
   --diff-del: #e9d8c8;
   --shadow: 0 1px 2px rgba(10, 15, 26, 0.12);
   --overlay: rgba(10, 15, 26, 0.35);
+  --built: #d63a6f;
+  --tested: color-mix(in srgb, #5ce1e6 62%, #0a0f1a);
   --plain-section: #3e5a6b;
   --plain-concept: #732553;
   --plain-literal: #1e3442;
@@ -134,7 +139,9 @@
     --diff-del: #e9d8c8;
     --shadow: 0 1px 2px rgba(10, 15, 26, 0.12);
     --overlay: rgba(10, 15, 26, 0.35);
-    --plain-section: #3e5a6b;
+    --built: #d63a6f;
+  --tested: color-mix(in srgb, #5ce1e6 62%, #0a0f1a);
+  --plain-section: #3e5a6b;
     --plain-concept: #732553;
     --plain-literal: #1e3442;
     --plain-link: #1e3442;
@@ -779,19 +786,19 @@ code {
   background: var(--fg-3);
 }
 .gutter.built::before {
-  background: var(--green);
+  background: var(--built);
 }
 /* Conformance tested: a step past built - turri's cyan, a solid bar a little wider, and two ticks on its mark. */
 .gutter.conformed::before {
-  background: var(--accent);
+  background: var(--tested);
   width: 3px;
-  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--tested) 60%, transparent);
 }
 .gutter.conformed .mark {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--on-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  border-color: var(--tested);
+  background: var(--tested);
+  color: var(--bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tested) 25%, transparent);
 }
 .conformed-count {
   display: inline-flex;
@@ -826,8 +833,8 @@ code {
   box-shadow: var(--shadow);
 }
 .gutter.built .mark {
-  border-color: var(--green);
-  background: var(--green);
+  border-color: var(--built);
+  background: var(--built);
 }
 .gutter.now .mark {
   border-color: var(--accent);
@@ -1109,13 +1116,32 @@ code {
 }
 .job-report {
   margin: 8px 0 0 32px;
-  white-space: pre-wrap;
   color: var(--fg-2);
   font-size: 12px;
   user-select: text;
+  cursor: auto;
 }
-.job-report.failed {
+.job-report-toggle {
+  font-size: 12px;
+  color: var(--fg-2);
+}
+.job-report-toggle:hover {
+  color: var(--fg);
+}
+.job-report-toggle .icon {
+  transition: transform 0.15s ease;
+}
+.job-report-toggle[aria-expanded="true"] .icon {
+  transform: rotate(90deg);
+}
+.job-report.failed .job-report-toggle {
   color: var(--red);
+}
+.job-report .prose {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--bg-2);
 }
 .diagnosis {
   display: flex;
@@ -1127,14 +1153,44 @@ code {
   white-space: pre-wrap;
   user-select: text;
 }
+.job-report-toggles {
+  display: flex;
+  gap: 16px;
+}
+.job-report-toggle.gaps-toggle {
+  color: var(--fg);
+}
+.gaps-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--amber) 28%, transparent);
+  color: var(--fg);
+  font-size: 11px;
+  font-weight: 600;
+}
+/* What the spec does not say, one gap at a time: amber, as turri's notes on a pulse are. */
 .gaps {
-  margin: 8px 0 0 32px;
+  margin: 6px 0 0;
   padding: 0;
   list-style: none;
   font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .gaps li {
-  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border-left: 3px solid var(--amber);
+  background: color-mix(in srgb, var(--amber) 10%, var(--bg-2));
+  color: var(--fg);
+}
+.gaps li .muted {
+  margin-top: 2px;
 }
 .agents {
   display: flex;
@@ -1427,7 +1483,7 @@ code {
 .msg.job-note {
   background: var(--card);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--green);
+  border-left: 3px solid var(--kind, var(--built));
   border-radius: var(--radius);
   padding: 8px 10px;
   font-size: 12.5px;
@@ -1481,7 +1537,8 @@ code {
 }
 .prose pre {
   font: 11.5px/1.5 var(--mono);
-  background: var(--bg-2);
+  background: var(--card);
+  border: 1px solid var(--line);
   padding: 8px 10px;
   border-radius: var(--radius);
   overflow-x: auto;
@@ -1630,7 +1687,8 @@ code {
 }
 .skill-progress-head strong {
   color: var(--accent);
-  text-transform: uppercase;
+  /* turri's brand: the interface's own words are lowercase, labels too. */
+  text-transform: none;
   margin-right: auto;
 }
 .skill-phases {
@@ -1730,7 +1788,8 @@ code {
   gap: 6px;
   color: var(--accent);
   font-size: 11px;
-  text-transform: uppercase;
+  /* turri's brand: the interface's own words are lowercase, labels too. */
+  text-transform: none;
 }
 .question-card h2 {
   font-size: 14px;
@@ -1909,7 +1968,8 @@ code {
 .sidebar-section,
 .pane-header {
   font-size: 11px;
-  text-transform: uppercase;
+  /* turri's brand: the interface's own words are lowercase, labels too. */
+  text-transform: none;
 }
 /* The welcome's title bar: the logo mark and the name, below the window's buttons and in line with them on the left. */
 .welcome-bar {
@@ -2189,4 +2249,388 @@ code {
 .regenerate-warning {
   margin-right: auto;
   align-self: center;
+}
+
+/* ---------- the welcome screen's recent projects ---------- */
+
+.recents-search {
+  width: 100%;
+  height: 30px;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.recents-search:focus {
+  border-color: var(--accent);
+}
+/* Five rows, and the rest a scroll away. */
+.recents.scrolls {
+  max-height: calc(5 * 34px);
+  overflow-y: auto;
+}
+.recents-none {
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+/* ---------- a pulse's part of the spec ---------- */
+
+/* The pulse's panel heads with its two tabs - the pulse's own name is on its card - and its controls. */
+.transcript-head {
+  text-transform: none;
+}
+.transcript-tabs {
+  font-weight: 400;
+}
+.pulse-spec section + section {
+  margin-top: 18px;
+}
+.pulse-spec-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-2);
+}
+.pulse-spec-head .icon {
+  vertical-align: -2px;
+}
+.pulse-spec-head .muted {
+  font-weight: 400;
+}
+.pulse-spec-lines {
+  font: 12px/1.6 var(--mono);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 0;
+  user-select: text;
+}
+.pulse-spec-lines > div {
+  display: flex;
+  padding: 0 10px 0 0;
+}
+/* What the pulse renders: lit as the spec lights it while the pulse runs. */
+.pulse-spec-lines > div.add {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.pulse-spec-lines > div.context {
+  color: var(--fg-2);
+}
+.pulse-spec-lines > div.del .pulse-spec-text {
+  text-decoration: line-through;
+  color: var(--fg-3);
+}
+.pulse-spec-lines > div.gap {
+  justify-content: center;
+  color: var(--fg-3);
+}
+.pulse-spec-number {
+  flex: none;
+  width: 42px;
+  padding-right: 10px;
+  text-align: right;
+  color: var(--fg-3);
+  user-select: none;
+}
+.pulse-spec-text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- a functional spec's state, as the pointer rests on it ---------- */
+
+.spec-pop {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  height: auto;
+  text-align: left;
+  align-items: stretch;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  font-size: 12px;
+  pointer-events: none;
+  animation: spec-pop-in 0.12s ease-out;
+}
+@keyframes spec-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+.spec-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.spec-pop-head strong {
+  font-size: 13px;
+}
+.spec-pop-head .muted {
+  margin-left: auto;
+  font-size: 11px;
+}
+/* The state's mark, as the gutter draws it: pink built, cyan tested, a spinner while a pulse works on it. */
+.spec-pop-mark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-small);
+  border: 1px solid var(--fg-3);
+}
+.spec-pop-mark.built {
+  background: var(--built);
+  border-color: var(--built);
+  color: var(--bg);
+}
+.spec-pop-mark.conformed {
+  background: var(--tested);
+  border-color: var(--tested);
+  color: var(--bg);
+}
+.spec-pop-mark.now {
+  border-color: var(--pink);
+}
+.spec-pop-mark .spinner {
+  transform: scale(0.7);
+}
+.spec-pop-detail {
+  margin-top: 6px;
+  color: var(--fg-2);
+  line-height: 1.45;
+}
+.spec-pop-pulse {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+}
+
+/* ---------- a pulse's kind: regenerate pink, conformance cyan - as the intent view marks built and tested ---------- */
+
+.job.regenerate,
+.planned li.regenerate {
+  --kind: var(--built);
+}
+.job.conformance,
+.planned li.conformance {
+  --kind: var(--tested);
+}
+.job.regenerate,
+.job.conformance {
+  border-left: 3px solid var(--kind);
+}
+.job.regenerate.open,
+.job.conformance.open {
+  border-color: var(--kind);
+  box-shadow: 0 0 0 1px var(--kind), var(--shadow);
+}
+.job.regenerate .job-icon,
+.job.conformance .job-icon {
+  color: var(--kind);
+}
+.job.regenerate .job-icon.succeeded,
+.job.conformance .job-icon.succeeded {
+  background: color-mix(in srgb, var(--kind) 18%, transparent);
+  color: var(--kind);
+}
+.job.regenerate .job-icon.failed,
+.job.conformance .job-icon.failed {
+  color: var(--red);
+}
+.kind-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: var(--radius-small);
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--kind, var(--fg-2));
+  background: color-mix(in srgb, var(--kind, var(--fg-3)) 16%, transparent);
+}
+.planned li .kind-tag {
+  margin-left: 0;
+}
+.planned li .icon,
+.planned li .spinner {
+  color: var(--kind);
+}
+
+/* ---------- the chat's context and cost ---------- */
+
+.chat-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+.chat-meter-track {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 2.5;
+}
+.chat-meter-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.3s ease;
+}
+.chat-meter.filling .chat-meter-fill {
+  stroke: var(--amber);
+}
+.chat-meter.full .chat-meter-fill {
+  stroke: var(--red);
+}
+.chat-meter.full {
+  color: var(--red);
+}
+.chat-meter-cost {
+  padding-left: 6px;
+  border-left: 1px solid var(--line);
+}
+.chat-top .icon-button:disabled {
+  color: var(--fg-3);
+  background: none;
+}
+
+/* The message box's foot: the context and cost on the left, what the extension says beside them, Send on the right. */
+.composer-status {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- Markdown, as turri writes it ---------- */
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.prose h5,
+.prose h6 {
+  margin: 10px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.prose h1 {
+  font-size: 15px;
+}
+.prose h2 {
+  font-size: 14px;
+}
+.prose > :first-child {
+  margin-top: 0;
+}
+.prose ol {
+  margin: 2px 0 6px;
+  padding-left: 20px;
+}
+.prose li > p {
+  margin: 0;
+}
+.prose a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose blockquote {
+  margin: 6px 0;
+  padding: 2px 10px;
+  border-left: 3px solid var(--line);
+  color: var(--fg-2);
+}
+.prose hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 10px 0;
+}
+.prose pre code {
+  background: none;
+  padding: 0;
+}
+.prose table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 12px;
+  display: block;
+  overflow-x: auto;
+}
+.prose th,
+.prose td {
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.prose th {
+  background: var(--hover);
+  font-weight: 600;
+}
+
+/* A pulse that ended, in the chat: coloured by its kind, as in the work view - and opened there. */
+.msg.job-note.regenerate {
+  --kind: var(--built);
+}
+.msg.job-note.conformance {
+  --kind: var(--tested);
+}
+.msg.job-note.succeeded .job-note-head > .icon:first-child {
+  color: var(--kind);
+}
+.msg.job-note .job-note-head > .icon:last-child {
+  margin-left: auto;
+  color: var(--fg-3);
+}
+.msg.job-note:hover {
+  border-color: var(--kind);
+}
+
+/* ---------- which turri the app runs ---------- */
+
+.turri-version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: 11px;
+  color: var(--fg-3);
+}
+.turri-version span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turri-version.warning {
+  color: var(--amber);
+}
+.turri-version-warning {
+  flex-basis: 100%;
+  line-height: 1.35;
+}
+.welcome .turri-version {
+  justify-content: center;
+  margin-top: 14px;
+  text-align: center;
 }

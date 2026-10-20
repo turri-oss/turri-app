@@ -1,18 +1,36 @@
 import { useEffect, useRef, useState } from "react";
 import type { Job, Status, TranscriptEntry } from "./types.ts";
 import { cost, elapsed, Empty, Icon, Spinner, tokens, useTick } from "./ui.tsx";
+import { hasSpecPart, PulseSpec, stageOf, turriSays } from "./PulseSpec.tsx";
+import { Prose } from "./Chat.tsx";
 
 /** The work: each codebase's plan, and every pulse - running, planned and done - opened into its agents' conversation. */
-export function WorkView({ status, jobs }: { status: Status; jobs: Job[] }) {
-  const [open, setOpen] = useState<string | null>(null);
+export function WorkView({
+  status,
+  jobs,
+  onShowInSpec,
+  focus,
+}: {
+  status: Status;
+  jobs: Job[];
+  onShowInSpec: (file: string, lines: number[]) => void;
+  /** A pulse to open and bring into view - one the chat says ended. */
+  focus?: { id: string; at: number };
+}) {
+  const [open, setOpen] = useState<string | null>(focus?.id ?? null);
+  useEffect(() => {
+    if (focus === undefined) return;
+    setOpen(focus.id);
+    requestAnimationFrame(() => document.querySelector(`.job[data-id="${CSS.escape(focus.id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  }, [focus?.at]);
   const anyRunning = jobs.some((job) => job.status === "running");
   useTick(anyRunning);
   const selected = jobs.find((job) => job.id === open) ?? null;
 
   if (jobs.length === 0 && status.modules.length === 0)
     return (
-      <Empty icon="layers" title="Nothing has run yet">
-        Press Regenerate and turri plans the work into pulses and starts them. Each one shows up here, live.
+      <Empty icon="layers" title="nothing has run yet">
+        press regenerate and turri plans the work into pulses and starts them. each one shows up here, live.
       </Empty>
     );
 
@@ -27,16 +45,16 @@ export function WorkView({ status, jobs }: { status: Status; jobs: Job[] }) {
               <Icon name="layers" />
               <strong>{module.module}</strong>
               {module.stack && <span className="tag">{module.stack}</span>}
-              {module.why && <span className="muted"> - {module.why}</span>}
+              {module.why && <span className="muted"> - {turriSays(module.why)}</span>}
             </div>
             {module.planned.length > 0 && (
               <ol className="planned">
                 {module.planned.map((entry, index) => (
-                  <li key={index}>
+                  <li key={index} className={entry.track === "conformance" ? "conformance" : "regenerate"}>
                     <span className="planned-index">{index + 1}</span>
                     {entry.planning ? <Spinner /> : <Icon name={entry.track === "conformance" ? "test" : "clock"} size={14} />}
                     <span>{entry.title}</span>
-                    {entry.track === "conformance" && <span className="tag">conformance</span>}
+                    <span className="kind-tag">{entry.track === "conformance" ? "conformance" : "regenerate"}</span>
                   </li>
                 ))}
               </ol>
@@ -51,23 +69,42 @@ export function WorkView({ status, jobs }: { status: Status; jobs: Job[] }) {
           <JobCard key={job.id} job={job} open={job.id === open} onOpen={() => setOpen(job.id === open ? null : job.id)} />
         ))}
       </div>
-      {selected && <Transcript job={selected} onClose={() => setOpen(null)} />}
+      {selected && <Transcript key={selected.id} job={selected} onClose={() => setOpen(null)} onShowInSpec={onShowInSpec} />}
     </div>
   );
 }
 
 function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () => void }) {
+  // What a pulse that ended reports, and what it found the spec does not say: each folded, to open and read - the card
+  // says how it went without them.
+  const [reading, setReading] = useState<"report" | "gaps" | null>(null);
+  const toggle = (what: "report" | "gaps") => setReading((now) => (now === what ? null : what));
+  const gaps = job.specGaps.length;
+  const report = job.status !== "running" && job.status !== "queued" ? (job.announce ?? job.report ?? job.error ?? "").trim() : "";
+  // Its kind, coloured as the intent view marks it: a regenerate pulse pink, as a built functional spec; a conformance
+  // pulse turri's cyan, as a conformance-tested one - two ticks when it lands.
+  const kind = job.kind === "conformance" ? "conformance" : "regenerate";
   const icon =
-    job.status === "running" ? <Spinner /> : job.status === "succeeded" ? <Icon name="check" /> : job.status === "failed" ? <Icon name="x" /> : job.status === "stopped" ? <Icon name="stop" /> : <Icon name="clock" />;
+    job.status === "running" ? (
+      <Spinner />
+    ) : job.status === "succeeded" ? (
+      <Icon name={kind === "conformance" ? "checks" : "check"} />
+    ) : job.status === "failed" ? (
+      <Icon name="x" />
+    ) : job.status === "stopped" ? (
+      <Icon name="stop" />
+    ) : (
+      <Icon name="clock" />
+    );
   return (
-    <div className={`job ${job.status} ${open ? "open" : ""}`} onClick={onOpen}>
+    <div className={`job ${kind} ${job.status} ${open ? "open" : ""}`} data-id={job.id} onClick={onOpen}>
       <div className="job-head">
         <span className={`job-icon ${job.status}`}>{icon}</span>
         <div className="job-title">
           <strong>{job.title ?? job.summary}</strong>
           <span className="muted">
             {job.module}
-            {job.pulse !== undefined ? ` · pulse ${job.pulse}` : ""} · {job.kind}
+            {job.pulse !== undefined ? ` · pulse ${job.pulse}` : ""} <span className="kind-tag">{job.kind}</span>
           </span>
         </div>
         <div className="job-meta">
@@ -77,42 +114,59 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
       </div>
       {job.status === "running" && (
         <div className="job-live">
-          {job.stage && <div className="stage">{job.stage}</div>}
+          {stageOf(job) && <div className="stage">{stageOf(job)}</div>}
           {job.now && (
             <div className="now">
-              <span className="pulse-dot" /> {job.now.label} <span className="muted">· {elapsed(job.now.since)}</span>
+              <span className="pulse-dot" /> {turriSays(job.now.label)} <span className="muted">· {elapsed(job.now.since)}</span>
             </div>
           )}
-          {job.building && <div className="building">Building {job.building.label}</div>}
+          {job.building && <div className="building">building {turriSays(job.building.label)}</div>}
           <ul className="activity">
             {job.activity.slice(-5).map((line, index) => (
-              <li key={index}>{line}</li>
+              <li key={index}>{turriSays(line)}</li>
             ))}
           </ul>
         </div>
       )}
-      {job.status !== "running" && job.status !== "queued" && (job.announce ?? job.report ?? job.error) && (
-        <p className={`job-report ${job.status}`}>{(job.announce ?? job.report ?? job.error ?? "").trim().slice(0, 600)}</p>
+      {(report !== "" || gaps > 0) && (
+        <div className={`job-report ${job.status}`} onClick={(event) => event.stopPropagation()}>
+          <div className="job-report-toggles">
+            {report !== "" && (
+              <button className="link job-report-toggle" onClick={() => toggle("report")} aria-expanded={reading === "report"}>
+                <Icon name="chevron" size={12} /> {job.status === "failed" ? "why it failed" : "report"}
+              </button>
+            )}
+            {gaps > 0 && (
+              <button className="link job-report-toggle gaps-toggle" onClick={() => toggle("gaps")} aria-expanded={reading === "gaps"}>
+                <Icon name="chevron" size={12} /> <span className="gaps-count">{gaps}</span> spec gap{gaps === 1 ? "" : "s"}
+              </button>
+            )}
+          </div>
+          {reading === "report" && <Prose text={report} />}
+          {reading === "gaps" && (
+            <ul className="gaps">
+              {job.specGaps.map((gap, index) => (
+                <li key={index}>
+                  <div>
+                    <strong>the spec does not say:</strong> {gap.question}
+                  </div>
+                  <div className="muted">Meanwhile, the pulse assumed: {gap.assumption}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
       {job.diagnosis && (
         <div className="diagnosis">
           <Icon name="spark" /> <div>{job.diagnosis}</div>
         </div>
       )}
-      {job.specGaps.length > 0 && (
-        <ul className="gaps">
-          {job.specGaps.map((gap, index) => (
-            <li key={index}>
-              <strong>The spec does not say:</strong> {gap.question} <span className="muted">Meanwhile: {gap.assumption}</span>
-            </li>
-          ))}
-        </ul>
-      )}
       {job.agents.length > 0 && (
         <div className="agents">
           {job.agents.map((agent) => (
             <span key={agent.label} className="agent-chip" title={agent.model}>
-              {agent.label} · {agent.turns} turn{agent.turns === 1 ? "" : "s"}
+              {turriSays(agent.label)} · {agent.turns} turn{agent.turns === 1 ? "" : "s"}
               {tokens(agent.usage) && ` · ${tokens(agent.usage)}`}
             </span>
           ))}
@@ -122,8 +176,12 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
   );
 }
 
-/** A pulse's agents' conversation, as chat bubbles: polled while it runs. */
-function Transcript({ job, onClose }: { job: Job; onClose: () => void }) {
+/**
+ * A pulse, opened: the ***plain it works on - what it renders, coloured as the spec is - and its agents' conversation,
+ * as chat bubbles, polled while it runs.
+ */
+function Transcript({ job, onClose, onShowInSpec }: { job: Job; onClose: () => void; onShowInSpec: (file: string, lines: number[]) => void }) {
+  const [tab, setTab] = useState<"spec" | "conversation">(hasSpecPart(job) ? "spec" : "conversation");
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [showThinking, setShowThinking] = useState(false);
   const end = useRef<HTMLDivElement>(null);
@@ -147,17 +205,30 @@ function Transcript({ job, onClose }: { job: Job; onClose: () => void }) {
 
   return (
     <aside className="transcript">
-      <div className="pane-header">
-        <span>{job.title ?? job.summary}</span>
+      <div className="pane-header transcript-head">
+        <div className="segmented transcript-tabs" role="tablist">
+          {(["spec", "conversation"] as const).map((name) => (
+            <button key={name} role="tab" aria-selected={tab === name} className={tab === name ? "on" : ""} onClick={() => setTab(name)}>
+              {name}
+            </button>
+          ))}
+        </div>
         <span className="pane-header-right">
-          <label className="toggle">
-            <input type="checkbox" checked={showThinking} onChange={(event) => setShowThinking(event.target.checked)} /> Thinking
-          </label>
-          <button className="icon-button" onClick={onClose} aria-label="Close">
+          {tab === "conversation" && (
+            <label className="toggle">
+              <input type="checkbox" checked={showThinking} onChange={(event) => setShowThinking(event.target.checked)} /> thinking
+            </label>
+          )}
+          <button className="icon-button" onClick={onClose} aria-label="close">
             <Icon name="x" />
           </button>
         </span>
       </div>
+      {tab === "spec" ? (
+        <div className="transcript-body">
+          <PulseSpec job={job} onShowInSpec={onShowInSpec} />
+        </div>
+      ) : (
       <div
         className="transcript-body"
         onScroll={(event) => {
@@ -165,7 +236,7 @@ function Transcript({ job, onClose }: { job: Job; onClose: () => void }) {
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
         }}
       >
-        {entries.length === 0 && <p className="muted pad">Nothing said yet.</p>}
+        {entries.length === 0 && <p className="muted pad">nothing said yet.</p>}
         {entries
           .filter((entry) => showThinking || entry.kind !== "thinking")
           .map((entry, index) => (
@@ -173,6 +244,7 @@ function Transcript({ job, onClose }: { job: Job; onClose: () => void }) {
           ))}
         <div ref={end} />
       </div>
+      )}
     </aside>
   );
 }
@@ -181,7 +253,7 @@ function Entry({ entry }: { entry: TranscriptEntry }) {
   const [expanded, setExpanded] = useState(false);
   switch (entry.kind) {
     case "stage":
-      return <div className="t-stage">{entry.text}</div>;
+      return <div className="t-stage">{turriSays(entry.text)}</div>;
     case "spec":
       return <div className="t-spec">{entry.text}</div>;
     case "diff":

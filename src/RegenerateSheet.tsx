@@ -33,13 +33,13 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
   const ways: Array<{ id: How; title: string; detail: string }> = [
     {
       id: "changed",
-      title: "What changed",
-      detail: spec.drifted === false ? "The code is built from the spec as it is now: there is nothing to bring up to it." : "The code brought up to the spec as it is now - only what changed is built.",
+      title: "what changed",
+      detail: spec.drifted === false ? "the code is built from the spec as it is now: there is nothing to bring up to it." : "the code brought up to the spec as it is now - only what changed is built.",
     },
-    { id: "again", title: "Chosen functional specs again", detail: "Built again though they did not change - the code for them rewritten from the spec." },
-    { id: "scratch", title: `All of ${spec.module} from scratch`, detail: "Its code and conformance tests deleted - committed first, so its history keeps them - and every functional spec built again." },
+    { id: "again", title: "chosen functional specs again", detail: "built again though they did not change - the code for them rewritten from the spec." },
+    { id: "scratch", title: `all of ${spec.module} from scratch`, detail: "its code and conformance tests deleted - committed first, so its history keeps them - and every functional spec built again." },
     ...(chained
-      ? [{ id: "chain" as const, title: `${spec.module} and its whole chain from scratch`, detail: `The same for every module it requires too - ${spec.requires.join(", ")} - built again from the bottom.` }]
+      ? [{ id: "chain" as const, title: `${spec.module} and its whole chain from scratch`, detail: `the same for every module it requires too - ${spec.requires.join(", ")} - built again from the bottom.` }]
       : []),
   ];
 
@@ -55,7 +55,7 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet regenerate" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.key === "Escape" && onClose()}>
-        <h2>Regenerate {spec.module}</h2>
+        <h2>regenerate {spec.module}</h2>
         <div className="options">
           {ways.map((way) => (
             <button key={way.id} className={`option ${how === way.id ? "on" : ""}`} onClick={() => setHow(way.id)} aria-pressed={how === way.id}>
@@ -72,7 +72,7 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
                 {ordered.length} of {spec.functionalSpecs.length} chosen
               </span>
               <button className="link" onClick={() => setFrids(new Set(ordered.length === spec.functionalSpecs.length ? [] : spec.functionalSpecs.map((entry) => entry.frid)))}>
-                {ordered.length === spec.functionalSpecs.length ? "None" : "All"}
+                {ordered.length === spec.functionalSpecs.length ? "none" : "all"}
               </button>
             </div>
             <div className="options">
@@ -91,7 +91,7 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
         )}
 
         <label className="regenerate-guidance">
-          <span>How to cut the work <span className="muted">- optional</span></span>
+          <span>how to cut the work <span className="muted">- optional</span></span>
           <textarea
             value={guidance}
             onChange={(event) => setGuidance(event.target.value)}
@@ -106,10 +106,10 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
         <div className="sheet-actions">
           {deletes && <span className="muted small regenerate-warning">turri asks you in the chat before it deletes anything.</span>}
           <button className="button" onClick={onClose}>
-            Cancel
+            cancel
           </button>
           <button className="button primary" onClick={go} disabled={!ready} autoFocus>
-            <Icon name="play" /> Regenerate
+            <Icon name="play" /> regenerate
           </button>
         </div>
       </div>

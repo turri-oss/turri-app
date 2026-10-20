@@ -2,7 +2,7 @@
 // session with turri's extension, from the @turri-dev/cli package's host entry. It talks to the Electron main process
 // over IPC. The chat's job registry and work loop are the project's one: the window's buttons go through the chat's
 // slash commands, and what its jobs do is sent to the window as they do it. The app never shells out to `turri`.
-import * as turri from "@turri-dev/cli/host";
+import turri, { turriFrom } from "./turri.mjs";
 import { startChat } from "./chat.mjs";
 import { existsSync, readdirSync, readFileSync, statSync, watch, writeFileSync } from "node:fs";
 import { basename, join, relative, resolve, sep } from "node:path";
@@ -27,6 +27,8 @@ const questions = new Map();
 let nextQuestion = 0;
 const browserCalls = new Map();
 let nextBrowserCall = 0;
+/** What the person has open in the window - its view, and the file in it - for turri to know (engine/app.mjs). */
+let looking = { view: "spec", file: null };
 
 /** What turri's chat tells its host - the window - of its jobs and its work loop (TurriHost in turri). */
 const ENDED = new Set(["succeeded", "failed", "stopped"]);
@@ -64,8 +66,7 @@ async function open({ dir }) {
     const line = turri.describeTurnIncident(event);
     if (line !== undefined) emit("incident", { job: event.job, text: line });
   });
-  const harnessModel = turri.modelSpec(turri.projectModels(turri.readProjectConfig(projectDir)).harness);
-  chat = await startChat({ cwd: projectDir, harnessModel, host, emit, ask, browser });
+  await chatAnew();
   watchSpecs();
   return { ...summary(), orphans, chatModel: chat.model() };
 }
@@ -378,6 +379,12 @@ function release({ file }) {
   return true;
 }
 
+/** The window's view and the file open in it, as the person moves about: told to turri at its next turn. */
+function look({ view, file }) {
+  looking = { view, file: file ? relative(projectDir, file) || file : null };
+  return true;
+}
+
 function sendChat({ text }) {
   chat.send(text);
   return true;
@@ -393,7 +400,35 @@ function commands() {
 }
 
 function chatHistory() {
-  return { messages: chat.history(), model: chat.model() };
+  return { messages: chat.history(), model: chat.model(), stats: chat.stats() };
+}
+
+/** The conversation, started: a session of its own, with turri's extension and its job registry and work loop made for it. */
+async function chatAnew() {
+  const harnessModel = turri.modelSpec(turri.projectModels(turri.readProjectConfig(projectDir)).harness);
+  // The work loop's plan can change with no word of it - planned again while a pulse runs, on a spec edited from the
+  // chat - so the window is sent it again as each of the chat's tools ends, and as it settles: regenerate, say, ends
+  // once the plan is made.
+  chat = await startChat({ cwd: projectDir, harnessModel, host, emit, ask, browser, whereNow: () => looking, onStep: () => loop !== undefined && emit("status", statusNow()) });
+}
+
+/**
+ * A new session: the conversation started over, nothing of this one carried into it - as /new is in the terminal. Not
+ * while pulses run: they are the work loop's that goes with this conversation, and would run on with no one to follow
+ * them.
+ */
+async function newChat() {
+  const running = (registry?.list() ?? []).filter((job) => job.status === "running" || job.status === "queued");
+  if (running.length > 0) throw new Error(`${running.length} pulse${running.length === 1 ? " is" : "s are"} running: start a new session once ${running.length === 1 ? "it has" : "they have"} finished.`);
+  for (const resolve of questions.values()) resolve(undefined);
+  questions.clear();
+  chat.abort();
+  chat.dispose();
+  registry = undefined;
+  loop = undefined;
+  await chatAnew();
+  emit("status", statusNow());
+  return { messages: chat.history(), model: chat.model(), stats: chat.stats() };
 }
 
 /** What regenerating would do, planned on a loop of its own that starts nothing - `turri glimpse`. */
@@ -422,7 +457,7 @@ function transcript({ id }) {
 
 // ---------- the wire ----------
 
-const methods = { open, vendors, initConfig, summary, listFiles, readFile, writeFile, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, sendChat, abortChat, chatHistory, commands, answer };
+const methods = { newChat, look, open, vendors, initConfig, summary, listFiles, readFile, writeFile, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, sendChat, abortChat, chatHistory, commands, answer };
 
 // What the window may ask before a project is open: to open one, or to start a new one.
 const BEFORE_A_PROJECT = new Set(["open", "vendors", "initConfig"]);
@@ -449,4 +484,4 @@ process.on("message", async ({ id, method, params, browserReply, result, error }
   }
 });
 
-emit("ready", { node: process.version });
+emit("ready", { node: process.version, turri: turriFrom });

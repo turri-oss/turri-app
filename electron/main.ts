@@ -1,8 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell, type MenuItemConstructorOptions, type Rectangle } from "electron";
 import { fork, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, statSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, writeFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { createPreview } from "./preview.ts";
+import { turriVersion } from "./turri-version.ts";
 
 /**
  * The main process: one window, and behind it one turri engine per open project - a Node process that hosts
@@ -86,7 +87,11 @@ function startEngine(): Promise<void> {
   child.stderr?.on("data", (chunk) => send("engine:log", { level: "stderr", text: String(chunk) }));
   return new Promise((resolve, reject) => {
     child.on("message", (message: { id?: number; result?: unknown; error?: string; event?: string; data?: unknown; browser?: string; params?: unknown }) => {
-      if (message.event === "ready") return resolve();
+      if (message.event === "ready") {
+        // Which turri the engine runs - the package, or a clone's sources (TURRI_DEV) - said where the app was started.
+        console.log(`turri engine: Node ${(message.data as { node: string }).node}, turri from ${(message.data as { turri: string }).turri}`);
+        return resolve();
+      }
       // One of turri's browser tools, asked of the preview: done there, and answered.
       if (message.browser !== undefined) {
         preview.request(message.browser, message.params).then(
@@ -103,7 +108,7 @@ function startEngine(): Promise<void> {
       else call.resolve(message.result);
     });
     child.on("exit", (code) => {
-      reject(new Error(`The turri engine exited (${code}). Is @turri-dev/cli installed (npm install)?`));
+      reject(new Error(`The turri engine exited (${code}). ${process.env.TURRI_DEV ? `Is TURRI_DEV=${process.env.TURRI_DEV} a turri clone, with its packages installed (npm install there)?` : "Is @turri-dev/cli installed (npm install)?"}`));
       // One replaced by another - a project opened after another - was stopped on purpose: only the current one's end is news.
       if (engine !== child) return;
       engine = undefined;
@@ -144,21 +149,36 @@ function onEngineEvent(event: string, data: any) {
 
 // ---------- projects ----------
 
+/** How many recent projects are kept: the welcome screen searches them. */
+const RECENTS_KEPT = 30;
+
+/** A project's folder as one path - absolute, its links followed - however it was named: the same folder is one recent. */
+function canonical(dir: string): string {
+  const full = resolve(dir);
+  try {
+    return realpathSync(full);
+  } catch {
+    return full;
+  }
+}
+
 function recents(): string[] {
   try {
-    return (JSON.parse(readFileSync(RECENTS_FILE, "utf8")) as string[]).filter((dir) => existsSync(dir));
+    const dirs = (JSON.parse(readFileSync(RECENTS_FILE, "utf8")) as string[]).filter((dir) => existsSync(dir)).map(canonical);
+    return [...new Set(dirs)];
   } catch {
     return [];
   }
 }
 
-async function openProject(dir: string) {
+async function openProject(named: string) {
+  const dir = canonical(named);
   if (engine === undefined || engineHasProject) await startEngine();
   engineHasProject = true;
   // Another project's app is not this one's: the preview starts empty.
   preview.dispose();
   const summary = await call("open", { dir });
-  writeFileSync(RECENTS_FILE, JSON.stringify([dir, ...recents().filter((other) => other !== dir)].slice(0, 8)));
+  writeFileSync(RECENTS_FILE, JSON.stringify([dir, ...recents().filter((other) => other !== dir)].slice(0, RECENTS_KEPT)));
   app.addRecentDocument(dir);
   window?.setRepresentedFilename(dir);
   window?.setTitle((summary as { name: string }).name);
@@ -336,6 +356,9 @@ ipcMain.handle("preview:place", (_event, rect: Rectangle | null) => preview.plac
 ipcMain.handle("preview:open", (_event, url: string) => preview.open(url));
 ipcMain.handle("preview:go", (_event, action: "back" | "forward" | "reload" | "stop" | "devtools") => preview.go(action));
 ipcMain.handle("preview:state", () => preview.state());
+// Which turri the app runs - worked out once: it does not change while the app runs.
+const turri = turriVersion(ROOT);
+ipcMain.handle("turri:version", () => turri);
 ipcMain.handle("theme:get", () => theme);
 ipcMain.handle("theme:set", (_event, next: Theme) => setTheme(next));
 nativeTheme.on("updated", () => window?.setBackgroundColor(backgroundFor()));
@@ -356,6 +379,7 @@ app.on("open-file", (event, path) => {
 });
 
 app.whenReady().then(() => {
+  console.log(`turri ${turri.from === "npm" ? "from npm" : "from a clone"}: ${turri.label}${turri.warning ? ` - ${turri.warning}` : ""}`);
   app.setName("turri");
   // The bundle carries the icon once scripts/brand.mjs has run; the Dock is given it as well, for when it has not.
   app.dock?.setIcon(join(ROOT, "build", "icon.png"));

@@ -88,10 +88,10 @@ export function Appearance() {
     return window.turri.on("theme", setTheme);
   }, []);
   return (
-    <div className="appearance" role="radiogroup" aria-label="Appearance">
+    <div className="appearance" role="radiogroup" aria-label="appearance">
       {(["dark", "light", "system"] as const).map((name) => (
         <button key={name} role="radio" aria-checked={theme === name} className={theme === name ? "on" : ""} onClick={() => void window.turri.setTheme(name)}>
-          {name === "dark" ? "Dark" : name === "light" ? "Light" : "System"}
+          {name === "dark" ? "dark" : name === "light" ? "light" : "system"}
         </button>
       ))}
     </div>
@@ -152,6 +152,22 @@ export function Empty({ icon, title, children }: { icon: string; title: string; 
       <Icon name={icon} size={34} />
       <h3>{title}</h3>
       {children && <p>{children}</p>}
+    </div>
+  );
+}
+
+/** Which turri the app runs - from npm, or a clone's sources at a commit - and, in amber, anything to do about it. */
+export function TurriVersionLine() {
+  const [version, setVersion] = useState<Awaited<ReturnType<typeof window.turri.turriVersion>> | null>(null);
+  useEffect(() => void window.turri.turriVersion().then(setVersion).catch(() => {}), []);
+  if (version === null) return null;
+  return (
+    <div className={`turri-version ${version.warning ? "warning" : ""}`} title={version.warning ? `${version.warning}\n\n${version.detail}` : version.detail}>
+      {version.warning && <Icon name="warn" size={12} />}
+      <span>
+        turri {version.from === "npm" ? `${version.label} · npm` : `local · ${version.label}`}
+      </span>
+      {version.warning && <span className="turri-version-warning">{version.warning}</span>}
     </div>
   );
 }
