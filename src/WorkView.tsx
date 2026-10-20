@@ -7,6 +7,61 @@ import { Prose } from "./Chat.tsx";
 /** Earlier sessions' runs shown at first: the last few, and more on asking. */
 const RUNS_SHOWN = 3;
 
+/** The most of a pulse's summary its card heads with: in words, and in characters. */
+const SUMMARY_WORDS = 10;
+const SUMMARY_CHARS = 70;
+
+/** A pulse's summary as its card heads with it - cut at a word, with an ellipsis - the whole of it on hover and copied. */
+export function short(text: string): string {
+  const words = text.trim().split(/\s+/);
+  let cut = words.slice(0, SUMMARY_WORDS).join(" ");
+  if (words.length <= SUMMARY_WORDS && cut.length <= SUMMARY_CHARS) return cut;
+  if (cut.length > SUMMARY_CHARS - 1) cut = cut.slice(0, SUMMARY_CHARS - 1).replace(/\s+\S*$/, "") || cut.slice(0, SUMMARY_CHARS - 1);
+  return `${cut.replace(/[\s,.;:-]+$/, "")}…`;
+}
+
+/** A click on a card opens it - unless it ended a drag that selected some of its text, to copy. */
+function opens(): boolean {
+  return window.getSelection()?.isCollapsed !== false;
+}
+
+/** What is copied of a pulse: its summary whole, and, for the chat, what turri looks it up by. */
+interface Copyable {
+  id: string;
+  summary: string;
+  module?: string | null;
+  pulse?: number | null;
+  kind: string;
+}
+
+/** A pulse said for the chat: its summary, then its module, number, kind and id - turri finds it by the id. */
+function forChat({ id, summary, module, pulse, kind }: Copyable): string {
+  return `${summary} (${[module, pulse !== undefined && pulse !== null ? `pulse ${pulse}` : null, kind, id].filter(Boolean).join(" · ")})`;
+}
+
+/** Copy a pulse - from its button or a right-click: the text selected in it, for the chat, its summary, or its id. */
+async function copyMenu(event: React.MouseEvent, pulse: Copyable) {
+  event.preventDefault();
+  event.stopPropagation();
+  const selected = window.getSelection()?.toString().trim() ?? "";
+  const chosen = await window.turri.popup([
+    ...(selected !== "" ? [{ id: "selection", label: "copy selection" }, { type: "separator" as const }] : []),
+    { id: "chat", label: "copy for the chat" },
+    { id: "summary", label: "copy summary" },
+    { id: "id", label: "copy pulse id" },
+  ]);
+  const text = chosen === "selection" ? selected : chosen === "chat" ? forChat(pulse) : chosen === "summary" ? pulse.summary : chosen === "id" ? pulse.id : null;
+  if (text !== null) void navigator.clipboard.writeText(text);
+}
+
+function CopyButton({ pulse }: { pulse: Copyable }) {
+  return (
+    <button className="job-copy" title="copy - for the chat, its summary, or its id" aria-label="copy" onClick={(event) => void copyMenu(event, pulse)}>
+      <Icon name="copy" size={14} />
+    </button>
+  );
+}
+
 /**
  * The work: each codebase's plan, and every pulse - running, planned and done - opened into its agents' conversation;
  * below them, earlier sessions' pulses, from the ledger, opened into what it says of each.
@@ -66,7 +121,7 @@ export function WorkView({
                   <li key={index} className={entry.track === "conformance" ? "conformance" : "regenerate"}>
                     <span className="planned-index">{index + 1}</span>
                     {entry.planning ? <Spinner /> : <Icon name={entry.track === "conformance" ? "test" : "clock"} size={14} />}
-                    <span>{entry.title}</span>
+                    <span title={entry.title}>{short(entry.title)}</span>
                     <span className="kind-tag">{entry.track === "conformance" ? "conformance" : "regenerate"}</span>
                   </li>
                 ))}
@@ -120,6 +175,7 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
   // Its kind, coloured as the intent view marks it: a regenerate pulse pink, as a built functional spec; a conformance
   // pulse turri's cyan, as a conformance-tested one - two ticks when it lands.
   const kind = job.kind === "conformance" ? "conformance" : "regenerate";
+  const copyable: Copyable = { id: job.id, summary: job.title ?? job.summary, module: job.module, pulse: job.pulse, kind: job.kind };
   const icon =
     job.status === "running" ? (
       <Spinner />
@@ -133,11 +189,11 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
       <Icon name="clock" />
     );
   return (
-    <div className={`job ${kind} ${job.status} ${open ? "open" : ""}`} data-id={job.id} onClick={onOpen}>
+    <div className={`job ${kind} ${job.status} ${open ? "open" : ""}`} data-id={job.id} onClick={() => opens() && onOpen()} onContextMenu={(event) => void copyMenu(event, copyable)}>
       <div className="job-head">
         <span className={`job-icon ${job.status}`}>{icon}</span>
         <div className="job-title">
-          <strong>{job.title ?? job.summary}</strong>
+          <strong title={copyable.summary}>{short(copyable.summary)}</strong>
           <span className="muted">
             {job.module}
             {job.pulse !== undefined ? ` · pulse ${job.pulse}` : ""} <span className="kind-tag">{job.kind}</span>
@@ -147,6 +203,7 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
           <span>{job.status === "queued" ? "waiting" : elapsed(job.startedAt, job.finishedAt)}</span>
           {cost(job.usage) && <span className="muted">{cost(job.usage)}</span>}
         </div>
+        <CopyButton pulse={copyable} />
       </div>
       {job.status === "running" && (
         <div className="job-live">
@@ -260,6 +317,7 @@ function outcome(pulse: PastPulse): string {
 /** A pulse of an earlier session: read only - how it ended, how long, what it cost - and opened into the ledger's facts. */
 function PastPulseCard({ pulse, open, onOpen }: { pulse: PastPulse; open: boolean; onOpen: () => void }) {
   const kind = pulse.kind === "conformance" ? "conformance" : "regenerate";
+  const copyable: Copyable = { id: pulse.id, summary: pulse.title ?? pulse.summary, module: pulse.module, pulse: pulse.pulse, kind: pulse.kind };
   const icon =
     pulse.status === "succeeded" ? (
       <Icon name={kind === "conformance" ? "checks" : "check"} />
@@ -271,11 +329,11 @@ function PastPulseCard({ pulse, open, onOpen }: { pulse: PastPulse; open: boolea
       <Icon name="clock" />
     );
   return (
-    <div className={`job past ${kind} ${pulse.status} ${open ? "open" : ""}`} data-id={pulse.id} onClick={onOpen}>
+    <div className={`job past ${kind} ${pulse.status} ${open ? "open" : ""}`} data-id={pulse.id} onClick={() => opens() && onOpen()} onContextMenu={(event) => void copyMenu(event, copyable)}>
       <div className="job-head">
         <span className={`job-icon ${pulse.status}`}>{icon}</span>
         <div className="job-title">
-          <strong>{pulse.title ?? pulse.summary}</strong>
+          <strong title={copyable.summary}>{short(copyable.summary)}</strong>
           <span className="muted">
             {pulse.module ?? ""}
             {pulse.pulse !== null ? ` · pulse ${pulse.pulse}` : ""} <span className="kind-tag">{pulse.kind}</span>
@@ -285,6 +343,7 @@ function PastPulseCard({ pulse, open, onOpen }: { pulse: PastPulse; open: boolea
           <span>{pulse.ms !== null ? elapsed(0, pulse.ms) : ""}</span>
           {cost(pulse.usage ?? undefined) && <span className="muted">{cost(pulse.usage ?? undefined)}</span>}
         </div>
+        <CopyButton pulse={copyable} />
       </div>
       <div className={`past-outcome ${pulse.status}`}>{outcome(pulse)}</div>
       <FailureMarks failures={pulse.failures} />

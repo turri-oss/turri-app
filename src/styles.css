@@ -1097,6 +1097,33 @@ code {
 .job-title span {
   font-size: 12px;
 }
+/* What the work view says can be selected and copied (⌘C), as the chat can. */
+.work-view .job,
+.work-view .module-plan {
+  user-select: text;
+}
+/* A pulse's copy button: shown with the pointer on its card. */
+.job-copy {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: none;
+  color: var(--fg-2);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.job:hover .job-copy,
+.job-copy:focus-visible {
+  opacity: 1;
+}
+.job-copy:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
 .job-meta {
   display: flex;
   flex-direction: column;
