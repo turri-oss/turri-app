@@ -25,6 +25,8 @@ let looker;
 let chat;
 const questions = new Map();
 let nextQuestion = 0;
+const browserCalls = new Map();
+let nextBrowserCall = 0;
 
 /** What turri's chat tells its host - the window - of its jobs and its work loop (TurriHost in turri). */
 const ENDED = new Set(["succeeded", "failed", "stopped"]);
@@ -63,7 +65,7 @@ async function open({ dir }) {
     if (line !== undefined) emit("incident", { job: event.job, text: line });
   });
   const harnessModel = turri.modelSpec(turri.projectModels(turri.readProjectConfig(projectDir)).harness);
-  chat = await startChat({ cwd: projectDir, harnessModel, host, emit, ask });
+  chat = await startChat({ cwd: projectDir, harnessModel, host, emit, ask, browser });
   watchSpecs();
   return { ...summary(), orphans, chatModel: chat.model() };
 }
@@ -78,8 +80,14 @@ function watchSpecs() {
   const pending = new Map();
   const changed = new Set();
   let filesTimer;
+  let configTimer;
   watch(projectDir, { recursive: true }, (_type, name) => {
     if (name === null) return;
+    // The project's config - /turri-config writes it from the chat: the window shows its settings again.
+    if (CONFIG_FILE.test(name)) {
+      clearTimeout(configTimer);
+      configTimer = setTimeout(() => emit("config", null), 250);
+    }
     const parts = name.split(sep);
     if (!parts.some((part) => UNLISTED.has(part))) {
       changed.add(join(projectDir, name));
@@ -105,6 +113,9 @@ function watchSpecs() {
 }
 
 // ---------- the project's files ----------
+
+/** The project's config at its root: config.turri.yaml, a stack's config.turri.<stack>.yaml, or the older config.yaml. */
+const CONFIG_FILE = /^config(\.turri(\.[^./\\]+)?)?\.yaml$/;
 
 /** What the tree leaves out: version control's own, installed packages and caches nobody reads. */
 const UNLISTED = new Set([".git", ".plaingit", "node_modules", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".DS_Store"]);
@@ -175,6 +186,15 @@ function ask(question) {
   return new Promise((resolve) => {
     questions.set(id, resolve);
     emit("chat:ask", { id, ...question });
+  });
+}
+
+/** One of turri's browser tools, asked of the window's preview pane - the main process drives it - and its answer. */
+function browser(action, params) {
+  const id = ++nextBrowserCall;
+  return new Promise((resolve, reject) => {
+    browserCalls.set(id, { resolve, reject });
+    process.send?.({ browser: action, id, params });
   });
 }
 
@@ -278,9 +298,28 @@ function writeSpec({ file, text }) {
   return described;
 }
 
-/** The spec's lines as turri's own ***plain grammar colours them - the same roles the TUI uses. */
+/**
+ * The spec's lines as turri's own ***plain grammar colours them - the same roles the TUI uses. The front matter's
+ * values have none of their own, and would read as the text around them: they are `meta`, its fences `bullet`, and
+ * an item of its lists - a module it imports or requires - is a `module` whole, not only up to its first `/`.
+ */
 function highlightSpec({ text }) {
-  return turri.highlightLines(text.split("\n")).map((tokens) => tokens.map((token) => ({ text: token.text, role: turri.roleOf(token.scopes) ?? null })));
+  return turri.highlightLines(text.split("\n")).map((tokens) => {
+    const line = tokens.map((token) => token.text).join("");
+    const item = /^(\s*-\s+)(\S.*)$/.exec(line);
+    const inFrontMatter = tokens.length > 0 && tokens.every((token) => token.scopes.includes("meta.frontmatter.plain"));
+    if (inFrontMatter && item !== null && !tokens.some((token) => turri.roleOf(token.scopes) === "concept")) {
+      return [{ text: item[1], role: "bullet" }, { text: item[2], role: "module" }];
+    }
+    return tokens.map((token) => ({ text: token.text, role: roleOf(token) }));
+  });
+}
+
+function roleOf({ text, scopes }) {
+  const role = turri.roleOf(scopes) ?? null;
+  if (!scopes.includes("meta.frontmatter.plain")) return role;
+  if (text === "---") return "bullet";
+  return role === "keyword" || role === "concept" ? role : "meta";
 }
 
 // ---------- the work ----------
@@ -310,8 +349,19 @@ function jobChanged(job, now = false) {
 
 // The buttons say what the person would type: the chat's own commands run them, on its one work loop.
 
-function regenerate({ file, frids }) {
-  chat.send(`/regenerate ${relative(projectDir, file)}${frids?.length ? ` ${frids.join(" ")}` : ""}`);
+/**
+ * /regenerate, as the window chose it: what changed, named functional specs again, or from scratch - its whole chain
+ * too - and how to cut the work in the person's words. turri reads the words after the module: numbers first are
+ * functional specs, "from scratch" and "whole chain" say so, the rest is guidance.
+ */
+function regenerate({ file, frids, scratch, chain, guidance }) {
+  const words = [`/regenerate ${relative(projectDir, file)}`];
+  if (scratch) words.push(chain ? "from scratch, the whole chain" : "from scratch");
+  else if (frids?.length) words.push(frids.join(" "));
+  // Set off from what comes before it - and never read as a functional spec's number, though it starts with one.
+  const said = guidance?.trim();
+  if (said) words.push(words.length > 1 || /^(fs)?\d/i.test(said) ? `- ${said}` : said);
+  chat.send(words.join(" "));
   return true;
 }
 
@@ -380,7 +430,14 @@ const BEFORE_A_PROJECT = new Set(["open", "vendors", "initConfig"]);
 // The app gone - quit, crashed, killed - the engine goes with it: never a chat left running with no window.
 process.on("disconnect", () => process.exit(0));
 
-process.on("message", async ({ id, method, params }) => {
+process.on("message", async ({ id, method, params, browserReply, result, error }) => {
+  if (browserReply !== undefined) {
+    const call = browserCalls.get(browserReply);
+    browserCalls.delete(browserReply);
+    if (error !== undefined) call?.reject(new Error(error));
+    else call?.resolve(result);
+    return;
+  }
   try {
     const handler = methods[method];
     if (handler === undefined) throw new Error(`No such engine method: ${method}`);

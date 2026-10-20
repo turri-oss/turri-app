@@ -6,9 +6,11 @@ turri-app is a proof of concept: [turri](https://github.com/turri-oss/turri) as 
 
 ```
 electron/main.ts     the window, native menus, notifications, dock, appearance and zoom - and the bridge to the engine
+electron/preview.ts  the preview: a WebContentsView over the Preview view's space, and the browser tools' actions in it
 electron/preload.ts  window.turri: the engine's methods, a few native services, the events the window is sent
 engine/engine.mjs    one process per open project: the methods the window calls, and the events it emits
 engine/chat.mjs      pi's agent session with turri's extension; its UI calls become window events
+engine/browser.mjs   browser tools on the preview: a pi extension of the app's, loaded beside turri's
 src/                 the window: React, no UI kit, one stylesheet (styles.css)
 ```
 
@@ -16,6 +18,7 @@ src/                 the window: React, no UI kit, one stylesheet (styles.css)
 - **The engine runs on Electron's own Node**, forked with `ELECTRON_RUN_AS_NODE=1`: the package is compiled JavaScript, so no system Node is involved. Its `console` is turri's terminal output, redirected to `log` events.
 - **One work loop per project.** The chat's extension owns the job registry and work loop; `createTurriExtension(host)` hands them to the engine (`onJobs`, `onWorkLoop`, `onJobChange`). The window's buttons say what the person would type - Regenerate is `/regenerate <file>` - so a button never starts a second loop. Halting a pulse is turri's alone: the window offers no Halt or Stop for one. The engine's own loops are `dryRun` (Preview plan, drift) and start nothing.
 - **turri's questions are docked in the chat**, in the message box's place - never a sheet over the window. `ask_user` reaches the window through `host.dialogs`; the extension's other dialogs (select, confirm, input, editor) through the `uiContext` in `chat.mjs`. A terminal component it draws (`ui.custom`: a panel, a picker) has no window form and resolves at once - except the `turri-skill` widget, a running skill's phases: `chat.mjs` draws it plain and reads its lines back into `chat:progress`, which the chat shows above its message box.
+- **The preview is a page of its own**, a `WebContentsView` the main process lays over the rectangle `PreviewView` reports - in the window's pixels, its CSS ones times the zoom. Nothing of the window draws over it: while a sheet is open it is taken away (`covered`), and so are its empty and failed states, which the window draws in its place. turri's browser tools (`engine/browser.mjs`) are the app's, not turri's: each is a request from the engine to the main process (`{ browser, id, params }`, answered `{ browserReply }`), done in that same pane, which the window shows while they run. They go to localhost only. Clicks and typing run in the page as the person's gesture, so the pages they open are in its history; what runs in the page is a function sent as its source, and says what went wrong rather than throwing. Only the newest screenshot is sent to the model as an image, and none once a model has refused one (the `context` event): the refused turn is marked for pi to retry, and goes on without it.
 
 ## The window
 

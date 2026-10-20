@@ -107,4 +107,4 @@ export interface TranscriptEntry {
   agent?: { label: string; model?: string };
 }
 
-export type View = "spec" | "work";
+export type View = "spec" | "work" | "preview";

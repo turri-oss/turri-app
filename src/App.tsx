@@ -5,9 +5,11 @@ import { Welcome } from "./Welcome.tsx";
 import { SpecView } from "./SpecView.tsx";
 import { WorkView } from "./WorkView.tsx";
 import { PlanSheet, type Plan } from "./PlanSheet.tsx";
+import { RegenerateSheet, type Regeneration } from "./RegenerateSheet.tsx";
 import { NewProject } from "./NewProject.tsx";
 import { FileTree } from "./FileTree.tsx";
 import { FileView } from "./FileView.tsx";
+import { PreviewView } from "./PreviewView.tsx";
 import { Appearance, Empty, Icon, Jellyfish, Spinner } from "./ui.tsx";
 import { Chat, type ChatItem, type Question, type SkillProgress } from "./Chat.tsx";
 
@@ -38,6 +40,8 @@ export function App() {
   const [jobs, setJobs] = useState<Map<string, Job>>(new Map());
   const [toast, setToast] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [plan, setPlan] = useState<Plan | "loading" | null>(null);
+  // Regenerate, chosen how - open with the functional specs it starts on, if any.
+  const [choosing, setChoosing] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const saveRef = useRef<(() => Promise<void>) | null>(null);
@@ -144,6 +148,11 @@ export function App() {
         if (level === "error") say(text.split("\n")[0]!, "error");
       }),
       window.turri.on("engine:chat:progress", (next: SkillProgress | null) => setProgress(next)),
+      // The config changed - /turri-config, say: its settings in the sidebar, and the model the chat runs on now.
+      window.turri.on("engine:config", () => void refreshProject()),
+      window.turri.on("engine:chat:model", ({ model }: { model: string }) => setChatModel(model)),
+      // turri works in the preview with its browser tools: the window shows it, so the person sees what it does.
+      window.turri.on("preview:reveal", () => setView("preview")),
       window.turri.on("engine:chat:ask", (question: Question) => {
         setQuestions((all) => [...all, question]);
         setChatOpen(true);
@@ -153,13 +162,19 @@ export function App() {
   }, [opened, refreshProject, say]);
 
   const regenerate = useCallback(
-    async (frids?: string[]) => {
+    async (how?: Regeneration) => {
       if (spec === null) return;
       if (dirty) await saveRef.current?.();
       setBusy(true);
       setChatOpen(true);
       try {
-        await window.turri.call("regenerate", { file: spec.file, frids });
+        await window.turri.call("regenerate", {
+          file: spec.file,
+          frids: how?.how === "again" ? how.frids : undefined,
+          scratch: how?.how === "scratch",
+          chain: how?.how === "scratch" && how.chain,
+          guidance: how?.guidance,
+        });
       } catch (error) {
         say(String((error as Error).message ?? error), "error");
       } finally {
@@ -216,6 +231,7 @@ export function App() {
       window.turri.on("menu", (action: string) => {
         if (action.startsWith("view:")) setView(action.slice(5) as View);
         else if (action === "regenerate") void regenerate();
+        else if (action === "regenerate-how" && spec?.ok) setChoosing([]);
         else if (action === "glimpse") void glimpse();
         else if (action === "conform") void conform();
         else if (action === "release") void release();
@@ -224,7 +240,7 @@ export function App() {
         else if (action === "chat") setChatOpen((open) => !open);
         else if (action === "reveal" && project) void window.turri.reveal(project.dir);
       }),
-    [regenerate, glimpse, conform, release, project],
+    [regenerate, glimpse, conform, release, project, spec],
   );
 
   const allJobs = useMemo(() => [...jobs.values()].sort((a, b) => b.sequence - a.sequence), [jobs]);
@@ -289,9 +305,9 @@ export function App() {
               {spec?.description && <span className="subtitle">{spec.description}</span>}
             </div>
             <div className="segmented" role="tablist">
-              {(["spec", "work"] as View[]).map((name) => (
+              {(["spec", "work", "preview"] as View[]).map((name) => (
                 <button key={name} role="tab" aria-selected={view === name} className={view === name ? "on" : ""} onClick={() => setView(name)}>
-                  {name === "spec" ? "intent" : `work${running.length ? ` · ${running.length}` : ""}`}
+                  {name === "spec" ? "intent" : name === "preview" ? "preview" : `work${running.length ? ` · ${running.length}` : ""}`}
                 </button>
               ))}
             </div>
@@ -305,19 +321,33 @@ export function App() {
                 <Icon name="release" /> Release
               </button>
               {/* Only turri halts a pulse: while one regenerates this module, Regenerate waits for it. */}
-              <button
-                className="button primary"
-                disabled={spec === null || !spec.ok || busy || runningFor(spec.module) !== undefined}
-                onClick={() => void regenerate()}
-                title={spec && runningFor(spec.module) ? "turri is regenerating this module" : "Regenerate the code from the spec (⌘R)"}
-              >
-                {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} Regenerate
-              </button>
+              <div className="split">
+                <button
+                  className="button primary"
+                  disabled={spec === null || !spec.ok || busy || runningFor(spec.module) !== undefined}
+                  onClick={() => void regenerate()}
+                  title={spec && runningFor(spec.module) ? "turri is regenerating this module" : "Regenerate what changed in the spec (⌘R)"}
+                >
+                  {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} Regenerate
+                </button>
+                <button
+                  className="button primary split-more"
+                  disabled={spec === null || !spec.ok || busy || runningFor(spec.module) !== undefined}
+                  onClick={() => setChoosing([])}
+                  title="Regenerate another way - chosen functional specs, or from scratch (⇧⌘R)"
+                  aria-label="Regenerate another way"
+                >
+                  <Icon name="down" size={14} />
+                </button>
+              </div>
             </div>
           </header>
 
           <section className="content">
-            {view === "work" ? (
+            {view === "preview" ? (
+              // A sheet over the window would be under the pane: while one is open, the pane steps aside.
+              <PreviewView dir={project.dir} covered={plan !== null || creating || choosing !== null} />
+            ) : view === "work" ? (
               <WorkView status={status} jobs={allJobs} />
             ) : file !== null ? (
               <FileView key={file} root={project.dir} file={file} onDirty={setDirty} saveRef={saveRef} say={say} />
@@ -335,7 +365,8 @@ export function App() {
                 onSaved={(next: Spec) => setProject((now) => now && { ...now, specs: now.specs.map((entry) => (entry.file === next.file ? next : entry)) })}
                 onDirty={setDirty}
                 saveRef={saveRef}
-                onRegenerate={(frids) => void regenerate(frids)}
+                onRegenerate={(frids) => void regenerate(frids?.length ? { how: "again", frids, guidance: "" } : undefined)}
+                onRegenerateHow={(frids) => setChoosing(frids)}
                 onConform={(frids) => void conform(frids)}
                 say={say}
               />
@@ -385,6 +416,17 @@ export function App() {
             onAnswer={(value) => {
               void window.turri.call("answer", { id: questions[0]!.id, value });
               setQuestions((all) => all.slice(1));
+            }}
+          />
+        )}
+        {choosing !== null && spec !== null && (
+          <RegenerateSheet
+            spec={spec}
+            initial={choosing}
+            onClose={() => setChoosing(null)}
+            onRegenerate={(how) => {
+              setChoosing(null);
+              void regenerate(how);
             }}
           />
         )}

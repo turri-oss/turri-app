@@ -4,7 +4,7 @@ import { Icon, Jellyfish, Spinner } from "./ui.tsx";
 export type ChatItem =
   | { role: "user"; text: string }
   | { role: "assistant"; text: string; thinking?: string; tools?: Array<{ id: string; name: string; args: unknown }>; error?: string }
-  | { role: "toolResult"; id: string; name: string; text: string; isError: boolean }
+  | { role: "toolResult"; id: string; name: string; text: string; isError: boolean; image?: string }
   | { role: "note"; customType?: string; text: string; level?: string }
   | { role: "command"; text: string }
   | { role: "job"; id: string; summary: string; status: string; duration?: string; spent?: string; text: string };
@@ -243,6 +243,18 @@ function describeTool(name: string, args: any): string {
       return `Ran ${String(args?.command ?? "a command").split("\n")[0]}`;
     case "ask_user":
       return `Asked you: ${args?.question ?? ""}`;
+    case "browser_navigate":
+      return `Opened ${args?.url ?? "the app"} in the preview`;
+    case "browser_screenshot":
+      return "Looked at the preview";
+    case "browser_read":
+      return "Read the preview";
+    case "browser_console":
+      return "Read the preview's console";
+    case "browser_click":
+      return `Clicked ${args?.ref !== undefined ? `[${args.ref}]` : (args?.selector ?? "")} in the preview`;
+    case "browser_type":
+      return `Typed "${args?.text ?? ""}" in the preview`;
     default:
       return `${name.replace(/_/g, " ")}${file ? ` · ${file}` : ""}`;
   }
@@ -259,6 +271,7 @@ function ToolCall({ tool, result, running }: { tool: { id: string; name: string;
       {open && (
         <div className="tool-detail">
           <pre>{JSON.stringify(tool.args, null, 2)}</pre>
+          {result?.image && <img className="tool-image" src={result.image} alt="What turri saw in the preview" />}
           {result && <pre className="tool-result">{result.text}</pre>}
         </div>
       )}

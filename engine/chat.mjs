@@ -2,16 +2,23 @@
 // tools, slash commands, rules and skills - with the window in place of the terminal. What the extension would draw in
 // the terminal (dialogs, notices, the working line) comes here as UI calls and goes to the window as events.
 import { createTurriExtension, pi } from "@turri-dev/cli/host";
+import { browserExtension, retriedWithoutImages } from "./browser.mjs";
 
 /**
  * Start a chat in `cwd`. `host` is what turri's extension tells of its jobs and asks its questions in (TurriHost);
  * `emit` sends an event to the window; `ask` puts a question to the person there and resolves with the answer
- * (undefined when they dismiss it).
+ * (undefined when they dismiss it); `browser` asks the window's preview pane for one of the browser tools' actions.
  */
-export async function startChat({ cwd, harnessModel, host, emit, ask }) {
+export async function startChat({ cwd, harnessModel, host, emit, ask, browser }) {
   process.env.PI_SKIP_VERSION_CHECK = "1";
 
-  const loader = new pi.DefaultResourceLoader({ cwd, agentDir: pi.getAgentDir(), extensionFactories: [createTurriExtension(host)] });
+  // The window is told when the conversation's model changes - /turri-config switches it as it runs.
+  const modelWatch = (api) => api.on("model_select", ({ model }) => emit("chat:model", { model: `${model.provider}/${model.id}` }));
+  const loader = new pi.DefaultResourceLoader({
+    cwd,
+    agentDir: pi.getAgentDir(),
+    extensionFactories: [createTurriExtension(host), browserExtension(browser), modelWatch],
+  });
   await loader.reload();
   const { session } = await pi.createAgentSession({ cwd, resourceLoader: loader, sessionManager: pi.SessionManager.create(cwd) });
 
@@ -137,7 +144,7 @@ function textOf(content) {
 
 /** A message as the window shows it - or several, or nothing for what the person never sees. */
 function normalise(message) {
-  if (message === undefined || message === null) return null;
+  if (message === undefined || message === null || retriedWithoutImages(message)) return null;
   switch (message.role) {
     case "user":
       return { role: "user", text: textOf(message.content) };
@@ -151,8 +158,18 @@ function normalise(message) {
         error: message.stopReason === "error" ? (message.errorMessage ?? "The model returned an error.") : undefined,
       };
     }
-    case "toolResult":
-      return { role: "toolResult", id: message.toolCallId, name: message.toolName, text: textOf(message.content).slice(0, 4000), isError: message.isError === true };
+    case "toolResult": {
+      // What turri saw, when it was an image - the preview, as browser_screenshot took it.
+      const image = Array.isArray(message.content) ? message.content.find((part) => part.type === "image") : undefined;
+      return {
+        role: "toolResult",
+        id: message.toolCallId,
+        name: message.toolName,
+        text: textOf(message.content).slice(0, 4000),
+        isError: message.isError === true,
+        ...(image !== undefined ? { image: `data:${image.mimeType};base64,${image.data}` } : {}),
+      };
+    }
     case "custom":
       return message.display === false ? null : { role: "note", customType: message.customType, text: textOf(message.content) };
     default:

@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell, type MenuItemConstructorOptions, type Rectangle } from "electron";
 import { fork, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { createPreview } from "./preview.ts";
 
 /**
  * The main process: one window, and behind it one turri engine per open project - a Node process that hosts
@@ -61,6 +62,7 @@ function setTheme(next: Theme) {
 }
 
 let window: BrowserWindow | undefined;
+const preview = createPreview({ windowOf: () => window, send });
 let engine: ChildProcess | undefined;
 let nextId = 0;
 const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
@@ -83,8 +85,16 @@ function startEngine(): Promise<void> {
   child.stdout?.on("data", (chunk) => send("engine:log", { level: "stdout", text: String(chunk) }));
   child.stderr?.on("data", (chunk) => send("engine:log", { level: "stderr", text: String(chunk) }));
   return new Promise((resolve, reject) => {
-    child.on("message", (message: { id?: number; result?: unknown; error?: string; event?: string; data?: unknown }) => {
+    child.on("message", (message: { id?: number; result?: unknown; error?: string; event?: string; data?: unknown; browser?: string; params?: unknown }) => {
       if (message.event === "ready") return resolve();
+      // One of turri's browser tools, asked of the preview: done there, and answered.
+      if (message.browser !== undefined) {
+        preview.request(message.browser, message.params).then(
+          (result) => child.connected && child.send({ browserReply: message.id, result }),
+          (error) => child.connected && child.send({ browserReply: message.id, error: error instanceof Error ? error.message : String(error) }),
+        );
+        return;
+      }
       if (message.event !== undefined) return onEngineEvent(message.event, message.data);
       const call = pending.get(message.id!);
       if (call === undefined) return;
@@ -118,6 +128,8 @@ function send(channel: string, data: unknown) {
 
 function onEngineEvent(event: string, data: any) {
   send(`engine:${event}`, data);
+  // New code under the preview: it is loaded again.
+  if (event === "finished" && data.status === "succeeded") preview.reloadSoon();
   if (event === "status") {
     running = (data.jobs as Array<{ status: string }>).filter((job) => job.status === "running").length;
     app.dock?.setBadge(running > 0 ? String(running) : "");
@@ -143,6 +155,8 @@ function recents(): string[] {
 async function openProject(dir: string) {
   if (engine === undefined || engineHasProject) await startEngine();
   engineHasProject = true;
+  // Another project's app is not this one's: the preview starts empty.
+  preview.dispose();
   const summary = await call("open", { dir });
   writeFileSync(RECENTS_FILE, JSON.stringify([dir, ...recents().filter((other) => other !== dir)].slice(0, 8)));
   app.addRecentDocument(dir);
@@ -228,7 +242,11 @@ function createWindow() {
   });
   if (process.env.VITE_DEV_SERVER_URL) void window.loadURL(process.env.VITE_DEV_SERVER_URL);
   else void window.loadFile(join(ROOT, "dist", "index.html"));
-  window.on("closed", () => (window = undefined));
+  window.on("closed", () => {
+    // Gone first: the preview's clean-up must not reach for a window already destroyed, nor send to it.
+    window = undefined;
+    preview.dispose();
+  });
 }
 
 function buildMenu() {
@@ -253,7 +271,8 @@ function buildMenu() {
     {
       label: "Spec",
       submenu: [
-        { label: "Regenerate", accelerator: "CmdOrCtrl+R", click: menuAction("regenerate"), enabled: engine !== undefined },
+        { label: "Regenerate What Changed", accelerator: "CmdOrCtrl+R", click: menuAction("regenerate"), enabled: engine !== undefined },
+        { label: "Regenerate…", accelerator: "CmdOrCtrl+Shift+R", click: menuAction("regenerate-how"), enabled: engine !== undefined },
         { label: "Preview the Plan", accelerator: "CmdOrCtrl+Shift+P", click: menuAction("glimpse"), enabled: engine !== undefined },
         { label: "Write Conformance Tests", click: menuAction("conform"), enabled: engine !== undefined },
         { label: "Release to Try", click: menuAction("release"), enabled: engine !== undefined },
@@ -264,6 +283,7 @@ function buildMenu() {
       submenu: [
         { label: "intent", accelerator: "CmdOrCtrl+1", click: menuAction("view:spec") },
         { label: "work", accelerator: "CmdOrCtrl+2", click: menuAction("view:work") },
+        { label: "preview", accelerator: "CmdOrCtrl+3", click: menuAction("view:preview") },
         { type: "separator" },
         { label: "Show or Hide the Chat", accelerator: "CmdOrCtrl+J", click: menuAction("chat") },
         {
@@ -312,6 +332,10 @@ ipcMain.handle("project:open", (_event, dir: string) => openProject(dir));
 ipcMain.handle("project:recents", () => recents());
 ipcMain.handle("shell:reveal", (_event, path: string) => shell.showItemInFolder(path));
 ipcMain.handle("shell:open", (_event, path: string) => shell.openPath(path));
+ipcMain.handle("preview:place", (_event, rect: Rectangle | null) => preview.place(rect));
+ipcMain.handle("preview:open", (_event, url: string) => preview.open(url));
+ipcMain.handle("preview:go", (_event, action: "back" | "forward" | "reload" | "stop" | "devtools") => preview.go(action));
+ipcMain.handle("preview:state", () => preview.state());
 ipcMain.handle("theme:get", () => theme);
 ipcMain.handle("theme:set", (_event, next: Theme) => setTheme(next));
 nativeTheme.on("updated", () => window?.setBackgroundColor(backgroundFor()));

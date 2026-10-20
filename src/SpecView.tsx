@@ -105,6 +105,8 @@ export function SpecView(props: {
   onDirty: (dirty: boolean) => void;
   saveRef: MutableRefObject<(() => Promise<void>) | null>;
   onRegenerate: (frids?: string[]) => void;
+  /** Regenerate, chosen how, starting from these functional specs. */
+  onRegenerateHow: (frids: string[]) => void;
   onConform: (frids?: string[]) => void;
   say: (text: string, tone?: "info" | "error") => void;
 }) {
@@ -187,11 +189,13 @@ export function SpecView(props: {
   const markerMenu = async (frid: string) => {
     const chosen = await window.turri.popup([
       { id: "again", label: `Regenerate functional spec ${frid} again` },
+      { id: "how", label: "Regenerate another way…" },
       { id: "conform", label: `Write conformance tests for ${frid}` },
       { type: "separator" },
       { id: "copy", label: "Copy text" },
     ]);
     if (chosen === "again") props.onRegenerate([frid]);
+    else if (chosen === "how") props.onRegenerateHow([frid]);
     else if (chosen === "conform") props.onConform([frid]);
     else if (chosen === "copy") void navigator.clipboard.writeText(spec.functionalSpecs.find((entry) => entry.frid === frid)?.text ?? "");
   };

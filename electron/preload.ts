@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import type { PreviewState } from "./preview.ts";
 
 /** What the window may ask of the app: the engine's methods, a few native services, and the events it is sent. */
 const api = {
@@ -17,6 +18,13 @@ const api = {
     const handler = (_event: IpcRendererEvent, data: unknown) => listener(data);
     ipcRenderer.on(channel, handler);
     return () => void ipcRenderer.off(channel, handler);
+  },
+  /** The preview pane: laid over a rectangle of the window, sent to an address, and moved about in. */
+  preview: {
+    place: (rect: { x: number; y: number; width: number; height: number } | null) => ipcRenderer.invoke("preview:place", rect),
+    open: (url: string) => ipcRenderer.invoke("preview:open", url),
+    go: (action: "back" | "forward" | "reload" | "stop" | "devtools") => ipcRenderer.invoke("preview:go", action),
+    state: () => ipcRenderer.invoke("preview:state") as Promise<PreviewState>,
   },
   theme: () => ipcRenderer.invoke("theme:get") as Promise<"dark" | "light" | "system">,
   setTheme: (theme: "dark" | "light" | "system") => ipcRenderer.invoke("theme:set", theme),

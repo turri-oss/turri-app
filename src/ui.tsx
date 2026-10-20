@@ -120,6 +120,11 @@ const PATHS: Record<string, string> = {
   x: "M5.5 5.5l9 9M14.5 5.5l-9 9",
   layers: "M10 3l7 3.5-7 3.5-7-3.5zM3 10l7 3.5 7-3.5M3 13.5L10 17l7-3.5",
   test: "M7 3h6M8 3v5l-4.5 8.5h13L12 8V3",
+  back: "M12 5.5L7.5 10l4.5 4.5",
+  down: "M5.5 8l4.5 4.5L14.5 8",
+  forward: "M8 5.5l4.5 4.5L8 14.5",
+  reload: "M15.5 10a5.5 5.5 0 1 1-1.6-3.9M15.5 3.5v3h-3",
+  globe: "M10 17.5a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15zM2.5 10h15M10 2.5c2 2 3 4.5 3 7.5s-1 5.5-3 7.5c-2-2-3-4.5-3-7.5s1-5.5 3-7.5z",
 };
 
 export function Icon({ name, size = 16 }: { name: keyof typeof PATHS | string; size?: number }) {
