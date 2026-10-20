@@ -10,6 +10,8 @@ export interface FunctionalSpec {
   frid: string;
   text: string;
   built: boolean;
+  /** Built, and its conformance tests written and passing - as the spec has it now. */
+  conformed: boolean;
 }
 
 export interface Spec {

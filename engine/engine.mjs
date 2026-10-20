@@ -228,6 +228,8 @@ function describeSpec(file) {
   // A functional spec is completed when the codebase the chain delivers has it, as the spec has it now.
   let incomplete;
   let conformanceTested = 0;
+  // The functional specs whose conformance tests are written and pass, as the spec has them now, by number.
+  let tested = new Set();
   let built = false;
   try {
     for (const chain of turri.functionalityCompletion(file)) {
@@ -236,6 +238,7 @@ function describeSpec(file) {
       incomplete = new Set(own.incomplete);
       built = own.completed > 0;
       conformanceTested = own.conformanceTested;
+      tested = new Set(own.tested);
     }
   } catch {
     /* nothing built, or a chain that does not resolve: every spec is still to build */
@@ -245,7 +248,8 @@ function describeSpec(file) {
     const [, tree] = turri.plainFileParser(basename(file), turri.resolveTemplateDirs(file), { allowNoFunctionalities: true });
     for (const { frid, specifications } of turri.iterateFunctionalSpecs(tree, false)) {
       const own = specifications[turri.FUNCTIONAL_REQUIREMENTS]?.at(-1) ?? "";
-      functionalSpecs.push({ frid, text: own.replace(/^- /, ""), built: incomplete !== undefined ? !incomplete.has(frid) : false });
+      const built = incomplete !== undefined ? !incomplete.has(frid) : false;
+      functionalSpecs.push({ frid, text: own.replace(/^- /, ""), built, conformed: built && tested.has(frid) });
     }
   } catch (error) {
     return { ...base, ok: false, error: error instanceof Error ? error.message : String(error), functionalSpecs: [] };

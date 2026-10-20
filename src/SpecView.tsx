@@ -3,7 +3,7 @@ import type { Job, Spec } from "./types.ts";
 import { Icon, Spinner } from "./ui.tsx";
 
 type Token = { text: string; role: string | null };
-type State = "built" | "now" | "todo";
+type State = "conformed" | "built" | "now" | "todo";
 /** A line of a functional spec: its id, whether it is the spec's first, and which line that is. */
 type SpecLine = { frid: string; first: boolean; line: number };
 
@@ -70,7 +70,7 @@ function savedCollapsed() {
   }
 }
 
-const STATE_LABEL: Record<State, string> = { built: "built", now: "building now", todo: "to build" };
+const STATE_LABEL: Record<State, string> = { conformed: "built and conformance tested", built: "built", now: "building now", todo: "to build" };
 
 /**
  * The lines of this file the running work renders now, from 0: a code pulse's are what its spec change adds here - its
@@ -182,7 +182,7 @@ export function SpecView(props: {
     const entry = entryFor(frid, line);
     if (entry === undefined) return "todo";
     if (building !== undefined && building === `${spec.module} functionality ${entry.frid}`) return "now";
-    return entry.built ? "built" : "todo";
+    return entry.conformed ? "conformed" : entry.built ? "built" : "todo";
   };
   const markerMenu = async (frid: string) => {
     const chosen = await window.turri.popup([
@@ -198,6 +198,7 @@ export function SpecView(props: {
 
   const total = spec.functionalSpecs.length;
   const built = spec.functionalSpecs.filter((entry) => entry.built).length;
+  const conformedCount = spec.functionalSpecs.filter((entry) => entry.conformed).length;
   const specLines = spec.ok && text !== null ? functionalSpecLines(text) : new Map<number, SpecLine>();
   const all = text?.split("\n") ?? [];
   // A functional spec collapses to its first line when it has more than one: what is under it is hidden.
@@ -304,6 +305,11 @@ export function SpecView(props: {
                 {built} of {total} built ·
               </span>
             )}
+            {spec.ok && conformedCount > 0 && (
+              <span className="conformed-count" title="Built, and their conformance tests written and passing">
+                <Icon name="checks" size={12} /> {conformedCount} conformed ·
+              </span>
+            )}
             {foldable.length > 0 && (
               <>
                 <button className="link" onClick={() => foldAll(!allFolded)} title={allFolded ? "Show every functional spec whole" : "Show only the first line of each functional spec"}>
@@ -400,7 +406,7 @@ export function SpecView(props: {
                               void markerMenu(mark.frid);
                             }}
                           >
-                            {state === "now" ? <Spinner /> : state === "built" ? <Icon name="check" size={12} /> : null}
+                            {state === "now" ? <Spinner /> : state === "conformed" ? <Icon name="checks" size={12} /> : state === "built" ? <Icon name="check" size={12} /> : null}
                           </button>
                         )}
                       </span>

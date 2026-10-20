@@ -189,18 +189,20 @@ function Message({ item, results, running, live }: { item: ChatItem; results: Ma
   const [thinking, setThinking] = useState(false);
   if (item.role === "user") return <div className="msg user">{item.text}</div>;
   if (item.role === "command") return <div className="msg user command">{item.text}</div>;
+  // A pulse that ended: one line - what it was, how it ended, how long and what it cost. Its report - the agent's own
+  // account, often long - is there for the asking: a click on the line opens it.
   if (item.role === "job")
     return (
       <div className={`msg job-note ${item.status}`}>
-        <div className="job-note-head">
+        <button className="job-note-head" onClick={() => setThinking(!thinking)} disabled={!item.text} aria-expanded={item.text ? thinking : undefined} title={item.text ? (thinking ? "Hide the report" : "Show the report") : undefined}>
           {item.status === "succeeded" ? <Icon name="check" size={14} /> : item.status === "stopped" ? <Icon name="stop" size={14} /> : <Icon name="warn" size={14} />}
           <strong>{item.summary}</strong>
           <span className="muted">
             {item.status} · {item.duration}
             {item.spent ? ` · ${item.spent}` : ""}
           </span>
-        </div>
-        {item.text && <Prose text={item.text} />}
+        </button>
+        {thinking && item.text && <Prose text={item.text} />}
       </div>
     );
   if (item.role === "note")

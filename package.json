@@ -30,6 +30,6 @@
     "vite": "^8.3.4"
   },
   "dependencies": {
-    "@turri-dev/cli": "0.1.7-next.eb57c34"
+    "@turri-dev/cli": "0.1.7-next.f0d55df"
   }
 }

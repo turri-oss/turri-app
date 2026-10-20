@@ -139,12 +139,14 @@ export function FileTree(props: { root: string; specs: Spec[]; selected: string 
   );
 }
 
-/** A spec's state: up to date, still to regenerate, not built, being regenerated, or not parsing. */
+/** A spec's state: up to date and conformance tested, up to date, still to regenerate, not built, being regenerated, or not parsing. */
 function SpecState({ spec, running }: { spec: Spec; running: boolean }) {
   const total = spec.functionalSpecs.length;
   const built = spec.functionalSpecs.filter((entry) => entry.built).length;
-  const state = !spec.ok ? "error" : running ? "running" : total > 0 && built === total && !spec.drifted ? "done" : built > 0 ? "partial" : "new";
-  const label = { error: "does not parse", running: "regenerating", done: "up to date", partial: "to regenerate", new: "not built" }[state];
+  const done = total > 0 && built === total && !spec.drifted;
+  const conformed = done && spec.functionalSpecs.every((entry) => entry.conformed);
+  const state = !spec.ok ? "error" : running ? "running" : conformed ? "conformed" : done ? "done" : built > 0 ? "partial" : "new";
+  const label = { error: "does not parse", running: "regenerating", conformed: "up to date and conformance tested", done: "up to date", partial: "to regenerate", new: "not built" }[state];
   return (
     <span className="tree-state" title={label}>
       <span className={`state-dot ${state}`}>{state === "running" ? <Spinner /> : null}</span>
