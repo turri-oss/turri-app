@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./types.ts";
-import type { Job, Project, Spec, Status, View } from "./types.ts";
+import type { Job, Pane, Project, Spec, Status, View } from "./types.ts";
 import { Welcome } from "./Welcome.tsx";
 import { SpecView } from "./SpecView.tsx";
 import { WorkView } from "./WorkView.tsx";
@@ -9,7 +9,7 @@ import { RegenerateSheet, type Regeneration } from "./RegenerateSheet.tsx";
 import { NewProject } from "./NewProject.tsx";
 import { FileTree } from "./FileTree.tsx";
 import { FileView } from "./FileView.tsx";
-import { PreviewView } from "./PreviewView.tsx";
+import { PreviewView, savedPane, savePane } from "./PreviewView.tsx";
 import { Appearance, Empty, Icon, Jellyfish, Spinner, TurriVersionLine } from "./ui.tsx";
 import { Chat, type ChatItem, type ChatStats, type Question, type SkillProgress } from "./Chat.tsx";
 
@@ -36,6 +36,7 @@ export function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<View>("spec");
+  const [pane, setPane] = useState<Pane>("browser");
   const [status, setStatus] = useState<Status>(EMPTY_STATUS);
   const [jobs, setJobs] = useState<Map<string, Job>>(new Map());
   const [toast, setToast] = useState<{ text: string; tone: "info" | "error" } | null>(null);
@@ -102,6 +103,7 @@ export function App() {
     setStatus(EMPTY_STATUS);
     setJobs(new Map());
     setView("spec");
+    setPane(savedPane(summary.dir));
     setStreaming(null);
     setQuestions([]);
     setProgress(null);
@@ -159,7 +161,8 @@ export function App() {
       window.turri.on("engine:chat:model", ({ model }: { model: string }) => setChatModel(model)),
       window.turri.on("engine:chat:stats", (stats: ChatStats) => setChatStats(stats)),
       // turri works in the preview with its browser tools: the window shows it, so the person sees what it does.
-      window.turri.on("preview:reveal", () => setView("preview")),
+      window.turri.on("preview:reveal", () => (setView("preview"), setPane("browser"))),
+      window.turri.on("terminal:reveal", () => (setView("preview"), setPane("terminal"))),
       window.turri.on("engine:chat:ask", (question: Question) => {
         setQuestions((all) => [...all, question]);
         setChatOpen(true);
@@ -250,11 +253,14 @@ export function App() {
     [regenerate, glimpse, conform, release, project, spec],
   );
 
-  // What the person is looking at, for turri to know: the view, and the file open in it.
+  // What the person is looking at, for turri to know: the view, and the file open in it - or the preview's browser or terminal.
   useEffect(() => {
     if (project === null) return;
-    void window.turri.call("look", { view, file: view === "spec" ? selected : null }).catch(() => {});
-  }, [project?.dir, view, selected]);
+    void window.turri.call("look", { view, file: view === "spec" ? selected : null, pane: view === "preview" ? pane : null }).catch(() => {});
+  }, [project?.dir, view, selected, pane]);
+  useEffect(() => {
+    if (project !== null) savePane(project.dir, pane);
+  }, [project?.dir, pane]);
 
   const allJobs = useMemo(() => [...jobs.values()].sort((a, b) => b.sequence - a.sequence), [jobs]);
   const runningFor = (module: string) => allJobs.find((job) => job.module === module && job.status === "running");
@@ -349,7 +355,7 @@ export function App() {
           <section className="content">
             {view === "preview" ? (
               // A sheet over the window would be under the pane: while one is open, the pane steps aside.
-              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || creating || choosing !== null} />
+              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || creating || choosing !== null} pane={pane} onPane={setPane} />
             ) : view === "work" ? (
               <WorkView
                 status={status}

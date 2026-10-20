@@ -108,3 +108,5 @@ export interface TranscriptEntry {
 }
 
 export type View = "spec" | "work" | "preview";
+/** What the preview tries the app in: a browser pane, or a terminal. */
+export type Pane = "browser" | "terminal";

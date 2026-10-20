@@ -1,5 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PreviewState } from "../electron/preview.ts";
+import type { TerminalState } from "../electron/terminal.ts";
+import { TerminalPane } from "./Terminal.tsx";
+import type { Pane } from "./types.ts";
 import { Empty, Icon } from "./ui.tsx";
 
 const BLANK: PreviewState = { url: "", title: "", loading: false, canGoBack: false, canGoForward: false, error: null };
@@ -14,6 +17,23 @@ function savedUrl(dir: string): string {
   }
 }
 
+/** Which of the two each project's preview had open last: the browser, or the terminal. */
+const paneKeyFor = (dir: string) => `turri-app.preview-pane:${dir}`;
+export function savedPane(dir: string): Pane {
+  try {
+    return localStorage.getItem(paneKeyFor(dir)) === "terminal" ? "terminal" : "browser";
+  } catch {
+    return "browser";
+  }
+}
+export function savePane(dir: string, pane: Pane) {
+  try {
+    localStorage.setItem(paneKeyFor(dir), pane);
+  } catch {
+    /* not kept: the preview opens on the browser next time */
+  }
+}
+
 /** What is typed in the address bar, as an address: `8000` and `localhost:8000` are http://localhost:8000. */
 function addressOf(typed: string): string {
   const text = typed.trim();
@@ -22,13 +42,16 @@ function addressOf(typed: string): string {
 }
 
 /**
- * The app turri builds, in a browser pane: an address bar, and below it the pane itself - a page of its own the main
- * process lays over the space left here for it (electron/preview.ts). Nothing of the window can draw over it, so it is
- * taken away while something should: a sheet open over the window, or nothing loaded to show. turri drives the same
- * pane with its browser tools, and the window comes here when it does.
+ * The app turri builds, tried in a browser pane or a terminal - a switch in the bar. The browser: an address bar, and
+ * below it the pane itself - a page of its own the main process lays over the space left here for it
+ * (electron/preview.ts). Nothing of the window can draw over it, so it is taken away while something should: a sheet
+ * open over the window, nothing loaded to show, or the terminal in its place. The terminal: a shell in the project's
+ * folder (electron/terminal.ts), for a CLI. turri drives both with its browser and terminal tools, and the window comes
+ * to the one it uses.
  */
-export function PreviewView({ dir, covered }: { dir: string; covered: boolean }) {
+export function PreviewView({ dir, covered, pane, onPane }: { dir: string; covered: boolean; pane: Pane; onPane: (pane: Pane) => void }) {
   const [state, setState] = useState<PreviewState>(BLANK);
+  const [shell, setShell] = useState<TerminalState>({ running: false, program: "" });
   const [typed, setTyped] = useState("");
   // The address this project had last: offered, not opened - another project's app may answer there now.
   const [last, setLast] = useState("");
@@ -63,7 +86,7 @@ export function PreviewView({ dir, covered }: { dir: string; covered: boolean })
   }, [state.url]);
 
   // The pane over the space below the bar: placed while there is a page to show and nothing over it, and moved with it.
-  const showing = state.url !== "" && state.error === null && !covered;
+  const showing = pane === "browser" && state.url !== "" && state.error === null && !covered;
   useLayoutEffect(() => {
     const box = page.current;
     if (!showing || box === null) {
@@ -92,9 +115,37 @@ export function PreviewView({ dir, covered }: { dir: string; covered: boolean })
     void window.turri.preview.open(addressOf(typed));
   };
 
+  const switcher = (
+    <div className="segmented" role="tablist">
+      {(["browser", "terminal"] as Pane[]).map((name) => (
+        <button key={name} role="tab" aria-selected={pane === name} className={pane === name ? "on" : ""} onClick={() => onPane(name)}>
+          {name}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (pane === "terminal") {
+    return (
+      <div className="preview">
+        <div className="preview-bar">
+          {switcher}
+          <span className="preview-program" title="what runs in the terminal now">
+            {shell.running ? shell.program : "no shell running"} · {dir.replace(/^\/Users\/[^/]+/, "~")}
+          </span>
+          <button className="icon-button" onClick={() => void window.turri.terminal.restart()} title="a new shell - whatever runs in this one is stopped">
+            <Icon name="reload" />
+          </button>
+        </div>
+        <TerminalPane onState={setShell} />
+      </div>
+    );
+  }
+
   return (
     <div className="preview">
       <div className="preview-bar">
+        {switcher}
         <button className="icon-button" disabled={!state.canGoBack} onClick={() => void window.turri.preview.go("back")} title="back">
           <Icon name="back" />
         </button>

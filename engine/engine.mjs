@@ -25,10 +25,11 @@ let looker;
 let chat;
 const questions = new Map();
 let nextQuestion = 0;
-const browserCalls = new Map();
-let nextBrowserCall = 0;
+/** turri's browser and terminal tools' requests of the preview, waiting for the main process to answer. */
+const paneCalls = new Map();
+let nextPaneCall = 0;
 /** What the person has open in the window - its view, and the file in it - for turri to know (engine/app.mjs). */
-let looking = { view: "spec", file: null };
+let looking = { view: "spec", file: null, pane: null };
 
 /** What turri's chat tells its host - the window - of its jobs and its work loop (TurriHost in turri). */
 const ENDED = new Set(["succeeded", "failed", "stopped"]);
@@ -190,14 +191,19 @@ function ask(question) {
   });
 }
 
-/** One of turri's browser tools, asked of the window's preview pane - the main process drives it - and its answer. */
-function browser(action, params) {
-  const id = ++nextBrowserCall;
+/**
+ * One of turri's browser or terminal tools, asked of the window's preview - the main process drives its browser pane
+ * and its terminal - and its answer.
+ */
+const askPane = (pane) => (action, params) => {
+  const id = ++nextPaneCall;
   return new Promise((resolve, reject) => {
-    browserCalls.set(id, { resolve, reject });
-    process.send?.({ browser: action, id, params });
+    paneCalls.set(id, { resolve, reject });
+    process.send?.({ [pane]: action, id, params });
   });
-}
+};
+const browser = askPane("browser");
+const terminal = askPane("terminal");
 
 function answer({ id, value }) {
   questions.get(id)?.(value ?? undefined);
@@ -374,14 +380,17 @@ function conform({ file, frids }) {
 
 function release({ file }) {
   chat.send(
-    `Release ${relative(projectDir, file)} for me to try. Once it runs, tell me how to open or run it, and what to test: what was built from the spec, and for each the steps to check it works and what I should see.`,
+    `Release ${relative(projectDir, file)} for me to try. Once it runs, open it in the preview where I can watch - the terminal or the browser, whichever suits what it is - and check it starts. Then tell me how to open or run it, and what to test: what was built from the spec, and for each the steps to check it works and what I should see.`,
   );
   return true;
 }
 
-/** The window's view and the file open in it, as the person moves about: told to turri at its next turn. */
-function look({ view, file }) {
-  looking = { view, file: file ? relative(projectDir, file) || file : null };
+/**
+ * The window's view and the file open in it - or, in the preview, its browser or terminal - as the person moves about:
+ * told to turri at its next turn.
+ */
+function look({ view, file, pane }) {
+  looking = { view, file: file ? relative(projectDir, file) || file : null, pane: pane ?? null };
   return true;
 }
 
@@ -409,7 +418,7 @@ async function chatAnew() {
   // The work loop's plan can change with no word of it - planned again while a pulse runs, on a spec edited from the
   // chat - so the window is sent it again as each of the chat's tools ends, and as it settles: regenerate, say, ends
   // once the plan is made.
-  chat = await startChat({ cwd: projectDir, harnessModel, host, emit, ask, browser, whereNow: () => looking, onStep: () => loop !== undefined && emit("status", statusNow()) });
+  chat = await startChat({ cwd: projectDir, harnessModel, host, emit, ask, browser, terminal, whereNow: () => looking, onStep: () => loop !== undefined && emit("status", statusNow()) });
 }
 
 /**
@@ -465,10 +474,10 @@ const BEFORE_A_PROJECT = new Set(["open", "vendors", "initConfig"]);
 // The app gone - quit, crashed, killed - the engine goes with it: never a chat left running with no window.
 process.on("disconnect", () => process.exit(0));
 
-process.on("message", async ({ id, method, params, browserReply, result, error }) => {
-  if (browserReply !== undefined) {
-    const call = browserCalls.get(browserReply);
-    browserCalls.delete(browserReply);
+process.on("message", async ({ id, method, params, reply, result, error }) => {
+  if (reply !== undefined) {
+    const call = paneCalls.get(reply);
+    paneCalls.delete(reply);
     if (error !== undefined) call?.reject(new Error(error));
     else call?.resolve(result);
     return;

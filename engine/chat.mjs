@@ -3,6 +3,7 @@
 // the terminal (dialogs, notices, the working line) comes here as UI calls and goes to the window as events.
 import turri from "./turri.mjs";
 import { browserExtension, retriedWithoutImages } from "./browser.mjs";
+import { terminalExtension } from "./terminal.mjs";
 import { APP_SURFACE, withWhere } from "./app.mjs";
 
 const { createTurriExtension, pi } = turri;
@@ -10,10 +11,11 @@ const { createTurriExtension, pi } = turri;
 /**
  * Start a chat in `cwd`. `host` is what turri's extension tells of its jobs and asks its questions in (TurriHost);
  * `emit` sends an event to the window; `ask` puts a question to the person there and resolves with the answer
- * (undefined when they dismiss it); `browser` asks the window's preview pane for one of the browser tools' actions;
- * `whereNow` says what the person has open in the window; `onStep` is called as each of its tools ends, and as it settles.
+ * (undefined when they dismiss it); `browser` and `terminal` ask the window's preview - its browser pane, its terminal -
+ * for one of the browser or terminal tools' actions; `whereNow` says what the person has open in the window; `onStep`
+ * is called as each of its tools ends, and as it settles.
  */
-export async function startChat({ cwd, harnessModel, host, emit, ask, browser, whereNow, onStep }) {
+export async function startChat({ cwd, harnessModel, host, emit, ask, browser, terminal, whereNow, onStep }) {
   process.env.PI_SKIP_VERSION_CHECK = "1";
 
   // The window is told when the conversation's model changes - /turri-config switches it as it runs.
@@ -25,6 +27,7 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser, w
     extensionFactories: [
       createTurriExtension({ ...host, surface: APP_SURFACE, systemPrompt: (prompt) => withWhere(prompt, whereNow()) }),
       browserExtension(browser),
+      terminalExtension(terminal),
       modelWatch,
     ],
   });

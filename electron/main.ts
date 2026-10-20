@@ -3,12 +3,13 @@ import { fork, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { createPreview } from "./preview.ts";
+import { createTerminal } from "./terminal.ts";
 import { turriVersion } from "./turri-version.ts";
 
 /**
  * The main process: one window, and behind it one turri engine per open project - a Node process that hosts
- * turri's work loop (engine/engine.mjs). The window never sees a terminal: it asks the engine for data and is
- * sent what the jobs do as they do it.
+ * turri's work loop (engine/engine.mjs). The window never shows turri in a terminal: it asks the engine for data and
+ * is sent what the jobs do as they do it. The one terminal there is, the preview's, is for the app turri builds.
  */
 
 const ROOT = join(__dirname, "..");
@@ -64,6 +65,7 @@ function setTheme(next: Theme) {
 
 let window: BrowserWindow | undefined;
 const preview = createPreview({ windowOf: () => window, send });
+const terminal = createTerminal({ send });
 let engine: ChildProcess | undefined;
 let nextId = 0;
 const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
@@ -86,17 +88,18 @@ function startEngine(): Promise<void> {
   child.stdout?.on("data", (chunk) => send("engine:log", { level: "stdout", text: String(chunk) }));
   child.stderr?.on("data", (chunk) => send("engine:log", { level: "stderr", text: String(chunk) }));
   return new Promise((resolve, reject) => {
-    child.on("message", (message: { id?: number; result?: unknown; error?: string; event?: string; data?: unknown; browser?: string; params?: unknown }) => {
+    child.on("message", (message: { id?: number; result?: unknown; error?: string; event?: string; data?: unknown; browser?: string; terminal?: string; params?: unknown }) => {
       if (message.event === "ready") {
         // Which turri the engine runs - the package, or a clone's sources (TURRI_DEV) - said where the app was started.
         console.log(`turri engine: Node ${(message.data as { node: string }).node}, turri from ${(message.data as { turri: string }).turri}`);
         return resolve();
       }
-      // One of turri's browser tools, asked of the preview: done there, and answered.
-      if (message.browser !== undefined) {
-        preview.request(message.browser, message.params).then(
-          (result) => child.connected && child.send({ browserReply: message.id, result }),
-          (error) => child.connected && child.send({ browserReply: message.id, error: error instanceof Error ? error.message : String(error) }),
+      // One of turri's browser or terminal tools, asked of the preview: done there, and answered.
+      if (message.browser !== undefined || message.terminal !== undefined) {
+        const done = message.browser !== undefined ? preview.request(message.browser, message.params) : terminal.request(message.terminal!, message.params);
+        done.then(
+          (result) => child.connected && child.send({ reply: message.id, result }),
+          (error) => child.connected && child.send({ reply: message.id, error: error instanceof Error ? error.message : String(error) }),
         );
         return;
       }
@@ -175,8 +178,9 @@ async function openProject(named: string) {
   const dir = canonical(named);
   if (engine === undefined || engineHasProject) await startEngine();
   engineHasProject = true;
-  // Another project's app is not this one's: the preview starts empty.
+  // Another project's app is not this one's: the preview starts empty, and its terminal in this project's folder.
   preview.dispose();
+  terminal.setDir(dir);
   const summary = await call("open", { dir });
   writeFileSync(RECENTS_FILE, JSON.stringify([dir, ...recents().filter((other) => other !== dir)].slice(0, RECENTS_KEPT)));
   app.addRecentDocument(dir);
@@ -266,6 +270,7 @@ function createWindow() {
     // Gone first: the preview's clean-up must not reach for a window already destroyed, nor send to it.
     window = undefined;
     preview.dispose();
+    terminal.dispose();
   });
 }
 
@@ -356,6 +361,10 @@ ipcMain.handle("preview:place", (_event, rect: Rectangle | null) => preview.plac
 ipcMain.handle("preview:open", (_event, url: string) => preview.open(url));
 ipcMain.handle("preview:go", (_event, action: "back" | "forward" | "reload" | "stop" | "devtools") => preview.go(action));
 ipcMain.handle("preview:state", () => preview.state());
+ipcMain.handle("terminal:open", () => terminal.open());
+ipcMain.handle("terminal:write", (_event, data: string) => terminal.write(data));
+ipcMain.handle("terminal:resize", (_event, cols: number, rows: number) => terminal.resize(cols, rows));
+ipcMain.handle("terminal:restart", () => terminal.restart());
 // Which turri the app runs - worked out once: it does not change while the app runs.
 const turri = turriVersion(ROOT);
 ipcMain.handle("turri:version", () => turri);
@@ -391,10 +400,14 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   engine?.kill();
+  terminal.dispose();
   if (process.platform !== "darwin") app.quit();
 });
 
 // Quitting - ⌘Q, the menu, app.quit() - closes no window first, so the engine is stopped here too.
-app.on("will-quit", () => engine?.kill());
+app.on("will-quit", () => {
+  engine?.kill();
+  terminal.dispose();
+});
 
 app.on("before-quit", () => engine?.kill());

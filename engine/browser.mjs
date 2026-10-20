@@ -55,7 +55,7 @@ const GUIDELINES = [
   "The browser_* tools drive the preview pane in the person's window, on the app as it runs on this machine (localhost): the person watches what you do there.",
   "Use them to check what you built works as the spec says: open it, read the page, try a flow, read the console for errors.",
   "Prefer browser_read to browser_screenshot: it is text, and costs less. Take a screenshot when how the page looks matters.",
-  "They see only a running app: if nothing answers, start it first (release it, or run it), then open it.",
+  "They see only a running app: if nothing answers, start it first (release it, or run it with terminal_run), then open it.",
 ];
 
 function tools(request, sees) {

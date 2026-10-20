@@ -9,7 +9,7 @@
     "node": ">=22.19"
   },
   "scripts": {
-    "postinstall": "node scripts/brand.mjs",
+    "postinstall": "node scripts/brand.mjs && node scripts/pty.mjs",
     "brand": "node scripts/brand.mjs",
     "icon": "electron scripts/icon.cjs && node scripts/brand.mjs",
     "dev": "node scripts/dev.mjs",
@@ -24,6 +24,8 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "electron": "^44.9.0",
     "esbuild": "^0.28.2",
     "markdown-it": "^14.3.3",
@@ -33,6 +35,8 @@
     "vite": "^8.3.4"
   },
   "dependencies": {
-    "@turri-dev/cli": "0.1.8-next.e553476"
+    "@turri-dev/cli": "0.1.8-next.e553476",
+    "@xterm/headless": "^6.0.0",
+    "node-pty": "1.1.0"
   }
 }

@@ -72,6 +72,17 @@
   --plain-module: #8eebee;
   --plain-comment: #85a3b2;
   --plain-bullet: #85a3b2;
+  /* The preview's terminal: the ANSI colours a program prints in, from the same palette - success pink, as turri's is. */
+  --ansi-black: #22344a;
+  --ansi-red: #ff7a3d;
+  --ansi-green: #ff5c8d;
+  --ansi-yellow: #e9d8c8;
+  --ansi-blue: #8eebee;
+  --ansi-magenta: #ff7fa6;
+  --ansi-cyan: #5ce1e6;
+  --ansi-white: #85a3b2;
+  --ansi-bright-black: #3e5a6b;
+  --ansi-bright-white: #f4f7f9;
   --mono: "Zed Mono", ui-monospace, monospace;
   --radius: 6px;
   --radius-small: 4px;
@@ -113,6 +124,16 @@
   --plain-module: #1e3442;
   --plain-comment: #3e5a6b;
   --plain-bullet: #3e5a6b;
+  --ansi-black: #0a0f1a;
+  --ansi-red: #c4501c;
+  --ansi-green: #d63a6f;
+  --ansi-yellow: #8a6a4a;
+  --ansi-blue: #1e3442;
+  --ansi-magenta: #732553;
+  --ansi-cyan: #22878b;
+  --ansi-white: #3e5a6b;
+  --ansi-bright-black: #85a3b2;
+  --ansi-bright-white: #1e3442;
 }
 
 @media (prefers-color-scheme: light) {
@@ -150,6 +171,16 @@
   --plain-module: #1e3442;
     --plain-comment: #3e5a6b;
     --plain-bullet: #3e5a6b;
+    --ansi-black: #0a0f1a;
+    --ansi-red: #c4501c;
+    --ansi-green: #d63a6f;
+    --ansi-yellow: #8a6a4a;
+    --ansi-blue: #1e3442;
+    --ansi-magenta: #732553;
+    --ansi-cyan: #22878b;
+    --ansi-white: #3e5a6b;
+    --ansi-bright-black: #85a3b2;
+    --ansi-bright-white: #1e3442;
   }
 }
 
@@ -2177,6 +2208,31 @@ code {
 .preview-page {
   flex: 1;
   min-height: 0;
+}
+/* The preview's terminal: xterm.js, inset from the pane's edges, on the window's own colour. */
+.preview-terminal {
+  flex: 1;
+  min-height: 0;
+  padding: 8px 4px 4px 12px;
+  background: var(--bg);
+}
+.preview-terminal .xterm {
+  height: 100%;
+}
+.preview-terminal .xterm-viewport {
+  background: transparent !important;
+}
+.preview-program {
+  flex: 1;
+  margin: 0 4px;
+  overflow: hidden;
+  font: 12px var(--mono);
+  color: var(--fg-2);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.preview-bar .segmented {
+  margin-right: 6px;
 }
 .preview-retry {
   display: block;

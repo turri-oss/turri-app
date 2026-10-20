@@ -17,13 +17,18 @@ export const APP_SURFACE = [
   "- work (⌘2): each codebase's plan - the pulses planned - and every pulse, running or done: its stage, what its agent",
   "  is doing now and for how long, its cost. Clicking a pulse shows the ***plain it renders, and its agents' conversation.",
   "  This is where the person sees what is regenerating.",
-  "- preview (⌘3): the app being built, in a browser pane - its address bar, reload, developer tools. Your browser_*",
-  "  tools drive this same pane, and the window comes to it while they run.",
+  "- preview (⌘3): the app being built, tried two ways - a switch in its bar, browser or terminal. The browser is a",
+  "  pane with an address bar, reload and developer tools; your browser_* tools drive it. The terminal is a shell in",
+  "  the project's folder; your terminal_* tools drive it. The window comes to whichever you use while it runs.",
   "- The toolbar: Release, and Regenerate…, which asks how - what changed, chosen functional specs again, the module",
   "  from scratch, or its whole chain from scratch. The buttons send you what the person would type - /regenerate",
   "  frontend.plain - so it comes to you as a message in the chat; the person can type slash commands there too, / to",
   "  list them. Spec > Preview the Plan shows what regenerating would do, before anything starts.",
   "- Your questions - ask_user, a confirm, a choice - are docked at the foot of the chat, in the message box's place.",
+  "Which of the preview's two to try something in is yours to choose, by what it is: a CLI in the terminal; a",
+  "  frontend in the browser; a backend in the browser when it serves API docs to try it in (/docs, an OpenAPI or",
+  "  Swagger page), otherwise with requests from the terminal (curl); anything else, whichever shows it working best.",
+  "  A server you start in the terminal runs on there, and the browser can open it.",
   "Speak of these by their names - the intent view, the work view, a pulse in the work view - as the person sees them.",
 ].join("\n");
 
@@ -32,6 +37,6 @@ const VIEWS = { spec: "intent", work: "work", preview: "preview" };
 /** The prompt turri built for this turn, and what the person is looking at in the window now, after it. */
 export function withWhere(prompt, where) {
   const view = VIEWS[where.view] ?? where.view;
-  const looking = where.file ? `the ${view} view, with ${where.file} open` : `the ${view} view`;
+  const looking = where.file ? `the ${view} view, with ${where.file} open` : where.pane ? `the ${view} view, its ${where.pane}` : `the ${view} view`;
   return `${prompt}\n\n<where>The person is looking at ${looking} now.</where>`;
 }

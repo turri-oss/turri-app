@@ -1,4 +1,5 @@
-// The main process and the preload script, bundled for Electron: CommonJS, Electron's own modules left out.
+// The main process and the preload script, bundled for Electron: CommonJS, Electron's own modules left out - and node-pty,
+// whose native part is loaded from node_modules as it is.
 import { build } from "esbuild";
 
 export async function buildElectron(options = {}) {
@@ -10,7 +11,7 @@ export async function buildElectron(options = {}) {
     platform: "node",
     format: "cjs",
     target: "node22",
-    external: ["electron"],
+    external: ["electron", "node-pty"],
     sourcemap: true,
     ...options,
   });
