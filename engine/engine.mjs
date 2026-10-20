@@ -193,6 +193,8 @@ function pastPulseDetail({ id, run }) {
  * The project's files change under the window too - turri edits the specs from the chat, a pulse writes code - and the
  * window is told. A .plain file comes with its text and what it now says; a save of the window's own comes back the
  * same way, and is known by its text. Any other change is only where it was, for the tree to list that folder again.
+ * A module's history moving - a pulse landing, its code deleted to regenerate it from scratch - changes what each spec
+ * has built and conformance tested, though no spec changed: every spec is sent again, with what it has now.
  */
 function watchSpecs() {
   const skip = new Set([turri.MODULES_DIR, "node_modules", ".git", ".turri", "dist"]);
@@ -200,14 +202,21 @@ function watchSpecs() {
   const changed = new Set();
   let filesTimer;
   let configTimer;
+  let historyTimer;
   watch(projectDir, { recursive: true }, (_type, name) => {
     if (name === null) return;
+    const parts = name.split(sep);
+    if (parts[0] === turri.MODULES_DIR && parts.includes(".plaingit") && (parts.at(-1) === "HEAD" || parts.includes("refs"))) {
+      clearTimeout(historyTimer);
+      historyTimer = setTimeout(() => {
+        for (const file of plainFiles(projectDir)) emit("spec", { file, text: readFileSync(file, "utf8"), spec: describeSpec(file) });
+      }, 300);
+    }
     // The project's config - /turri-config writes it from the chat: the window shows its settings again.
     if (CONFIG_FILE.test(name)) {
       clearTimeout(configTimer);
       configTimer = setTimeout(() => emit("config", null), 250);
     }
-    const parts = name.split(sep);
     if (!parts.some((part) => UNLISTED.has(part))) {
       changed.add(join(projectDir, name));
       clearTimeout(filesTimer);
