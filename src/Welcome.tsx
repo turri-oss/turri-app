@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 /** More recent projects than this, and the list scrolls and can be searched. */
 const RECENTS_SHOWN = 5;
 import type { Project } from "./types.ts";
-import { Appearance, Icon, Jellyfish, Spinner, TurriVersionLine } from "./ui.tsx";
+import { Icon, Jellyfish, Spinner, TurriVersionLine } from "./ui.tsx";
 
 export function Welcome({ onOpened, onNew }: { onOpened: (project: Project | null) => void; onNew: () => void }) {
   const [recents, setRecents] = useState<string[]>([]);
@@ -90,7 +90,6 @@ export function Welcome({ onOpened, onNew }: { onOpened: (project: Project | nul
             </ul>
           </>
         )}
-        <Appearance />
         <TurriVersionLine />
       </div>
     </div>

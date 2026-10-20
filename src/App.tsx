@@ -10,7 +10,7 @@ import { NewProject } from "./NewProject.tsx";
 import { FileTree } from "./FileTree.tsx";
 import { FileView } from "./FileView.tsx";
 import { PreviewView, savedPane, savePane } from "./PreviewView.tsx";
-import { Appearance, Empty, Icon, Jellyfish, Spinner, TurriVersionLine } from "./ui.tsx";
+import { Empty, Icon, Jellyfish, Spinner, TurriVersionLine } from "./ui.tsx";
 import { Chat, type ChatItem, type ChatStats, type Question, type SkillProgress } from "./Chat.tsx";
 
 const EMPTY_STATUS: Status = { modules: [], jobs: [], planned: [] };
@@ -343,7 +343,6 @@ export function App() {
               <span className="muted">idle</span>
             )}
             <TurriVersionLine />
-            <Appearance />
           </div>
         </aside>
 

@@ -2052,33 +2052,6 @@ code {
   user-select: text;
 }
 
-/* ---------- appearance ---------- */
-
-.appearance {
-  display: flex;
-  background: var(--hover);
-  border-radius: var(--radius);
-  padding: 2px;
-  margin-top: 10px;
-}
-.appearance button {
-  flex: 1;
-  border: 0;
-  background: none;
-  border-radius: var(--radius);
-  padding: 2px 0;
-  font-size: 11.5px;
-  color: var(--fg-2);
-}
-.appearance button.on {
-  background: var(--selected);
-  color: var(--fg);
-}
-.welcome .appearance {
-  width: 220px;
-  margin: 28px auto 0;
-}
-
 /* ---------- pixels ---------- */
 
 /* turri's pixel kit (src/pixels/): its animations in its own tp- classes; the jellyfish placed here. */
@@ -2158,12 +2131,10 @@ code {
 .button.small {
   height: 24px;
 }
-.segmented,
-.appearance {
+.segmented {
   border: 1px solid var(--line);
 }
-.segmented button.on,
-.appearance button.on {
+.segmented button.on {
   background: var(--accent);
   color: var(--on-accent);
   box-shadow: none;

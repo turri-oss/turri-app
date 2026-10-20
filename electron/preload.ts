@@ -38,7 +38,6 @@ const api = {
   /** Which turri the app runs: from npm, or a clone's sources - and anything to do about it. */
   turriVersion: () => ipcRenderer.invoke("turri:version") as Promise<TurriVersion>,
   theme: () => ipcRenderer.invoke("theme:get") as Promise<"dark" | "light" | "system">,
-  setTheme: (theme: "dark" | "light" | "system") => ipcRenderer.invoke("theme:set", theme),
   platform: process.platform,
 };
 

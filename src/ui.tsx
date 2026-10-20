@@ -80,24 +80,6 @@ function Pixels({ size, width, height, mount, className }: { size: number; width
   );
 }
 
-/** Dark, light or as the system is: the same choice as View > Appearance. */
-export function Appearance() {
-  const [theme, setTheme] = useState<string>(document.documentElement.dataset.theme ?? "dark");
-  useEffect(() => {
-    void window.turri.theme().then(setTheme);
-    return window.turri.on("theme", setTheme);
-  }, []);
-  return (
-    <div className="appearance" role="radiogroup" aria-label="appearance">
-      {(["dark", "light", "system"] as const).map((name) => (
-        <button key={name} role="radio" aria-checked={theme === name} className={theme === name ? "on" : ""} onClick={() => void window.turri.setTheme(name)}>
-          {name === "dark" ? "dark" : name === "light" ? "light" : "system"}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** SF Symbols-like line icons, drawn inline so the app needs no icon font. */
 const PATHS: Record<string, string> = {
   doc: "M6 2.5h5.5L15 6v11.5H6zM11.5 2.5V6H15",
