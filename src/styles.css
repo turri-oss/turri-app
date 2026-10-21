@@ -3307,3 +3307,9 @@ a.button {
   max-height: 240px;
   overflow: auto;
 }
+
+/* ***plain's mark, beside a .plain file's name: in its green, whatever the theme, as a logo is. */
+.plain-mark {
+  flex: none;
+  vertical-align: middle;
+}

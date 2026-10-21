@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
 import type { Job, Spec } from "./types.ts";
-import { elapsed, Icon, Spinner, useTick } from "./ui.tsx";
+import { elapsed, Icon, PlainMark, Spinner, useTick } from "./ui.tsx";
 import { stageOf } from "./PulseSpec.tsx";
 import { keys, withMod } from "./platform.ts";
 
@@ -354,7 +354,7 @@ export function SpecView(props: {
       <div className="editor-pane">
         <div className="pane-header">
           <span>
-            <Icon name="doc" /> {spec.rel}
+            <PlainMark /> {spec.rel}
           </span>
           <span className="pane-header-right">
             {spec.ok && total > 0 && (

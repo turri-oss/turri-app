@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Job } from "./types.ts";
-import { Icon } from "./ui.tsx";
+import { Icon, PlainMark } from "./ui.tsx";
 
 type Token = { text: string; role: string | null };
 type Line = { kind: "context" | "add" | "del" | "gap"; text: string; line?: number };
@@ -113,7 +113,7 @@ export function PulseSpec({ job, onShowInSpec }: { job: Job; onShowInSpec: (file
           <section key={file.file}>
             <div className="pulse-spec-head">
               <span>
-                <Icon name="doc" size={13} /> {file.file}
+                <PlainMark size={14} /> {file.file}
                 <span className="muted">
                   {" "}
                   · {added} line{added === 1 ? "" : "s"} to render{again ? " again, unchanged" : ""}{taken > 0 ? `, ${taken} taken out` : ""}

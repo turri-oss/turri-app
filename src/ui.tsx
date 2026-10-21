@@ -118,6 +118,14 @@ export function Icon({ name, size = 16 }: { name: keyof typeof PATHS | string; s
   );
 }
 
+/**
+ * ***plain's own mark - its three asterisks, in its green (public/plain/plain-mark.svg) - for a .plain file wherever
+ * one is named. `size` is its width: it is about half as high.
+ */
+export function PlainMark({ size = 16 }: { size?: number }) {
+  return <img className="plain-mark" src="./plain/plain-mark.svg" width={size} height={Math.round((size * 243.9) / 439.2)} alt="" draggable={false} />;
+}
+
 /** Working: four pixels chasing each other round a square. */
 export function Spinner() {
   return (

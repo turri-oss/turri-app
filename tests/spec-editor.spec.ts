@@ -16,6 +16,8 @@ const atTheEnd = (window: Page) =>
 test.describe("the spec editor", () => {
   test("shows the spec, coloured by turri's grammar, with its functional spec marked", async ({ launched: { window } }) => {
     await expect(window.locator(".editor-pane .pane-header")).toContainText("0 of 1 built");
+    // Named beside ***plain's own mark, in its green.
+    await expect(window.locator(".editor-pane .pane-header img.plain-mark")).toHaveAttribute("src", "./plain/plain-mark.svg");
     await expect(window.locator(".editor-colours .plain-concept").first()).toBeVisible();
     // In the coloured layer, which is hidden from the accessibility tree: the textarea over it reads the spec.
     await expect(mark(window, 1)).toHaveAttribute("aria-label", "functional spec 1, to build");

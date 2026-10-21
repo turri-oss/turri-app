@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Spec } from "./types.ts";
-import { Icon, Spinner } from "./ui.tsx";
+import { Icon, PlainMark, Spinner } from "./ui.tsx";
 import { REVEAL } from "./platform.ts";
 
 export interface FileEntry {
@@ -122,7 +122,7 @@ export function FileTree(props: { root: string; specs: Spec[]; selected: string 
             }}
           >
             {entry.dir ? <span className={`chevron ${isOpen ? "open" : ""}`}><Icon name="chevron" size={12} /></span> : <span className="chevron" />}
-            {spec ? <SpecState spec={spec} running={props.isRunning(spec.module)} /> : <Icon name={entry.dir ? "folder" : entry.name.endsWith(".plain") ? "doc" : "file"} size={14} />}
+            {spec ? <SpecState spec={spec} running={props.isRunning(spec.module)} /> : entry.name.endsWith(".plain") && !entry.dir ? <PlainMark size={14} /> : <Icon name={entry.dir ? "folder" : "file"} size={14} />}
             <span className="tree-name">{entry.name}</span>
             {spec && <span className="spec-row-count">{spec.ok ? `${spec.functionalSpecs.filter((entry) => entry.built).length}/${spec.functionalSpecs.length}` : "!"}</span>}
           </button>
