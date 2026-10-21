@@ -1,6 +1,7 @@
 // The main process and the preload script, bundled for Electron: CommonJS, Electron's own modules left out - and node-pty,
 // whose native part is loaded from node_modules as it is, and electron-updater, which loads its updaters lazily.
-import { copyFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, existsSync } from "node:fs";
 import { build } from "esbuild";
 import { writeNotices } from "./notices.mjs";
 
@@ -25,7 +26,10 @@ export async function buildElectron(options = {}) {
  */
 export function buildNotices() {
   writeNotices();
-  copyFileSync("node_modules/electron/dist/LICENSES.chromium.html", "dist-electron/LICENSES.chromium.html");
+  // Electron 44 downloads its binary when first run, not as it installs: on a fresh install - CI's - it is fetched here.
+  const chromium = "node_modules/electron/dist/LICENSES.chromium.html";
+  if (!existsSync(chromium)) execFileSync(process.execPath, ["node_modules/electron/install.js"], { stdio: "inherit" });
+  copyFileSync(chromium, "dist-electron/LICENSES.chromium.html");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
