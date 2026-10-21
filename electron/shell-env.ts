@@ -45,7 +45,7 @@ function read(): Promise<Record<string, string> | undefined> {
       clearTimeout(timer);
       const [, between] = stdout.split(MARK);
       if (between === undefined) {
-        console.warn(`turri-app: could not read the environment of ${shell}${why ? ` - ${why}` : ""}`);
+        console.warn(`turri desktop: could not read the environment of ${shell}${why ? ` - ${why}` : ""}`);
         return resolve(undefined);
       }
       const env: Record<string, string> = {};

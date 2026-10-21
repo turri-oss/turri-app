@@ -408,7 +408,7 @@ export function mountJellyfish(container, {
 
   const frames = cycleFrames(size);
   const seq = cycleSequence({ loops, holdFrames });
-  // turri-app: start on the sequence's first frame - the polyp - not a flash of the grown hero before it.
+  // turri desktop: start on the sequence's first frame - the polyp - not a flash of the grown hero before it.
   paint(baseL, frames[seq[0]].base);
   let pos = 0, iv = setInterval(() => {
     const prev = seq[pos];

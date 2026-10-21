@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-turri-app is a proof of concept: [turri](https://github.com/turri-oss/turri) as a native Electron app for people who do not live in a terminal. It runs turri's own conversation and work loop and shows them in native UI - never turri in a terminal in a window. The one terminal there is, the preview's, is for trying the app turri builds. `docs/window.md` says what the window offers, the README its short tour.
+turri desktop (this repo, `turri-oss/turri-desktop`) is a proof of concept: [turri](https://github.com/turri-oss/turri) as a native Electron app for people who do not live in a terminal. It runs turri's own conversation and work loop and shows them in native UI - never turri in a terminal in a window. The one terminal there is, the preview's, is for trying the app turri builds. `docs/window.md` says what the window offers, the README its short tour.
 
 ## Shape
 

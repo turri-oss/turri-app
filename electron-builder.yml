@@ -11,7 +11,7 @@ artifactName: turri-${version}-${os}-${arch}.${ext}
 publish:
   provider: github
   owner: turri-oss
-  repo: turri-app
+  repo: turri-desktop
   releaseType: draft
 
 directories:
@@ -62,5 +62,5 @@ linux:
   category: Development
   icon: build/icon.png
   synopsis: turri, for people who do not live in a terminal
-  maintainer: turri-oss <https://github.com/turri-oss/turri-app>
+  maintainer: turri-oss <https://github.com/turri-oss/turri-desktop>
 
