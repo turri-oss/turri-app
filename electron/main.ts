@@ -6,6 +6,7 @@ import { createPreview } from "./preview.ts";
 import { loadShellEnvironment } from "./shell-env.ts";
 import { createTerminal } from "./terminal.ts";
 import { turriVersion } from "./turri-version.ts";
+import { createUpdates, type UpdateState } from "./updates.ts";
 
 /**
  * The main process: a window for each open project, and behind each its own turri engine - a Node process that hosts
@@ -122,8 +123,71 @@ function focused(): Workspace | undefined {
 
 /** Pulses running in every window: the Dock's badge counts them all. */
 function showRunning() {
-  const running = [...workspaces.values()].reduce((sum, workspace) => sum + workspace.running, 0);
-  app.dock?.setBadge(running > 0 ? String(running) : "");
+  app.dock?.setBadge(runningEverywhere() > 0 ? String(runningEverywhere()) : "");
+}
+
+function runningEverywhere(): number {
+  return [...workspaces.values()].reduce((sum, workspace) => sum + workspace.running, 0);
+}
+
+// ---------- updates ----------
+
+// The app's own, from its GitHub releases: the menu says where it is - checking, downloading, ready to restart - and a
+// notification says when one is ready. A download's progress changes no menu.
+let updateStatus: UpdateState["status"] | undefined;
+const updates = createUpdates({
+  onChange: (state) => {
+    if (state.status === updateStatus) return;
+    updateStatus = state.status;
+    buildMenu();
+    if (state.status !== "ready" || !Notification.isSupported()) return;
+    const notice = new Notification({ title: `turri ${state.version} is ready`, body: "restart to update - or it is installed when turri quits" });
+    notice.on("click", () => void restartToUpdate());
+    notice.show();
+  },
+});
+
+/** Restarts into the update downloaded - asking first while pulses run, as quitting stops them. */
+async function restartToUpdate() {
+  const running = runningEverywhere();
+  if (running > 0) {
+    const { response } = await dialog.showMessageBox({
+      type: "question",
+      message: `restart to update while ${running === 1 ? "a pulse runs" : `${running} pulses run`}?`,
+      detail: "restarting stops them. later, it is installed when turri next quits.",
+      buttons: ["restart", "later"],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (response !== 0) return;
+  }
+  updates.install();
+}
+
+/** Check for Updates…, chosen: says what it found, as the check runs on its own otherwise. */
+async function checkForUpdates() {
+  const state = await updates.check();
+  const said =
+    state.status === "off"
+      ? { message: "turri cannot update itself here", detail: `${state.reason}.` }
+      : state.status === "failed"
+        ? { message: "turri could not check for updates", detail: state.error }
+        : state.status === "downloading"
+          ? { message: `turri ${state.version} is downloading`, detail: "you are told when it is ready to restart into." }
+          : state.status === "ready"
+            ? undefined
+            : { message: "turri is up to date", detail: `this is turri ${app.getVersion()}.` };
+  if (said === undefined) return void restartToUpdate();
+  void dialog.showMessageBox({ type: "info", ...said, buttons: ["ok"] });
+}
+
+/** The menu's word on updates: in the app menu on macOS, in Help on Linux. */
+function updateItem(): MenuItemConstructorOptions {
+  const state = updates.state();
+  if (state.status === "ready") return { label: `Restart to Update to ${state.version}`, click: () => void restartToUpdate() };
+  if (state.status === "downloading") return { label: `Downloading turri ${state.version}…`, enabled: false };
+  if (state.status === "checking") return { label: "Checking for Updates…", enabled: false };
+  return { label: "Check for Updates…", click: () => void checkForUpdates() };
 }
 
 /**
@@ -482,8 +546,26 @@ function buildMenu() {
   const menuAction = (action: string) => () => focused()?.send("menu", action);
   const ready = front?.open === true;
   const template: MenuItemConstructorOptions[] = [
-    // macOS's app menu - About, Hide, Quit; elsewhere Quit is in File.
-    ...(MAC ? [{ role: "appMenu" as const }] : []),
+    // macOS's app menu - About, updates, Hide, Quit; elsewhere Quit is in File.
+    ...(MAC
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: "about" },
+              updateItem(),
+              { type: "separator" },
+              { role: "services" },
+              { type: "separator" },
+              { role: "hide" },
+              { role: "hideOthers" },
+              { role: "unhide" },
+              { type: "separator" },
+              { role: "quit" },
+            ] as MenuItemConstructorOptions[],
+          },
+        ]
+      : []),
     {
       label: "File",
       submenu: [
@@ -552,7 +634,7 @@ function buildMenu() {
         { label: "Release to Try", click: menuAction("release"), enabled: ready },
       ],
     },
-    { role: "help", submenu: [{ label: "Check This Machine…", click: menuAction("doctor") }] },
+    { role: "help", submenu: [{ label: "Check This Machine…", click: menuAction("doctor") }, ...(MAC ? [] : [{ type: "separator" as const }, updateItem()])] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -651,6 +733,7 @@ app.whenReady().then(() => {
   app.dock?.setMenu(Menu.buildFromTemplate([{ label: "New Window", click: () => void createWorkspace() }]));
   nativeTheme.themeSource = theme;
   buildMenu();
+  updates.start();
   const first = createWorkspace();
   // For development: TURRI_APP_OPEN opens a project at start, TURRI_APP_SCREENSHOT=<file.png> captures the window and quits.
   if (DEV) first.window.webContents.once("did-finish-load", async () => {

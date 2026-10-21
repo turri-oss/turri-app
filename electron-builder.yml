@@ -1,9 +1,18 @@
 # The app as people install it: turri.app in a .dmg and a .zip on macOS, an AppImage and a .deb on Linux - `npm run dist`,
-# into release/. Not signed with a Developer ID yet: on macOS it is signed ad hoc, so Gatekeeper asks before it opens.
+# into release/. Not signed with a Developer ID yet: on macOS it is signed ad hoc, so Gatekeeper asks before it opens,
+# and it cannot update itself. The .zip and the latest*.yml beside each build are what an update is read from.
 appId: dev.turri.app
 productName: turri
 copyright: Copyright © turri-oss
 artifactName: turri-${version}-${os}-${arch}.${ext}
+
+# Where releases are published - by CI, from a tag (.github/workflows/release.yml) - and where the app looks for its
+# updates (electron/updates.ts). A release is a draft until published by hand: only then do apps update to it.
+publish:
+  provider: github
+  owner: turri-oss
+  repo: turri-app
+  releaseType: draft
 
 directories:
   output: release

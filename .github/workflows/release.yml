@@ -1,0 +1,48 @@
+# A release of the app: a tag v<version> - the version in package.json - builds it on macOS and Linux and uploads the
+# builds, and the latest*.yml that installed apps update from, to a draft release on GitHub. Publishing the draft, by
+# hand, is what puts it out: only then do installed apps see it.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag is package.json's version
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "the tag $GITHUB_REF_NAME is not package.json's v$version"; exit 1; }
+      - name: One draft release, for both builds to upload to
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --draft --title "turri app ${GITHUB_REF_NAME#v}" --generate-notes
+
+  build:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each system on itself, for its runner's architecture: node-pty is built for Linux as it installs.
+        os: [macos-15, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Package and upload to the draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run release

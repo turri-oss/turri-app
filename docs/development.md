@@ -48,6 +48,18 @@ On macOS it is signed ad hoc - Apple silicon runs nothing unsigned - with no Dev
 
 As installed (`app.isPackaged`), the development hooks are not heard: TURRI_DEV - turri is always the package it was built with, and a TURRI_DEV in the person's shell is not passed to the engine - VITE_DEV_SERVER_URL, and TURRI_APP_OPEN, TURRI_APP_VIEW and TURRI_APP_SCREENSHOT. To look inside a packaged window, start its binary with `--remote-debugging-port=<port>` and open a project from Finder - `open -a release/mac-arm64/turri.app <project dir>`.
 
+## Releasing it
+
+turri is pinned exactly, so a new turri is a new release of the app: pin it (`npm install --save-exact @turri-dev/cli@<version>`), raise `version` in `package.json`, commit, and push a tag of that version:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+`.github/workflows/release.yml` checks that the tag is `package.json`'s version, makes a draft release of it on GitHub, and builds the app on macOS and Linux (`npm run release`), each uploading its builds and the `latest-mac.yml` or `latest-linux.yml` installed apps read. Publish the draft, by hand, to put it out.
+
+Installed apps update themselves (`electron/updates.ts`, electron-updater): they check a while after they start and every four hours, download what is newer on their own, and say so - a notification, and the menu (turri > Restart to Update on macOS, Help on Linux) - and install it on that restart or the next time they quit, asking first while pulses run. Check for Updates… asks at once. Only as installed - from source, git pull is the update - and on macOS only when signed with a Developer ID, as Squirrel.Mac takes an update only from the app's own signer: an ad hoc build says it cannot update itself. `npm run dist:dir` leaves out the feed's `app-update.yml`; `npm run dist` has it.
+
 ## Checking a change
 
 There is no test suite: `npm run typecheck` and `npm run build`, then look at the real window. `electron/main.ts` has hooks for that - `TURRI_APP_OPEN=<project dir>` opens a project at start, `TURRI_APP_VIEW=spec|work` switches to a view, and `TURRI_APP_SCREENSHOT=<file.png>` captures the window after about 2.5s and quits:

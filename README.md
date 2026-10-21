@@ -55,7 +55,7 @@ Every detail: [the window](docs/window.md).
 
 ## What is not here yet
 
-- **A download** - the app is packaged (`npm run dist`), but not yet signed and notarised, published, or updating itself.
+- **A download** - the app is packaged (`npm run dist`) and a tag builds a release that installed apps update from, but none is published yet, and the macOS build is not signed and notarised - so it cannot update itself there.
 - **Resuming a conversation** - each project opened starts a new one.
 - **turri's terminal panels** - the side panel, `/lineage`'s picker - have no window form yet; the work view takes the side panel's place.
 - **Settings as a form** (but for debug's switch); stacks, spec conflicts and start-overs as dialogs.

@@ -16,9 +16,10 @@
     "dev:npm": "TURRI_DEV=npm node scripts/dev.mjs",
     "build": "node scripts/build.mjs && vite build",
     "start": "npm run build && electron .",
-    "dist": "node scripts/pty.mjs && npm run build && electron-builder",
-    "dist:dir": "node scripts/pty.mjs && npm run build && electron-builder --dir",
-    "typecheck": "tsc --noEmit"
+    "dist": "node scripts/pty.mjs && npm run build && electron-builder --publish never",
+    "dist:dir": "node scripts/pty.mjs && npm run build && electron-builder --dir --publish never",
+    "typecheck": "tsc --noEmit",
+    "release": "node scripts/pty.mjs && npm run build && electron-builder --publish always"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.2.0",
@@ -40,6 +41,7 @@
   "dependencies": {
     "@turri-dev/cli": "0.1.10",
     "@xterm/headless": "^6.0.0",
+    "electron-updater": "^6.8.9",
     "node-pty": "1.1.0"
   },
   "license": "MIT",
