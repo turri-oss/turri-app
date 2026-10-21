@@ -19,6 +19,7 @@ engine/browser.mjs   browser tools on the preview: a pi extension of the app's, 
 engine/terminal.mjs  terminal tools on the preview's terminal: another
 engine/app.mjs       where turri is: the window as turri's host surface, and what the person has open, each turn
 src/                 the window: React, no UI kit, one stylesheet (styles.css)
+tests/               the window's tests: Playwright's Electron support on a fixture project, calling no model
 ```
 
 - **turri comes from npm**, as `@turri-dev/cli/host` - turri's public entry for hosts (`docs/hosting.md` in turri). The engine imports only that, through `engine/turri.mjs`; anything else it needs is added to turri's `src/host.ts` first, never reached for by a deep path. For working on both at once, `TURRI_DEV=<clone>` loads the clone's `src/host.ts` instead - `npm run dev` sets it to `../turri` when that is there, `npm run dev:npm` keeps the package - Node runs its TypeScript as it is, so no build - and a change to turri is in at the next project opened. The version is pinned exactly, because a 0.x prerelease may change the entry: a push to turri's `main` publishes `@turri-dev/cli@<x>-next.<sha>`, and `npm install @turri-dev/cli@next` takes it. To try a turri not yet published: `npm pack` in the turri clone, then `npm install <the .tgz>` here - and never commit a `package.json` that names a tarball.
@@ -36,14 +37,14 @@ src/                 the window: React, no UI kit, one stylesheet (styles.css)
 
 ## The window
 
-- **The spec editor is two layers**: a transparent textarea over a `<pre>` coloured by turri's own grammar (`highlightSpec`). They sit in one scrolling box and share every font and padding rule, so they wrap alike - a difference in width or font between them puts the caret on the wrong line. After touching either, measure both (below).
+- **The spec editor is two layers**: a transparent textarea over a `<pre>` coloured by turri's own grammar (`highlightSpec`). They sit in one scrolling box and share every font and padding rule, so they wrap alike - a difference in width or font between them puts the caret on the wrong line. After touching either, `npm test` measures both (`tests/spec-editor.spec.ts`).
 - **Colours are turri's**: turri-dark (the default) and turri-light, from turri's `.pi/themes/` and its ***plain palette, as tokens on `:root[data-theme]` in `styles.css`. Use the tokens; `system` follows macOS. `--built` (turri's pink) and `--tested` (its neon cyan) are what is regenerated and what is conformance tested, wherever either shows: a functional spec's mark, a pulse's kind. The choice and the zoom level live in `appearance.json` in the app's userData.
 - **Fonts**: Neue Montreal (`--sans`, the `--body` token) for the interface - not bundled, a commercial font with no licence yet: used where installed, the system sans otherwise. Zed Mono (`--mono`, `src/fonts/zed-mono/`, SIL OFL, subset to woff2) for code, the spec editor, transcripts and `kbd`. The interface is smooth: rounded corners (`--radius`, `--radius-small`), 1px borders, soft shadows (`--shadow`), eased motion. Only the jellyfish and its logos are pixels.
 - **The jellyfish** is turri's pixel kit, from the D5-Lean design: `src/pixels/turri-pixels.js` and `.css` (its animations, in `tp-` classes), and its static SVGs in `public/jellyfish/`. `Jellyfish` in `ui.tsx` draws it: large, `jellyfish-hero.svg` at rest, the kit's swaying hero (`mountSprite`) while turri works, and its lifecycle (`mountJellyfish`: the polyp grows into the jellyfish, sinks, grows again) on the welcome screen and in the empty chat - each mounted in the kit's own pixel box and scaled. Below 48px, `logo-mark.svg` at rest and `jelly-mascot.svg`, bobbing, while turri works. The app icon is drawn from `logo-mark.svg` too (`npm run icon`).
 
 ## Checking a change
 
-There is no test suite. `npm run typecheck` and `npm run build`, then look at the real window. `electron/main.ts` has development hooks for that:
+`npm run typecheck` and `npm test` - Playwright's Electron support driving the real window on a copy of `tests/fixture/hello`, its userData and pi's folder in a scratch folder, calling no model (`tests/app.ts`; docs/development.md says more). Add a test there for what you change when it calls no model. Then look at the real window - for what a test does not reach. `electron/main.ts` has development hooks for that:
 
 ```bash
 TURRI_APP_OPEN=<project dir>          # open a project at start

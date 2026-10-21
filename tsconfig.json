@@ -11,5 +11,5 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "include": ["src", "electron"]
+  "include": ["src", "electron", "tests", "playwright.config.ts"]
 }

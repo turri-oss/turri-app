@@ -1,0 +1,46 @@
+# The app's tests - the real window, driven by Playwright's Electron support (tests/) - on macOS and Linux, for each push
+# to main and each pull request. They call no model: a dummy key opens the fixture project.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Electron 44 downloads its binary when first run, not as it installs: fetched here, for the step below to find.
+      - name: Electron's binary
+        run: node node_modules/electron/install.js
+      - name: Electron's libraries, a virtual display, and its sandbox helper given to root (Ubuntu confines unprivileged namespaces)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0t64 libnss3 libgbm1 libasound2t64
+          sudo chown root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+      - name: Test
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm test
+      - name: What failed, with its traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: test-results/
+          retention-days: 7

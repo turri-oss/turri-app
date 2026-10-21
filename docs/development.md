@@ -14,6 +14,7 @@ engine/chat.mjs      pi's agent session with turri's extension; its dialogs and 
 engine/browser.mjs   the browser tools, a pi extension of the app's own beside turri's
 engine/terminal.mjs  the terminal tools, another
 src/                 the window: React, no UI kit
+tests/               the window's tests, on a fixture project
 ```
 
 turri comes from npm, as `@turri-dev/cli` - its host entry, `@turri-dev/cli/host` (turri's [docs/hosting.md](https://github.com/turri-oss/turri/blob/main/docs/hosting.md)): the chat extension, which hands the engine its jobs and puts `ask_user`'s questions in the window's dialogs, and what the window shows beside it. It is compiled JavaScript, so the engine runs on Electron's own Node; nothing else need be installed. The terminal's pty is node-pty, which ships built for macOS: `npm install` makes its helper executable (`scripts/pty.mjs`), as npm holds back its own install script. Models and credentials are turri's as usual: the project's `config.turri.yaml` and pi's auth. turri's chat records what it does in the project's ledger on its own, as a `host` run; the engine reads it back (`runViews`) when a project opens and as each pulse ends, for the work view's earlier pulses, and hears it live (`onLedgerEvent`) for the failures it says - for looking up only: what runs and what is planned are the work loop's. A turri with no ledger shows neither.
@@ -62,7 +63,9 @@ Installed apps update themselves (`electron/updates.ts`, electron-updater): they
 
 ## Checking a change
 
-There is no test suite: `npm run typecheck` and `npm run build`, then look at the real window. `electron/main.ts` has hooks for that - `TURRI_APP_OPEN=<project dir>` opens a project at start, `TURRI_APP_VIEW=spec|work` switches to a view, and `TURRI_APP_SCREENSHOT=<file.png>` captures the window after about 2.5s and quits:
+`npm run typecheck`, then `npm test`: it builds the app and runs its tests (`tests/`) - the real window, driven by Playwright's Electron support. Each test launches the app from the build on a copy of a fixture project (`tests/fixture/hello`), with its userData (`--user-data-dir`) and pi's folder (`PI_CODING_AGENT_DIR`) in a scratch folder of its own and a dummy `ANTHROPIC_API_KEY`, so it touches neither the person's recents nor their credentials - and calls no model: the welcome screen opening a recent project, the spec editor (its two layers measured alike, a save, a change on disk) and slash commands that only print. `tests/app.ts` is the launch; `npx playwright test -g <name>` runs one, and a failure leaves a trace in `test-results/` (`npx playwright show-trace <it>`). A new test of the window goes there too, as long as it calls no model. `.github/workflows/test.yml` runs them on macOS and Linux - under a virtual display there - for each push to main and each pull request, and keeps a failure's traces as the run's artifact.
+
+What a test does not reach, look at in the real window. `electron/main.ts` has hooks for that - `TURRI_APP_OPEN=<project dir>` opens a project at start, `TURRI_APP_VIEW=spec|work` switches to a view, and `TURRI_APP_SCREENSHOT=<file.png>` captures the window after about 2.5s and quits:
 
 ```bash
 npm run build && TURRI_APP_OPEN=../turri-projects/guestbook TURRI_APP_SCREENSHOT=/tmp/shot.png npx electron .

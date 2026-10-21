@@ -19,6 +19,7 @@
     "dist": "node scripts/pty.mjs && npm run build && electron-builder --publish never",
     "dist:dir": "node scripts/pty.mjs && npm run build && electron-builder --dir --publish never",
     "typecheck": "tsc --noEmit",
+    "test": "npm run build && playwright test",
     "release": "node scripts/pty.mjs && npm run build && electron-builder --publish always"
   },
   "devDependencies": {
