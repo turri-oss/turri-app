@@ -30,6 +30,8 @@ npm start
 
 turri itself comes with it, from npm, and runs on Electron's own Node: nothing else is installed. If npm held back Electron's or esbuild's install scripts, run `npm install-scripts approve electron esbuild` and `npm rebuild`.
 
+To have it as an app - in Applications, the Dock and Finder's Open With - `npm run dist` packages it into `release/`: a `.dmg` and a `.zip` on macOS, an AppImage and a `.deb` on Linux. It is not signed with a Developer ID yet, so macOS asks before opening it the first time: right-click it, then Open.
+
 Then, on the welcome screen, **start a new project** - name its folder, choose its models: Anthropic, OpenAI, Google, Amazon Bedrock or any other pi supports - or **open** a folder that has turri's `config.turri.yaml` in it. Models are reached as in turri: the provider's API key exported in your shell (`ANTHROPIC_API_KEY`, ... - the app reads your login shell's environment as it starts, so it has your keys and PATH even opened from Finder or the Dock), a sign-in from the window - File > Sign In to Model Providers…, with a subscription in your browser or an API key - which is what pi has from a `/login` in turri too, or a cloud account - see turri's [models](https://github.com/turri-oss/turri#models).
 
 Then tell turri what to build:
@@ -53,7 +55,7 @@ Every detail: [the window](docs/window.md).
 
 ## What is not here yet
 
-- **A download** - a signed and notarised `.dmg` for macOS, an AppImage and `.deb` for Linux, that update themselves.
+- **A download** - the app is packaged (`npm run dist`), but not yet signed and notarised, published, or updating itself.
 - **Resuming a conversation** - each project opened starts a new one.
 - **turri's terminal panels** - the side panel, `/lineage`'s picker - have no window form yet; the work view takes the side panel's place.
 - **Settings as a form** (but for debug's switch); stacks, spec conflicts and start-overs as dialogs.

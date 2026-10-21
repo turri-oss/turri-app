@@ -50,7 +50,7 @@ TURRI_APP_SCREENSHOT=<file.png>       # capture the window after ~2.5s and quit
 npm run build && TURRI_APP_OPEN=../turri-projects/guestbook TURRI_APP_SCREENSHOT=/tmp/shot.png npx electron .
 ```
 
-For anything a screenshot cannot show - layer sizes, fonts loaded, a menu action - load `dist-electron/main.cjs` from a small script run with `npx electron <script>` and `executeJavaScript` in the window. Such a script runs as the app "Electron": what it saves goes to `~/Library/Application Support/Electron/`, not the app's own userData; clean up there afterwards.
+The hooks are heard only from source: a packaged app (`npm run dist`, `electron-builder.yml`, `docs/development.md`) ignores them, and TURRI_DEV. For anything a screenshot cannot show - layer sizes, fonts loaded, a menu action - load `dist-electron/main.cjs` from a small script run with `npx electron <script>` and `executeJavaScript` in the window. Such a script runs as the app "Electron": what it saves goes to `~/Library/Application Support/Electron/`, not the app's own userData; clean up there afterwards.
 
 Regenerate, Preview plan and every chat message call the project's models and spend money; Regenerate also changes the project. Check with what calls no model - opening a project, the spec, slash commands that only print (`/stdlib`) - unless the person asks for a real run.
 

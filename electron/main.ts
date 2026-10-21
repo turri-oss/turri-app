@@ -15,6 +15,10 @@ import { turriVersion } from "./turri-version.ts";
  */
 
 const ROOT = join(__dirname, "..");
+/** Where the engine and node_modules are as files: beside app.asar in an app as installed, ROOT itself from source. */
+const UNPACKED = ROOT.replace(/\.asar$/, ".asar.unpacked");
+/** Run from source, not as installed: only then are the development hooks heard - TURRI_DEV, Vite, TURRI_APP_*. */
+const DEV = !app.isPackaged;
 /** macOS, or Linux: the window's chrome, the menu, the Dock and the file manager differ between them. */
 const MAC = process.platform === "darwin";
 
@@ -193,10 +197,12 @@ function createWorkspace(): Workspace {
     for (const { reject } of pending.values()) reject(new Error("The engine restarted."));
     pending.clear();
     // Electron's own Node runs it: turri comes compiled, from the @turri-dev/cli package, so no other Node is needed.
-    const child = fork(join(ROOT, "engine", "engine.mjs"), [], {
+    // As installed it is always the package's turri: a TURRI_DEV in the person's shell is left out.
+    const { TURRI_DEV, ...env } = process.env;
+    const child = fork(join(UNPACKED, "engine", "engine.mjs"), [], {
       execPath: process.execPath,
       execArgv: [],
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      env: { ...(DEV ? process.env : env), ELECTRON_RUN_AS_NODE: "1" },
       stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
     engine = child;
@@ -226,7 +232,7 @@ function createWorkspace(): Workspace {
         else call.resolve(message.result);
       });
       child.on("exit", (code) => {
-        reject(new Error(`The turri engine exited (${code}). ${process.env.TURRI_DEV ? `Is TURRI_DEV=${process.env.TURRI_DEV} a turri clone, with its packages installed (npm install there)?` : "Is @turri-dev/cli installed (npm install)?"}`));
+        reject(new Error(`The turri engine exited (${code}).${!DEV ? "" : TURRI_DEV ? ` Is TURRI_DEV=${TURRI_DEV} a turri clone, with its packages installed (npm install there)?` : " Is @turri-dev/cli installed (npm install)?"}`));
         // One replaced by another, or stopped with its window, was stopped on purpose: only the current one's end is news.
         if (engine !== child || closed) return;
         engine = undefined;
@@ -339,7 +345,7 @@ function createWorkspace(): Workspace {
     void shell.openExternal(url);
     return { action: "deny" };
   });
-  if (process.env.VITE_DEV_SERVER_URL) void window.loadURL(process.env.VITE_DEV_SERVER_URL);
+  if (DEV && process.env.VITE_DEV_SERVER_URL) void window.loadURL(process.env.VITE_DEV_SERVER_URL);
   else void window.loadFile(join(ROOT, "dist", "index.html"));
   window.on("closed", () => {
     // Gone first: the preview's clean-up must not reach for a window already destroyed, nor send to it.
@@ -613,7 +619,7 @@ ipcMain.handle("terminal:write", (event, data: string) => workspaceOf(event.send
 ipcMain.handle("terminal:resize", (event, cols: number, rows: number) => workspaceOf(event.sender).terminal.resize(cols, rows));
 ipcMain.handle("terminal:restart", (event) => workspaceOf(event.sender).terminal.restart());
 // Which turri the app runs - worked out once: it does not change while the app runs.
-const turri = turriVersion(ROOT);
+const turri = turriVersion(ROOT, DEV ? process.env.TURRI_DEV : undefined);
 ipcMain.handle("turri:version", () => turri);
 ipcMain.handle("theme:get", () => theme);
 nativeTheme.on("updated", () => {
@@ -647,7 +653,7 @@ app.whenReady().then(() => {
   buildMenu();
   const first = createWorkspace();
   // For development: TURRI_APP_OPEN opens a project at start, TURRI_APP_SCREENSHOT=<file.png> captures the window and quits.
-  first.window.webContents.once("did-finish-load", async () => {
+  if (DEV) first.window.webContents.once("did-finish-load", async () => {
     if (process.env.TURRI_APP_OPEN) first.send("project:opened", await first.openProject(process.env.TURRI_APP_OPEN));
     if (process.env.TURRI_APP_SCREENSHOT) {
       if (process.env.TURRI_APP_VIEW) setTimeout(() => first.send("menu", `view:${process.env.TURRI_APP_VIEW}`), 300);

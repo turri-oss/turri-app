@@ -16,6 +16,8 @@
     "dev:npm": "TURRI_DEV=npm node scripts/dev.mjs",
     "build": "node scripts/build.mjs && vite build",
     "start": "npm run build && electron .",
+    "dist": "node scripts/pty.mjs && npm run build && electron-builder",
+    "dist:dir": "node scripts/pty.mjs && npm run build && electron-builder --dir",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
@@ -27,6 +29,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "markdown-it": "^14.3.3",
     "react": "^19.3.1",
@@ -39,5 +42,6 @@
     "@xterm/headless": "^6.0.0",
     "node-pty": "1.1.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "homepage": "https://github.com/turri-oss/turri-app"
 }

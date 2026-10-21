@@ -1,0 +1,60 @@
+# The app as people install it: turri.app in a .dmg and a .zip on macOS, an AppImage and a .deb on Linux - `npm run dist`,
+# into release/. Not signed with a Developer ID yet: on macOS it is signed ad hoc, so Gatekeeper asks before it opens.
+appId: dev.turri.app
+productName: turri
+copyright: Copyright © turri-oss
+artifactName: turri-${version}-${os}-${arch}.${ext}
+
+directories:
+  output: release
+  buildResources: build
+
+# What the app is: the window (dist), the main process and preload (dist-electron), the engine, and the icon the window
+# and the Dock are given. node_modules comes on its own - the dependencies only, as the window is bundled by Vite.
+files:
+  - package.json
+  - dist/**
+  - dist-electron/**
+  - engine/**
+  - build/icon.png
+  # node-pty's sources, the Windows prebuilds and winpty: none runs here.
+  - "!node_modules/node-pty/{deps,src,third_party,scripts,binding.gyp}"
+  - "!node_modules/node-pty/prebuilds/win32-*"
+
+# The engine is a Node process of its own, forked from engine/engine.mjs, and turri and pi read and start files of
+# their own beside their code: both are real files, not in the archive. So is node-pty, whose shell helper is started
+# by path.
+asar: true
+asarUnpack:
+  - engine/**
+  - node_modules/**
+
+# node-pty ships built for macOS and is built for Linux by npm install, against Node-API: it runs on Electron as it is,
+# so nothing is rebuilt.
+npmRebuild: false
+
+mac:
+  target: [dmg, zip]
+  category: public.app-category.developer-tools
+  icon: build/icon.icns
+  # Ad hoc, until there is a Developer ID: Apple silicon runs nothing unsigned.
+  identity: "-"
+  hardenedRuntime: false
+  # A folder dropped on the Dock icon or opened with turri from Finder is a project (app.on("open-file")).
+  extendInfo:
+    CFBundleDocumentTypes:
+      - CFBundleTypeName: Folder
+        CFBundleTypeRole: Editor
+        LSHandlerRank: Alternate
+        LSItemContentTypes: [public.folder]
+
+dmg:
+  title: turri
+
+linux:
+  target: [AppImage, deb]
+  category: Development
+  icon: build/icon.png
+  synopsis: turri, for people who do not live in a terminal
+  maintainer: turri-oss <https://github.com/turri-oss/turri-app>
+

@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 
 /**
  * Which turri the app runs, said in the window: the package from npm, the version package.json pins - or a clone's
- * own sources (TURRI_DEV, which `npm run dev` sets to ../turri when there is one), at whatever commit it is on. A
+ * own sources (TURRI_DEV, which `npm run dev` sets to ../turri when there is one; never as installed), at whatever commit it is on. A
  * clone without the commit the pinned version was published from is behind what this app is built against; a package
  * that is not the pinned version wants npm install. Either is said, not refused: working on another turri on purpose
  * goes on working.
@@ -27,11 +27,10 @@ const git = (dir: string, ...args: string[]): string | undefined => {
   }
 };
 
-export function turriVersion(root: string): TurriVersion {
+export function turriVersion(root: string, clone: string | undefined): TurriVersion {
   const pinned = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { dependencies?: Record<string, string> }).dependencies?.["@turri-dev/cli"] ?? "";
   // A prerelease is versioned from the commit it was published from: 0.1.8-next.e553476.
   const pinnedCommit = /-next\.([0-9a-f]{7,})$/.exec(pinned)?.[1];
-  const clone = process.env.TURRI_DEV;
 
   if (clone === undefined || clone === "" || clone === "npm") {
     let installed: string | undefined;

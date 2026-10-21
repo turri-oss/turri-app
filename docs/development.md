@@ -35,6 +35,19 @@ macOS names an app in the menu bar, the Dock and ⌘-Tab, and draws its icon, fr
 
 To try a turri not yet on npm as a package, pack it and install the tarball: `npm pack` in the turri clone, then `npm install <path to the .tgz>` here.
 
+## Packaging it
+
+```bash
+npm run dist       # release/: turri-<version>-mac-<arch>.dmg and .zip on macOS, an AppImage and a .deb on Linux
+npm run dist:dir   # only the app, unpacked - release/mac-arm64/turri.app - quicker, for trying it
+```
+
+electron-builder packages it, as `electron-builder.yml` says: the window (`dist/`), the main process (`dist-electron/`), the engine and the dependencies - not the devDependencies, as Vite and esbuild bundle what the window and the main process use. The engine is forked as a file, and turri and pi read and start files beside their code, so `engine/` and `node_modules/` are unpacked beside `app.asar` (`app.asar.unpacked`), which is where the main process forks the engine from (`UNPACKED`). node-pty is Node-API, so it runs on Electron as npm installed it: nothing is rebuilt, and `npm run dist` makes its helper executable first. Each system is packaged on itself - the Linux one on Linux, where node-pty is built for Linux - for the machine's own architecture.
+
+On macOS it is signed ad hoc - Apple silicon runs nothing unsigned - with no Developer ID or notarisation yet, so Gatekeeper asks before it first opens. It declares folders as documents it opens: a project dropped on the Dock icon, or opened with turri from Finder, opens in a window (`open-file`). Its userData is the same folder as in development (`turri-app`): the recent projects and appearance are shared.
+
+As installed (`app.isPackaged`), the development hooks are not heard: TURRI_DEV - turri is always the package it was built with, and a TURRI_DEV in the person's shell is not passed to the engine - VITE_DEV_SERVER_URL, and TURRI_APP_OPEN, TURRI_APP_VIEW and TURRI_APP_SCREENSHOT. To look inside a packaged window, start its binary with `--remote-debugging-port=<port>` and open a project from Finder - `open -a release/mac-arm64/turri.app <project dir>`.
+
 ## Checking a change
 
 There is no test suite: `npm run typecheck` and `npm run build`, then look at the real window. `electron/main.ts` has hooks for that - `TURRI_APP_OPEN=<project dir>` opens a project at start, `TURRI_APP_VIEW=spec|work` switches to a view, and `TURRI_APP_SCREENSHOT=<file.png>` captures the window after about 2.5s and quits:
