@@ -664,10 +664,7 @@ function buildMenu() {
         { role: "togglefullscreen" },
       ],
     },
-    // macOS lists the open windows here, each by its project's name, and ⌘` goes from one to the next; Linux has
-    // Minimize and Close.
-    { role: "windowMenu" },
-    // At the right, before Help: what turri does with the spec in front.
+    // What turri does with the spec in front.
     {
       label: "***plain",
       submenu: [
@@ -678,6 +675,9 @@ function buildMenu() {
         { label: "Release to Try", click: menuAction("release"), enabled: ready },
       ],
     },
+    // At the right, before Help, as in every Mac app: macOS lists the open windows here, each by its project's name,
+    // and ⌘` goes from one to the next; Linux has Minimize and Close.
+    { role: "windowMenu" },
     {
       role: "help",
       submenu: [

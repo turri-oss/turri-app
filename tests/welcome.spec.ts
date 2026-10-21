@@ -20,4 +20,9 @@ test.describe("the welcome screen", () => {
   test("says which turri it runs", async ({ launched: { window } }) => {
     await expect(window.locator(".welcome-card")).toContainText(/turri \d+\.\d+\.\d+|turri local/);
   });
+
+  test("has the Window menu at the right, before Help, as every Mac app does", async ({ launched: { app } }) => {
+    const menus = await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.items.map((item) => item.label));
+    expect(menus.slice(-3)).toEqual(["***plain", "Window", "Help"]);
+  });
 });
