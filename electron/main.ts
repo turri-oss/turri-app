@@ -19,6 +19,11 @@ import { createUpdates, type UpdateState } from "./updates.ts";
 const ROOT = join(__dirname, "..");
 /** Run from source, not as installed: only then are the development hooks heard - TURRI_DEV, Vite, TURRI_APP_*. */
 const DEV = !app.isPackaged;
+/**
+ * For the tests (TURRI_APP_HIDDEN=1): every window is made and drawn as ever, but never shown nor brought forward, and
+ * the app stays out of the Dock - so a run of them takes neither the screen nor the focus from the person at it.
+ */
+const HIDDEN = DEV && process.env.TURRI_APP_HIDDEN === "1";
 /** macOS, or Linux: the window's chrome, the menu, the Dock and the file manager differ between them. */
 const MAC = process.platform === "darwin";
 
@@ -223,6 +228,13 @@ function updateItem(): MenuItemConstructorOptions {
   return { label: "Check for Updates…", click: () => void checkForUpdates() };
 }
 
+/** A window shown - and, unless only shown, brought forward and focused: never while the tests run hidden. */
+function bringForward(window: BrowserWindow, focus = true) {
+  if (HIDDEN) return;
+  window.show();
+  if (focus) window.focus();
+}
+
 /**
  * One window - the welcome screen until a project opens in it - with the project's engine, its preview and the
  * preview's terminal. Closing the window stops them all.
@@ -243,7 +255,8 @@ function createWorkspace(): Workspace {
     backgroundColor: backgroundFor(),
     show: false,
     // Sandboxed, as any page: the preload reaches the app only by asking the main process (window.turri), nothing of Node.
-    webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true },
+    // Hidden, for the tests, it would be throttled as a window in the background is: it draws and its timers run as ever.
+    webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: !HIDDEN },
   });
 
   const send = (channel: string, data: unknown) => {
@@ -371,7 +384,7 @@ function createWorkspace(): Workspace {
       // A subtitle is macOS's alone: elsewhere the project is said in the title.
       const notice = new Notification({ title: MAC || subtitle === undefined ? title : `${subtitle} - ${title}`, subtitle, body: data.title ?? "", silent: done });
       // A click brings the window the pulse ran in forward.
-      notice.on("click", () => !window.isDestroyed() && (window.show(), window.focus()));
+      notice.on("click", () => !window.isDestroyed() && bringForward(window));
       notice.show();
       if (!done) app.dock?.bounce("informational");
     }
@@ -430,7 +443,7 @@ function createWorkspace(): Workspace {
   }
 
   workspaces.set(window.id, workspace);
-  window.once("ready-to-show", () => window.show());
+  window.once("ready-to-show", () => bringForward(window, false));
   window.on("focus", () => {
     lastFocused = workspace;
     byRecency = [workspace, ...byRecency.filter((other) => other !== workspace)];
@@ -504,8 +517,7 @@ function openWhere(from: Workspace | undefined, named: string): { into: Workspac
   const dir = canonical(named);
   const there = [...workspaces.values()].find((workspace) => workspace.dir === dir || workspace.opening === dir);
   if (there !== undefined) {
-    there.window.show();
-    there.window.focus();
+    bringForward(there.window);
     // Its engine stopped: it is opened again there.
     if (there.open || there.opening !== undefined) return { into: there, opened: Promise.resolve(null) };
     return { into: there, opened: there.openProject(dir) };
@@ -763,8 +775,7 @@ ipcMain.handle("projects:list", (event) => openProjects(workspaceOf(event.sender
 ipcMain.handle("projects:switch", (_event, id: number) => {
   const workspace = workspaces.get(id);
   if (workspace === undefined) return;
-  workspace.window.show();
-  workspace.window.focus();
+  bringForward(workspace.window);
 });
 // A file of the window's project, shown in Finder or opened in its own app - nothing outside the project, whatever asks.
 ipcMain.handle("shell:reveal", (event, path: string) => shell.showItemInFolder(inProject(workspaceOf(event.sender), path)));
@@ -825,6 +836,7 @@ app.on("open-file", (event, path) => {
 app.whenReady().then(() => {
   console.log(`turri ${turri.from === "npm" ? "from npm" : "from a clone"}: ${turri.label}${turri.warning ? ` - ${turri.warning}` : ""}`);
   app.setName("turri");
+  if (HIDDEN) app.dock?.hide();
   // The bundle carries the icon once scripts/brand.mjs has run; the Dock is given it as well, for when it has not.
   app.dock?.setIcon(join(ROOT, "build", "icon.png"));
   // The Dock's menu lists the windows on its own; a new one is opened from it too.

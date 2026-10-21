@@ -53,6 +53,7 @@ tests/               the window's tests: Playwright's Electron support on a fixt
 TURRI_APP_OPEN=<project dir>          # open a project at start
 TURRI_APP_VIEW=spec|work              # switch to a view
 TURRI_APP_SCREENSHOT=<file.png>       # capture the window after ~2.5s and quit
+TURRI_APP_HIDDEN=1                    # draw the windows but never show them, and keep out of the Dock - the tests do
 npm run build && TURRI_APP_OPEN=../turri-projects/guestbook TURRI_APP_SCREENSHOT=/tmp/shot.png npx electron .
 ```
 

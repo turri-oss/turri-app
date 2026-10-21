@@ -46,7 +46,7 @@ export const test = base.extend<Options & { launched: Launched; scratch: string 
     if (recent) writeFileSync(join(userData, "recent-projects.json"), JSON.stringify([project]));
 
     // Not the person's shell's environment (TERM set: shell-env.ts keeps the one given), nor a Vite server's window.
-    const { VITE_DEV_SERVER_URL, TURRI_APP_SCREENSHOT, TURRI_APP_VIEW, TURRI_APP_OPEN, ...env } = process.env;
+    const { VITE_DEV_SERVER_URL, TURRI_APP_SCREENSHOT, TURRI_APP_VIEW, TURRI_APP_OPEN, TURRI_APP_HIDDEN, ...env } = process.env;
     const app = await electron.launch({
       args: [ROOT, `--user-data-dir=${userData}`],
       cwd: ROOT,
@@ -56,6 +56,8 @@ export const test = base.extend<Options & { launched: Launched; scratch: string 
         PI_CODING_AGENT_DIR: join(scratch, "pi"),
         // The fixture's models are Anthropic's: a project opens with any key, and no test sends one a word.
         ANTHROPIC_API_KEY: "sk-ant-test",
+        // Its windows drawn but never shown, and out of the Dock: a run takes neither the screen nor the focus.
+        TURRI_APP_HIDDEN: "1",
         ...(open ? { TURRI_APP_OPEN: project } : {}),
       },
     });
