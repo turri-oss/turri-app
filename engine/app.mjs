@@ -10,9 +10,10 @@ const MOD = process.platform === "darwin" ? "⌘" : "Ctrl+";
 export const APP_SURFACE = [
   "The person uses turri's desktop app: they talk to you in the chat on the right of a window, and see your work in",
   "the window's views. Never tell them to open a terminal - what is to run, you run.",
-  "- The sidebar on the left: the project's files as a tree - each .plain file with a dot for its state and how many of its",
-  "  functional specs are built (3/5) - and the project's settings from config.turri.yaml below it. debug among them",
-  "  is a switch: flipping it sends you /turri-config debug true or false, as the person would type it.",
+  "- The sidebar on the left: the project's files as a tree - each .plain file by ***plain's green mark, and at its",
+  "  right a dot for its state and how many of its functional specs are built (3/5) - and the project's settings from",
+  "  config.turri.yaml below it. debug among them is a switch: flipping it sends you /turri-config debug true or false,",
+  "  as the person would type it.",
   `- intent (${MOD}1): the .plain file open, coloured by the ***plain grammar, to read and edit. Beside each functional spec`,
   "  is a mark: empty while it is still to build, a spinner while a pulse builds it now, filled pink when its code is",
   "  built, cyan with two ticks when its conformance tests are written and pass too. While a pulse runs, the lines of",

@@ -122,8 +122,10 @@ export function FileTree(props: { root: string; specs: Spec[]; selected: string 
             }}
           >
             {entry.dir ? <span className={`chevron ${isOpen ? "open" : ""}`}><Icon name="chevron" size={12} /></span> : <span className="chevron" />}
-            {spec ? <SpecState spec={spec} running={props.isRunning(spec.module)} /> : entry.name.endsWith(".plain") && !entry.dir ? <PlainMark size={14} /> : <Icon name={entry.dir ? "folder" : "file"} size={14} />}
+            {!entry.dir && entry.name.endsWith(".plain") ? <PlainMark size={14} /> : <Icon name={entry.dir ? "folder" : "file"} size={14} />}
             <span className="tree-name">{entry.name}</span>
+            {/* Its state at the right, with how much of it is built: the icon's place is ***plain's mark. */}
+            {spec && <SpecState spec={spec} running={props.isRunning(spec.module)} />}
             {spec && <span className="spec-row-count">{spec.ok ? `${spec.functionalSpecs.filter((entry) => entry.built).length}/${spec.functionalSpecs.length}` : "!"}</span>}
           </button>
           {isOpen && <div role="group">{rows(entry.path, depth + 1, muted)}</div>}

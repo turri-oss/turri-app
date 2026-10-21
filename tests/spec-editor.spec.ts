@@ -18,6 +18,10 @@ test.describe("the spec editor", () => {
     await expect(window.locator(".editor-pane .pane-header")).toContainText("0 of 1 built");
     // Named beside ***plain's own mark, in its green.
     await expect(window.locator(".editor-pane .pane-header img.plain-mark")).toHaveAttribute("src", "./plain/plain-mark.svg");
+    // And in the tree, its state beside how much of it is built.
+    const row = window.locator(".tree-row", { hasText: "hello.plain" });
+    await expect(row.locator("img.plain-mark")).toBeVisible();
+    await expect(row.locator(".tree-state")).toHaveAttribute("title", "not built");
     await expect(window.locator(".editor-colours .plain-concept").first()).toBeVisible();
     // In the coloured layer, which is hidden from the accessibility tree: the textarea over it reads the spec.
     await expect(mark(window, 1)).toHaveAttribute("aria-label", "functional spec 1, to build");
