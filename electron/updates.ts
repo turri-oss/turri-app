@@ -5,7 +5,7 @@ import electronUpdater from "electron-updater";
 
 /**
  * The app's own updates, from its releases on GitHub (electron-builder.yml's publish): checked as it starts and every
- * few hours, downloaded on their own, and installed on a restart the person chooses - or when the app next quits. turri
+ * few hours - unless the settings say only on asking - pre-releases too if they say so, downloaded on their own, and installed on a restart the person chooses - or when the app next quits. turri
  * comes with the app, pinned, so a new turri is a new app.
  *
  * Only as installed, and on macOS only when signed with a Developer ID: Squirrel.Mac takes an update only from the
@@ -32,8 +32,9 @@ function cannotUpdate(): string | undefined {
   return /Authority=Developer ID Application/.test(signed) ? undefined : "this build is not signed with a Developer ID, which macOS needs to update it";
 }
 
-export function createUpdates({ onChange }: { onChange: (state: UpdateState) => void }) {
+export function createUpdates({ onChange, prerelease, automatic }: { onChange: (state: UpdateState) => void; prerelease: boolean; automatic: boolean }) {
   const reason = cannotUpdate();
+  let timer: ReturnType<typeof setInterval> | undefined;
   let state: UpdateState = reason === undefined ? { status: "idle" } : { status: "off", reason };
   const set = (next: UpdateState) => {
     state = next;
@@ -44,6 +45,7 @@ export function createUpdates({ onChange }: { onChange: (state: UpdateState) => 
     autoUpdater.logger = console;
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.allowPrerelease = prerelease;
     autoUpdater.on("checking-for-update", () => state.status !== "ready" && set({ status: "checking" }));
     autoUpdater.on("update-not-available", () => state.status !== "ready" && set({ status: "idle" }));
     autoUpdater.on("update-available", (info) => set({ status: "downloading", version: info.version, percent: 0 }));
@@ -66,11 +68,22 @@ export function createUpdates({ onChange }: { onChange: (state: UpdateState) => 
   return {
     state: () => state,
     check,
-    /** Checks now - a while after the app starts, so opening a project comes first - and every few hours after. */
+    /**
+     * Checks now - a while after the app starts, so opening a project comes first - and every few hours after, unless the
+     * person turned that off: then only on asking (Check for Updates…).
+     */
     start() {
+      if (state.status === "off" || !automatic || timer !== undefined) return;
+      setTimeout(() => automatic && void check(), 10_000);
+      timer = setInterval(() => automatic && void check(), EVERY);
+    },
+    /** The settings changed: pre-releases taken or not, and the checks on their own started or stopped. */
+    configure(next: { prerelease: boolean; automatic: boolean }) {
       if (state.status === "off") return;
-      setTimeout(() => void check(), 10_000);
-      setInterval(() => void check(), EVERY);
+      autoUpdater.allowPrerelease = next.prerelease;
+      automatic = next.automatic;
+      if (!automatic && timer !== undefined) (clearInterval(timer), (timer = undefined));
+      else if (automatic && timer === undefined) timer = setInterval(() => void check(), EVERY);
     },
     /** Quits, installs the update downloaded, and starts again. */
     install() {

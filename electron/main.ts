@@ -1,8 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, shell, type MenuItemConstructorOptions, type Rectangle } from "electron";
-import { fork, type ChildProcess } from "node:child_process";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, session, shell, type MenuItemConstructorOptions, type Rectangle } from "electron";
+import { fork, spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { createPreview } from "./preview.ts";
+import { readSettings, writeSettings, type Settings } from "./settings.ts";
 import { loadShellEnvironment } from "./shell-env.ts";
 import { createTerminal } from "./terminal.ts";
 import { turriVersion } from "./turri-version.ts";
@@ -57,6 +58,7 @@ function setZoom(next: number) {
   zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
   for (const { window } of workspaces.values()) window.webContents.setZoomLevel(zoom);
   writeAppearance();
+  sendSettings();
 }
 
 /** The window's own colour behind the page, as the theme has it - what shows while it loads or resizes. */
@@ -74,6 +76,33 @@ function setTheme(next: Theme) {
     workspace.send("theme", theme);
   }
   buildMenu();
+  sendSettings();
+}
+
+// ---------- settings ----------
+
+/** The app's settings beyond its look: the models a new project starts on, and how it updates (settings.json). */
+let settings: Settings = readSettings();
+
+/** Everything the settings sheet shows: the look, and the rest. */
+const allSettings = () => ({ theme, zoom, ...settings });
+
+/** Each window's settings sheet, if open, shows what changed - from the menu, or another window. */
+function sendSettings() {
+  for (const workspace of workspaces.values()) workspace.send("settings", allSettings());
+}
+
+function changeSettings(next: Partial<ReturnType<typeof allSettings>>) {
+  if (next.theme !== undefined && next.theme !== theme) setTheme(next.theme);
+  if (next.zoom !== undefined && next.zoom !== zoom) setZoom(next.zoom);
+  const { theme: _theme, zoom: _zoom, ...rest } = next;
+  if (Object.keys(rest).length === 0) return allSettings();
+  settings = { ...settings, ...rest };
+  writeSettings(settings);
+  updates.configure({ prerelease: settings.prerelease, automatic: settings.checkUpdates });
+  if (rest.checkUpdates === true) updates.start();
+  sendSettings();
+  return allSettings();
 }
 
 // ---------- a window and what is behind it ----------
@@ -99,6 +128,8 @@ interface Workspace {
   startProject(dir: string, vendor: string, bedrock?: { maker: string; region: string }, models?: { harness: string; coding: string }): Promise<unknown>;
   /** Its engine, started if no project has started it yet: for what it is asked before a project opens. */
   anEngine(): Promise<void>;
+  /** The folder the new-project sheet made last in it, still to be started: the one it may take away again. */
+  made?: string;
 }
 
 /** Every window, by its id: each with the project open in it, or none yet - the welcome screen. */
@@ -134,7 +165,11 @@ function runningEverywhere(): number {
 // notification says when one is ready. A download's progress changes no menu.
 let updateStatus: UpdateState["status"] | undefined;
 const updates = createUpdates({
+  prerelease: settings.prerelease,
+  automatic: settings.checkUpdates,
   onChange: (state) => {
+    // The settings sheet says where it is, the download's progress too.
+    for (const workspace of workspaces.values()) workspace.send("updates", state);
     if (state.status === updateStatus) return;
     updateStatus = state.status;
     buildMenu();
@@ -207,7 +242,8 @@ function createWorkspace(): Workspace {
     ...(MAC ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 18 } } : {}),
     backgroundColor: backgroundFor(),
     show: false,
-    webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: false },
+    // Sandboxed, as any page: the preload reaches the app only by asking the main process (window.turri), nothing of Node.
+    webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true },
   });
 
   const send = (channel: string, data: unknown) => {
@@ -402,10 +438,16 @@ function createWorkspace(): Workspace {
   });
   // The zoom chosen last time, kept across reloads and launches.
   window.webContents.on("did-finish-load", () => window.webContents.setZoomLevel(zoom));
-  // Links leave the app for the browser; the window only ever shows the app.
+  // Links leave the app for the browser - web links only, never a file or another app's scheme; the window only ever
+  // shows the app, and never goes to another page.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: "deny" };
+  });
+  window.webContents.on("will-navigate", (event, url) => {
+    if (url === window.webContents.getURL()) return;
+    event.preventDefault();
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
   });
   if (DEV && process.env.VITE_DEV_SERVER_URL) void window.loadURL(process.env.VITE_DEV_SERVER_URL);
   else void window.loadFile(join(ROOT, "dist", "index.html"));
@@ -518,6 +560,7 @@ async function newProjectFolder(from: Workspace) {
     throw new Error(`${basename(dir)} is there already, with files in it: choose another name, or open it as a project.`);
   }
   mkdirSync(dir, { recursive: true });
+  from.made = dir;
   return dir;
 }
 
@@ -550,8 +593,10 @@ function buildMenu() {
           {
             label: app.name,
             submenu: [
-              { role: "about" },
+              { label: "About turri", click: menuAction("about") },
               updateItem(),
+              { type: "separator" },
+              { label: "Settings…", accelerator: "CmdOrCtrl+,", click: menuAction("settings") },
               { type: "separator" },
               { role: "services" },
               { type: "separator" },
@@ -583,6 +628,7 @@ function buildMenu() {
         { type: "separator" },
         { label: MAC ? "Reveal Project in Finder" : "Show Project in File Manager", click: menuAction("reveal"), enabled: ready },
         { type: "separator" },
+        ...(MAC ? [] : [{ label: "Settings…", accelerator: "CmdOrCtrl+,", click: menuAction("settings") }, { type: "separator" as const }]),
         { role: "close" },
         ...(MAC ? [] : [{ role: "quit" as const }]),
       ],
@@ -632,12 +678,41 @@ function buildMenu() {
         { label: "Release to Try", click: menuAction("release"), enabled: ready },
       ],
     },
-    { role: "help", submenu: [{ label: "Check This Machine…", click: menuAction("doctor") }, ...(MAC ? [] : [{ type: "separator" as const }, updateItem()])] },
+    {
+      role: "help",
+      submenu: [
+        { label: "Getting Started", click: menuAction("getting-started") },
+        { label: "Check This Machine…", click: menuAction("doctor") },
+        { type: "separator" },
+        { label: "What turri Sends, and Where…", click: menuAction("privacy") },
+        { label: "Third-Party Notices…", click: menuAction("notices") },
+        ...(MAC ? [] : [{ type: "separator" as const }, { label: "About turri", click: menuAction("about") }, updateItem()]),
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 // ---------- the bridge ----------
+
+/** A path the window names, if it is in the window's project: the folder itself or anything under it. */
+function inProject(workspace: Workspace, path: string): string {
+  const full = resolve(path);
+  const within = workspace.dir === undefined ? undefined : relative(workspace.dir, full);
+  if (within === undefined || within.startsWith("..") || isAbsolute(within)) throw new Error("That is not a file of this project.");
+  return full;
+}
+
+/** Only the settings there are, each of its own kind: the window says what it changes, never what the app keeps. */
+function pickSettings(next: Record<string, unknown>): Partial<ReturnType<typeof allSettings>> {
+  return {
+    ...(next.theme === "dark" || next.theme === "light" || next.theme === "system" ? { theme: next.theme } : {}),
+    ...(typeof next.zoom === "number" && Number.isFinite(next.zoom) ? { zoom: next.zoom } : {}),
+    ...(typeof next.vendor === "string" || next.vendor === null ? { vendor: next.vendor as string | null } : {}),
+    ...(typeof next.checkUpdates === "boolean" ? { checkUpdates: next.checkUpdates } : {}),
+    ...(typeof next.prerelease === "boolean" ? { prerelease: next.prerelease } : {}),
+  };
+}
 
 // Each window asks of its own workspace: its engine, its preview, its terminal.
 ipcMain.handle("engine:call", (event, method: string, params: unknown) => workspaceOf(event.sender).call(method, params));
@@ -670,8 +745,11 @@ ipcMain.handle("auth:call", async (event, method: string, params: unknown) => {
 ipcMain.handle("project:start", (event, dir: string, vendor: string, bedrock?: { maker: string; region: string }, models?: { harness: string; coding: string }) =>
   workspaceOf(event.sender).startProject(dir, vendor, bedrock, models),
 );
-// A new project given up before it started: its folder, made for it and still empty, taken away again.
-ipcMain.handle("project:abandon", (_event, dir: string) => {
+// A new project given up before it started: its folder, made for it and still empty, taken away again - that one alone.
+ipcMain.handle("project:abandon", (event, dir: string) => {
+  const workspace = workspaceOf(event.sender);
+  if (workspace.made !== dir) return;
+  workspace.made = undefined;
   try {
     rmdirSync(dir);
   } catch {
@@ -688,8 +766,9 @@ ipcMain.handle("projects:switch", (_event, id: number) => {
   workspace.window.show();
   workspace.window.focus();
 });
-ipcMain.handle("shell:reveal", (_event, path: string) => shell.showItemInFolder(path));
-ipcMain.handle("shell:open", (_event, path: string) => shell.openPath(path));
+// A file of the window's project, shown in Finder or opened in its own app - nothing outside the project, whatever asks.
+ipcMain.handle("shell:reveal", (event, path: string) => shell.showItemInFolder(inProject(workspaceOf(event.sender), path)));
+ipcMain.handle("shell:open", (event, path: string) => shell.openPath(inProject(workspaceOf(event.sender), path)));
 ipcMain.handle("preview:place", (event, rect: Rectangle | null) => workspaceOf(event.sender).preview.place(rect));
 ipcMain.handle("preview:open", (event, url: string) => workspaceOf(event.sender).preview.open(url));
 ipcMain.handle("preview:go", (event, action: "back" | "forward" | "reload" | "stop" | "devtools") => workspaceOf(event.sender).preview.go(action));
@@ -702,6 +781,27 @@ ipcMain.handle("terminal:restart", (event) => workspaceOf(event.sender).terminal
 const turri = turriVersion(ROOT, DEV ? process.env.TURRI_DEV : undefined);
 ipcMain.handle("turri:version", () => turri);
 ipcMain.handle("theme:get", () => theme);
+ipcMain.handle("settings:get", () => allSettings());
+ipcMain.handle("settings:set", (_event, next: Partial<ReturnType<typeof allSettings>>) => changeSettings(pickSettings(next)));
+ipcMain.handle("updates:state", () => updates.state());
+ipcMain.handle("updates:check", () => updates.check());
+ipcMain.handle("updates:install", () => restartToUpdate());
+// What the About sheet says: the versions the app is made of, and its third-party notices.
+ipcMain.handle("about:info", () => ({
+  app: app.getVersion(),
+  turri,
+  electron: process.versions.electron,
+  chromium: process.versions.chrome,
+  node: process.versions.node,
+  os: `${process.platform} ${process.arch}`,
+}));
+ipcMain.handle("about:notices", () => JSON.parse(readFileSync(join(__dirname, "notices.json"), "utf8")));
+ipcMain.handle("about:chromium", () => shell.openPath(join(__dirname, "LICENSES.chromium.html")));
+// macOS's command line developer tools - git among them - installed by Apple's own installer, which this opens.
+ipcMain.handle("machine:developer-tools", () => {
+  if (!MAC) return;
+  spawn("xcode-select", ["--install"], { detached: true, stdio: "ignore" }).unref();
+});
 nativeTheme.on("updated", () => {
   for (const { window } of workspaces.values()) window.setBackgroundColor(backgroundFor());
 });
@@ -730,6 +830,12 @@ app.whenReady().then(() => {
   // The Dock's menu lists the windows on its own; a new one is opened from it too.
   app.dock?.setMenu(Menu.buildFromTemplate([{ label: "New Window", click: () => void createWorkspace() }]));
   nativeTheme.themeSource = theme;
+  // The window's own page asks for nothing but the clipboard - its copy buttons, the terminal's paste: anything else a
+  // page asks for - the camera, the microphone, where the machine is - is refused. The preview's pages have sessions of
+  // their own.
+  const CLIPBOARD = new Set(["clipboard-read", "clipboard-sanitized-write"]);
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, grant) => grant(CLIPBOARD.has(permission)));
+  session.defaultSession.setPermissionCheckHandler((_contents, permission) => CLIPBOARD.has(permission));
   buildMenu();
   updates.start();
   const first = createWorkspace();

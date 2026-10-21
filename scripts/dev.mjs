@@ -6,11 +6,12 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { createServer } from "vite";
 import electron from "electron";
-import { buildElectron } from "./build.mjs";
+import { buildElectron, buildNotices } from "./build.mjs";
 
 const server = await createServer();
 await server.listen();
 await buildElectron();
+buildNotices();
 const url = server.resolvedUrls.local[0];
 const env = { ...process.env, VITE_DEV_SERVER_URL: url };
 if (env.TURRI_DEV === "npm") delete env.TURRI_DEV;

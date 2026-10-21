@@ -1,31 +1,41 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 /** More recent projects than this, and the list scrolls and can be searched. */
 const RECENTS_SHOWN = 5;
 import type { Check } from "../electron/preload.ts";
 import { problems, toSeeTo } from "./DoctorSheet.tsx";
+import { GettingStarted } from "./GettingStarted.tsx";
 import type { Project } from "./types.ts";
 import { Icon, Jellyfish, Spinner, TurriVersionLine } from "./ui.tsx";
 
-export function Welcome({ onOpened, onNew, onDoctor, onSignIn }: { onOpened: (project: Project | null) => void; onNew: () => void; onDoctor: () => void; onSignIn: () => void }) {
-  const [recents, setRecents] = useState<string[]>([]);
+/**
+ * The window with no project: start one, open one, or one of the recent. Until a project has been opened here - just
+ * installed - or when Help > Getting Started asks (`guide`), it leads the way to the first: the machine, signing in, a
+ * project.
+ */
+export function Welcome({ onOpened, onNew, onDoctor, onSignIn, guide = false }: { onOpened: (project: Project | null) => void; onNew: () => void; onDoctor: () => void; onSignIn: () => void; guide?: boolean }) {
+  const [recents, setRecents] = useState<string[] | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const searchable = recents.length > RECENTS_SHOWN;
+  const searchable = (recents?.length ?? 0) > RECENTS_SHOWN;
   // By the folder's name or anywhere in its path, every word typed.
   const words = query.toLowerCase().split(/\s+/).filter((word) => word !== "");
-  const matching = recents.filter((dir) => words.every((word) => dir.toLowerCase().includes(word)));
+  const matching = (recents ?? []).filter((dir) => words.every((word) => dir.toLowerCase().includes(word)));
 
-  // Whether this machine has what turri needs - bash, git, the sandbox, a model provider - said only when it has not.
-  const [machine, setMachine] = useState<Check[] | null>(null);
+  // Whether this machine has what turri needs - bash, git, the sandbox, a model provider - said only when it has not:
+  // undefined while it is checked.
+  const [machine, setMachine] = useState<Check[] | null | undefined>(undefined);
+  const check = useCallback(() => void window.turri.doctor().then(setMachine).catch(() => setMachine(null)), []);
 
   useEffect(() => {
     void window.turri.recents().then(setRecents);
-    void window.turri.doctor().then(setMachine).catch(() => {});
+    check();
   }, []);
   // Signed in from the menu or the button: what is missing is checked again.
-  useEffect(() => window.turri.on("engine:auth:done", ({ ok }: { ok: boolean }) => ok && void window.turri.doctor().then(setMachine).catch(() => {})), []);
+  useEffect(() => window.turri.on("engine:auth:done", ({ ok }: { ok: boolean }) => ok && check()), []);
+  // Just installed - no project opened yet - or asked for.
+  const firstRun = guide || recents?.length === 0;
 
   const open = async (dir?: string) => {
     setError(null);
@@ -69,12 +79,16 @@ export function Welcome({ onOpened, onNew, onDoctor, onSignIn }: { onOpened: (pr
           <Icon name="key" size={13} /> sign in to your models…
         </button>
         {error && <p className="error-text">{error}</p>}
-        {problems(machine).length > 0 && (
-          <button className="link machine-wanting" onClick={onDoctor}>
-            <Icon name="warn" size={12} /> {toSeeTo(problems(machine))} - see what to do
-          </button>
+        {firstRun ? (
+          <GettingStarted checks={machine} onSignIn={onSignIn} onDoctor={onDoctor} onCheckAgain={check} />
+        ) : (
+          problems(machine ?? null).length > 0 && (
+            <button className="link machine-wanting" onClick={onDoctor}>
+              <Icon name="warn" size={12} /> {toSeeTo(problems(machine ?? null))} - see what to do
+            </button>
+          )
         )}
-        {recents.length > 0 && (
+        {recents !== null && recents.length > 0 && (
           <>
             <div className="sidebar-section">recent</div>
             {searchable && (

@@ -7,6 +7,9 @@ import { WorkView } from "./WorkView.tsx";
 import { PlanSheet, type Plan } from "./PlanSheet.tsx";
 import { DoctorSheet, problems, toSeeTo } from "./DoctorSheet.tsx";
 import { AuthSheet } from "./AuthSheet.tsx";
+import { AboutSheet, type AboutTab } from "./AboutSheet.tsx";
+import { SettingsSheet } from "./SettingsSheet.tsx";
+import { GettingStartedSheet } from "./GettingStarted.tsx";
 import type { Check } from "../electron/preload.ts";
 import { RegenerateSheet, type Regeneration } from "./RegenerateSheet.tsx";
 import { NewProject } from "./NewProject.tsx";
@@ -55,6 +58,10 @@ export function App() {
   const [machine, setMachine] = useState<Check[] | null>(null);
   // Signing in to the model providers: the sheet, open on a provider when one was named - /login anthropic.
   const [signIn, setSignIn] = useState<{ provider: string | null } | null>(null);
+  // The app's settings (⌘,), About on one of its tabs - privacy, the third-party notices - and Help > Getting Started.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [about, setAbout] = useState<AboutTab | null>(null);
+  const [guide, setGuide] = useState(false);
   // Regenerate, chosen how - open with the functional specs it starts on, if any.
   const [choosing, setChoosing] = useState<string[] | null>(null);
   // Lines of a spec to bring into view and light: a pulse's part of it, shown from the work.
@@ -117,6 +124,7 @@ export function App() {
   const opened = useCallback((summary: Project | null) => {
     if (summary === null) return;
     setSwitching(null);
+    setGuide(false);
     setProject(summary);
     setSelected(summary.specs[0]?.file ?? null);
     setStatus(EMPTY_STATUS);
@@ -287,6 +295,9 @@ export function App() {
         else if (action === "reveal" && project) void window.turri.reveal(project.dir);
         else if (action === "doctor") (setDoctorModels(false), setDoctorOpen(true));
         else if (action === "sign-in") setSignIn({ provider: null });
+        else if (action === "settings") setSettingsOpen(true);
+        else if (action === "about" || action === "privacy" || action === "notices") setAbout(action);
+        else if (action === "getting-started") setGuide(true);
       }),
     [regenerate, glimpse, conform, release, project, spec],
   );
@@ -337,14 +348,18 @@ export function App() {
       }}
     />
   );
+  const settingsSheet = settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} onPrivacy={() => (setSettingsOpen(false), setAbout("privacy"))} />;
+  const aboutSheet = about !== null && <AboutSheet tab={about} onClose={() => setAbout(null)} />;
   if (project === null)
     return (
       <>
-        <Welcome onOpened={opened} onNew={() => setCreating(true)} onDoctor={() => (setDoctorModels(false), setDoctorOpen(true))} onSignIn={() => setSignIn({ provider: null })} />
+        <Welcome guide={guide} onOpened={opened} onNew={() => setCreating(true)} onDoctor={() => (setDoctorModels(false), setDoctorOpen(true))} onSignIn={() => setSignIn({ provider: null })} />
         {newProject}
         {projectSwitcher}
         {doctorSheet}
         {authSheet}
+        {settingsSheet}
+        {aboutSheet}
       </>
     );
 
@@ -448,7 +463,7 @@ export function App() {
           <section className="content">
             {view === "preview" ? (
               // A sheet over the window would be under the pane: while one is open, the pane steps aside.
-              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || signIn !== null || creating || choosing !== null || switching !== null || switcher} pane={pane} onPane={setPane} />
+              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || signIn !== null || creating || choosing !== null || switching !== null || switcher || settingsOpen || about !== null || guide} pane={pane} onPane={setPane} />
             ) : view === "work" ? (
               <WorkView
                 status={status}
@@ -581,10 +596,20 @@ export function App() {
           <Spinner /> opening {switching.name}…
         </div>
       )}
+      {guide && (
+        <GettingStartedSheet
+          onSignIn={() => setSignIn({ provider: null })}
+          onNew={() => (setGuide(false), setCreating(true))}
+          onDoctor={() => (setDoctorModels(false), setDoctorOpen(true))}
+          onClose={() => setGuide(false)}
+        />
+      )}
       {newProject}
       {projectSwitcher}
       {doctorSheet}
       {authSheet}
+      {settingsSheet}
+      {aboutSheet}
     </>
   );
 }

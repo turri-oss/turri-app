@@ -53,8 +53,11 @@ export function NewProject({ onOpened, onDone }: { onOpened: (project: Project) 
       (chosen: string | null) => (chosen === null ? onDone() : setDir(chosen)),
       (failure: Error) => setError(plain(failure)),
     );
-    void window.turri.vendors().then((all: Vendors) => {
+    void window.turri.vendors().then(async (all: Vendors) => {
       setVendors(all);
+      // The models new projects start on, as chosen in the settings - if turri still offers them.
+      const { vendor: chosen } = await window.turri.settings.get();
+      if (chosen !== null && all.vendors.some((entry) => entry.id === chosen)) setVendor(chosen);
       setMaker(all.bedrockDefault.maker);
       setRegion(all.bedrockDefault.region);
       setPair(twoOf(placeIn(all, all.bedrockDefault.maker, all.bedrockDefault.region)?.pair));

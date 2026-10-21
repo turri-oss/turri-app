@@ -1,6 +1,8 @@
 // The main process and the preload script, bundled for Electron: CommonJS, Electron's own modules left out - and node-pty,
 // whose native part is loaded from node_modules as it is, and electron-updater, which loads its updaters lazily.
+import { copyFileSync } from "node:fs";
 import { build } from "esbuild";
+import { writeNotices } from "./notices.mjs";
 
 export async function buildElectron(options = {}) {
   await build({
@@ -17,4 +19,16 @@ export async function buildElectron(options = {}) {
   });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) await buildElectron();
+/**
+ * The third-party notices beside them: the packages' and fonts' (the About sheet reads them), and Chromium's own,
+ * which every build of the app must carry and the About sheet opens.
+ */
+export function buildNotices() {
+  writeNotices();
+  copyFileSync("node_modules/electron/dist/LICENSES.chromium.html", "dist-electron/LICENSES.chromium.html");
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  await buildElectron();
+  buildNotices();
+}

@@ -71,6 +71,8 @@ Then tell turri what to build:
 - **preview** (⌘3) - the app you are building, in a browser pane or a terminal in the project's folder. turri tries it there too - opening pages, clicking, running commands - and the window shows you as it does. **release** puts what is built in `dist/` and starts it.
 - **Sign in to your models** (File menu, the welcome screen, or `/login` in the chat) - every model provider pi knows, searchable, each connected or not and how: sign in with a subscription in your browser - Claude Pro/Max, ChatGPT, GitHub Copilot - or type an API key. No terminal needed; it is kept where the turri CLI keeps it.
 - **Check this machine** (Help menu) - `turri doctor` in the window: bash, git, the OS sandbox, a model provider, and in a project its toolchains and what its testing scripts run - each with what to do about it, and the models asked only when you say. Anything missing is said on the welcome screen and at the foot of the sidebar; a project just started is checked at once, its models asked too.
+- **Getting started** - just installed, the welcome screen leads the way to your first project: the machine - with where to get git, the sandbox and each toolchain, or Apple's developer tools on a Mac - signing in, and the project.
+- **Settings** (⌘,) - the look, the models new projects start on, how the app updates itself. **About** has the versions, what turri sends and where - [privacy](docs/privacy.md): no telemetry - and the third-party notices.
 - A window for each project, native menus and shortcuts, notifications when a pulse lands, turri's dark and light themes.
 
 Shortcuts are written here as on macOS; on Linux Ctrl takes ⌘'s place - Ctrl+J, Ctrl+R - and the preview's terminal copies and pastes with Ctrl+Shift+C and Ctrl+Shift+V, leaving Ctrl+C to the shell.
@@ -91,6 +93,7 @@ Every detail: [the window](docs/window.md).
 | --- | --- |
 | [The window](docs/window.md) | everything the window offers, view by view |
 | [Development](docs/development.md) | how the app is put together, running it on a turri clone, checking a change |
+| [Privacy](docs/privacy.md) | what turri sends, and where - and what stays on your machine |
 | [turri](https://github.com/turri-oss/turri#readme) | turri itself: regenerative software, \*\*\*plain, models, skills |
 
 ## Licence

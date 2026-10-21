@@ -1,7 +1,22 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { PreviewState } from "./preview.ts";
+import type { Settings } from "./settings.ts";
 import type { TerminalState } from "./terminal.ts";
 import type { TurriVersion } from "./turri-version.ts";
+import type { UpdateState } from "./updates.ts";
+
+/** The settings sheet's: the look - appearance.json's - and the rest, settings.json's. */
+export type AppSettings = Settings & { theme: "dark" | "light" | "system"; zoom: number };
+
+/** A package or font the app carries, and its licence. */
+export interface Notice {
+  name: string;
+  version: string;
+  license: string;
+  homepage?: string;
+  /** Its licence files' text, if it has any. */
+  text: string;
+}
 
 /** One of turri doctor's checks, as turri's host entry gives it. */
 export interface Check {
@@ -46,7 +61,11 @@ export type AuthEvent =
 
 const authCall = <T>(method: string, params?: unknown) => ipcRenderer.invoke("auth:call", method, params) as Promise<T>;
 
-/** What the window may ask of the app: the engine's methods, a few native services, and the events it is sent. */
+/**
+ * What the window may ask of the app: the engine's methods, a few native services, and the events it is sent. The window
+ * is sandboxed, so this is all of it: each a message to the main process, which checks what it is given - a path in the
+ * window's project, a sign-in method, a setting there is.
+ */
 const api = {
   call: <T>(method: string, params?: unknown) => ipcRenderer.invoke("engine:call", method, params) as Promise<T>,
   chooseProject: () => ipcRenderer.invoke("project:choose"),
@@ -97,6 +116,25 @@ const api = {
     resize: (cols: number, rows: number) => ipcRenderer.invoke("terminal:resize", cols, rows),
     restart: () => ipcRenderer.invoke("terminal:restart"),
   },
+  /** The app's settings: read, and changed - only what is named. Every window is sent them as they change ("settings"). */
+  settings: {
+    get: () => ipcRenderer.invoke("settings:get") as Promise<AppSettings>,
+    set: (next: Partial<AppSettings>) => ipcRenderer.invoke("settings:set", next) as Promise<AppSettings>,
+  },
+  /** The app's own updates: where they are, checked now, and restarted into once one is ready ("updates" as it changes). */
+  updates: {
+    state: () => ipcRenderer.invoke("updates:state") as Promise<UpdateState>,
+    check: () => ipcRenderer.invoke("updates:check") as Promise<UpdateState>,
+    install: () => ipcRenderer.invoke("updates:install"),
+  },
+  /** The About sheet's: the versions the app is made of, its third-party notices, and Chromium's, opened. */
+  about: {
+    info: () => ipcRenderer.invoke("about:info") as Promise<{ app: string; turri: TurriVersion; electron: string; chromium: string; node: string; os: string }>,
+    notices: () => ipcRenderer.invoke("about:notices") as Promise<{ fonts: Notice[]; packages: Notice[] }>,
+    chromium: () => ipcRenderer.invoke("about:chromium"),
+  },
+  /** macOS's command line developer tools - git with them - installed by Apple's installer, which this opens. */
+  installDeveloperTools: () => ipcRenderer.invoke("machine:developer-tools"),
   /** Which turri the app runs: from npm, or a clone's sources - and anything to do about it. */
   turriVersion: () => ipcRenderer.invoke("turri:version") as Promise<TurriVersion>,
   theme: () => ipcRenderer.invoke("theme:get") as Promise<"dark" | "light" | "system">,

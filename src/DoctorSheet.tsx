@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Check } from "../electron/preload.ts";
 import { AuthSheet } from "./AuthSheet.tsx";
+import { fixFor, helpFor, type Help } from "./installers.ts";
 import { Icon, Spinner } from "./ui.tsx";
 
 const MARK: Record<Check["level"], string> = { ok: "✓", missing: "✗", limited: "!", info: "·" };
@@ -40,8 +41,32 @@ export function useDoctor(askModels: boolean, dir?: string) {
   return { checks, models, checking, error, run, askModels };
 }
 
-/** What the checks found: a line for what wants doing, then each check - what wants doing first - with what to do about it. */
-export function DoctorChecks({ doctor }: { doctor: ReturnType<typeof useDoctor> }) {
+/** A check's way to what it wants: an installer's page, in the browser, Apple's developer tools, or signing in. */
+export function HelpButton({ help, onSignIn }: { help: Help; onSignIn?: () => void }) {
+  if ("url" in help)
+    return (
+      <a className="button small" href={help.url} target="_blank" rel="noreferrer" title={help.url}>
+        <Icon name="globe" size={13} /> {help.label}
+      </a>
+    );
+  if (help.action === "sign-in")
+    return onSignIn ? (
+      <button className="button small" onClick={onSignIn}>
+        <Icon name="key" size={13} /> {help.label}
+      </button>
+    ) : null;
+  return (
+    <button className="button small" onClick={() => void window.turri.installDeveloperTools()} title="xcode-select --install: Apple's installer opens, and installs git, bash's tools and a C compiler">
+      <Icon name="plus" size={13} /> {help.label}
+    </button>
+  );
+}
+
+/**
+ * What the checks found: a line for what wants doing, then each check - what wants doing first - with what to do about
+ * it, and a way to it: an installer's page, or signing in (`onSignIn`).
+ */
+export function DoctorChecks({ doctor, onSignIn }: { doctor: ReturnType<typeof useDoctor>; onSignIn?: () => void }) {
   const { checks, error, askModels } = doctor;
   const wanting = problems(checks ?? null);
   const sorted = [...(checks ?? [])].sort((a, b) => ORDER[a.level] - ORDER[b.level]);
@@ -70,11 +95,21 @@ export function DoctorChecks({ doctor }: { doctor: ReturnType<typeof useDoctor> 
                       {line}
                     </div>
                   ))}
-                  {check.fix && <div className="check-fix">{check.fix}</div>}
+                  {fixFor(check) && check.level !== "ok" && <div className="check-fix">{fixFor(check)}</div>}
+                  {helpFor(check).length > 0 && (
+                    <div className="check-help">
+                      {helpFor(check).map((help) => (
+                        <HelpButton key={help.label} help={help} onSignIn={onSignIn} />
+                      ))}
+                    </div>
+                  )}
                 </div>
               </li>
             ))}
           </ul>
+          {wanting.some((check) => helpFor(check).some((help) => !("action" in help && help.action === "sign-in"))) && (
+            <p className="muted small">installed something? check again. still missing, quit turri and start it again: it reads your shell's PATH as it starts.</p>
+          )}
         </>
       )}
     </>
@@ -99,7 +134,7 @@ export function DoctorSheet({ project, askModels = false, onClose }: { project: 
         <p className="muted small">
           {project === null ? "this machine" : `this machine, and ${project}`} - as <code>turri doctor</code> checks it, on the PATH turri runs with here.
         </p>
-        <DoctorChecks doctor={doctor} />
+        <DoctorChecks doctor={doctor} onSignIn={() => setSigningIn(true)} />
         <div className="sheet-actions">
           <button className="button sheet-actions-start" onClick={() => setSigningIn(true)} title="sign in to the providers turri's models come from - a subscription, or an API key">
             <Icon name="key" /> sign in to your models…

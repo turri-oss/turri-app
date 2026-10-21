@@ -3146,3 +3146,188 @@ form.auth-prompt {
 .bedrock-note {
   margin: 2px 0 0;
 }
+
+/* A check's way to what it wants: an installer's page, Apple's developer tools, signing in. */
+.check-help {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+a.button {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Getting started: from just installed to the first project, a step each, ticked once done. */
+.getting-started {
+  list-style: none;
+  margin: 22px 0 6px;
+  padding: 0;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.getting-started > li {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.getting-started > li + li {
+  border-top: 1px solid var(--line);
+}
+.getting-started p {
+  margin: 3px 0 0;
+  line-height: 1.45;
+}
+.getting-started .button {
+  margin-top: 8px;
+}
+.getting-started .check-help .button {
+  margin-top: 0;
+}
+.step-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  font: 11px var(--mono);
+  color: var(--fg-2);
+}
+.getting-started > li.done .step-mark {
+  border-color: var(--green);
+  color: var(--green);
+}
+.getting-started > li.done strong {
+  color: var(--fg-2);
+}
+.step-need {
+  margin-top: 8px;
+}
+.getting-started-sheet .getting-started {
+  margin-top: 4px;
+}
+
+/* The settings: a section each, a row each - what it is on the left, the choice on the right. */
+.preferences section + section {
+  margin-top: 18px;
+}
+.preferences h3,
+.privacy h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-2);
+  margin: 0 0 8px;
+}
+.preference {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 34px;
+  border-top: 1px solid var(--line);
+}
+.preference select {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.preferences p {
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+
+/* About: what the app is made of, what it sends where, and the third-party notices. */
+.about-body {
+  margin-top: 16px;
+  min-height: 280px;
+}
+.about {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.about p,
+.privacy p,
+.privacy li {
+  line-height: 1.55;
+}
+.about-versions {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 18px;
+  margin: 8px 0;
+  user-select: text;
+}
+.about-versions > div {
+  display: contents;
+}
+.about-versions dt {
+  color: var(--fg-2);
+}
+.about-versions dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.privacy h3 {
+  margin-top: 16px;
+}
+.privacy ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.notice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.notice-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 2px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.notice-name {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.notice-licence {
+  margin-left: auto;
+  color: var(--fg-2);
+  font-size: 12px;
+}
+.notice-text pre {
+  font: 11px/1.5 var(--mono);
+  white-space: pre-wrap;
+  background: var(--bg-2);
+  border-radius: var(--radius-small);
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow: auto;
+  user-select: text;
+}
