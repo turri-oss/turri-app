@@ -215,6 +215,24 @@ code {
 .app.with-chat {
   grid-template-columns: 260px minmax(0, 1fr) var(--chat-width, 400px);
 }
+/* The files hidden (⌘B): their column gone, the rest the wider. */
+.app.no-sidebar {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app.no-sidebar.with-chat {
+  grid-template-columns: minmax(0, 1fr) var(--chat-width, 400px);
+}
+/* With nothing under them, the traffic lights are over the toolbar: it starts to their right. */
+:root[data-platform="darwin"] .app.no-sidebar .toolbar {
+  padding-left: 84px;
+}
+.sidebar-toggle {
+  color: var(--fg-3);
+  margin-right: -6px;
+}
+.sidebar-toggle:hover {
+  color: var(--fg);
+}
 /* The chat's left edge, a little wider than its border to catch the pointer; lit while hovered or dragged. */
 .chat-resize {
   position: absolute;

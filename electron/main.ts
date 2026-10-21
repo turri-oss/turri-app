@@ -277,6 +277,14 @@ function createWorkspace(): Workspace {
   let closed = false;
   /** Settled once the page has loaded: a project opened in a new window waits for it. */
   const loaded = new Promise<void>((resolve) => window.webContents.once("did-finish-load", () => resolve()));
+  // The window drawn again - reloaded, ⌘R: it is given back the project open in it, whose engine never stopped, and
+  // takes up its conversation and pulses from the engine as when it was opened. Else it would show its welcome screen,
+  // and opening the project again would only bring this window forward.
+  let drawn = false;
+  window.webContents.on("did-finish-load", () => {
+    if (!drawn) return void (drawn = true);
+    if (dir !== undefined && workspace.open) void call("summary").then((summary) => send("project:opened", summary), () => {});
+  });
 
   const workspace: Workspace = {
     window,
@@ -654,6 +662,7 @@ function buildMenu() {
         { label: "work", accelerator: "CmdOrCtrl+2", click: menuAction("view:work") },
         { label: "preview", accelerator: "CmdOrCtrl+3", click: menuAction("view:preview") },
         { type: "separator" },
+        { label: "Show or Hide the Files", accelerator: "CmdOrCtrl+B", click: menuAction("sidebar") },
         { label: "Show or Hide the Chat", accelerator: "CmdOrCtrl+J", click: menuAction("chat") },
         {
           label: "Appearance",
@@ -671,15 +680,11 @@ function buildMenu() {
         { label: "Zoom In", accelerator: "CmdOrCtrl+=", click: () => setZoom(zoom + 0.5), visible: false, acceleratorWorksWhenHidden: true },
         { label: "Zoom Out", accelerator: "CmdOrCtrl+-", click: () => setZoom(zoom - 0.5) },
         { type: "separator" },
-        // ⌘R reloads, as in a browser: the page being tried, when the preview is in front - else the window itself.
+        // ⌘R reloads, as in a browser - the window says what: the page being tried, in the preview, else the window.
         {
           label: "Reload",
           accelerator: "CmdOrCtrl+R",
-          click: () => {
-            const workspace = focused();
-            if (workspace?.preview.isShown()) workspace.preview.go("reload");
-            else workspace?.window.webContents.reload();
-          },
+          click: menuAction("reload"),
         },
         { role: "toggleDevTools" },
         { type: "separator" },

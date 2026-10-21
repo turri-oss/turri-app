@@ -109,6 +109,56 @@ test.describe("a project's settings", () => {
   });
 });
 
+test.describe("⌘R", () => {
+  test("reloads the window back onto its project, not its welcome screen", async ({ launched: { app, window: page } }) => {
+    await expect(page.locator(".chat-model")).toBeVisible();
+    await choose(app, page, "reload");
+    await page.waitForEvent("domcontentloaded");
+    // The project it had, its engine never stopped - the conversation taken up from it.
+    await expect(page.locator(".editor-pane .pane-header")).toContainText("hello.plain");
+    await expect(page.locator(".welcome")).toHaveCount(0);
+    await expect(page.locator(".chat-model")).toHaveText("claude-sonnet-5-5");
+  });
+
+  test("in the preview reloads its page, never the window", async ({ launched: { app, window: page } }) => {
+    await expect(page.locator(".chat-model")).toBeVisible();
+    await page.getByRole("tab", { name: "preview" }).click();
+    await page.evaluate(() => ((window as unknown as { kept: boolean }).kept = true));
+    await choose(app, page, "reload");
+    await page.waitForTimeout(500);
+    expect(await page.evaluate(() => (window as unknown as { kept?: boolean }).kept)).toBe(true);
+    await expect(page.getByRole("tab", { name: "preview", selected: true })).toBeVisible();
+  });
+});
+
+test.describe("the files' sidebar", () => {
+  test("hides and shows, by the toolbar's button and ⌘B, and stays as it was left", async ({ launched: { app, window: page } }) => {
+    const sidebar = page.locator(".sidebar");
+    const toggle = page.getByRole("button", { name: "hide the files" });
+    await expect(sidebar).toBeVisible();
+    await toggle.click();
+    await expect(sidebar).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "show the files" })).toHaveAttribute("aria-pressed", "false");
+    // Hidden it stays, the window drawn again.
+    await page.reload();
+    await expect(page.locator(".chat-model")).toBeVisible();
+    await expect(sidebar).toHaveCount(0);
+    // View > Show or Hide the Files, ⌘B: as the menu sends it.
+    await choose(app, page, "sidebar");
+    await expect(sidebar).toBeVisible();
+    await expect(page.getByRole("button", { name: "hide the files" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("is shown or hidden on ⌘B, by View's menu", async ({ launched: { app } }) => {
+    const item = await app.evaluate(({ Menu }) => {
+      const view = Menu.getApplicationMenu()!.items.find((each) => each.label === "View")!;
+      const files = view.submenu!.items.find((each) => each.label === "Show or Hide the Files");
+      return files?.accelerator ?? null;
+    });
+    expect(item).toBe("CmdOrCtrl+B");
+  });
+});
+
 test.describe("the window's text", () => {
   // A button's label is not among them: a click presses it - or, disabled, is not heard - as in any app.
   test("can all be selected, as in a document - the sidebar, the headers, the chat", async ({ launched: { window: page } }) => {

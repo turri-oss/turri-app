@@ -32,6 +32,15 @@ const SIDEBAR_AND_SPEC_MIN = 260 + 480;
 function clampChat(width: number) {
   return Math.round(Math.max(CHAT_MIN, Math.min(width, window.innerWidth - SIDEBAR_AND_SPEC_MIN)));
 }
+const SIDEBAR_KEY = "turri-app.sidebar";
+/** Whether the files' sidebar is shown: hidden with ⌘B, and kept hidden next time. */
+function savedSidebar() {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) !== "hidden";
+  } catch {
+    return true;
+  }
+}
 function savedChatWidth() {
   try {
     const saved = Number(localStorage.getItem(CHAT_KEY));
@@ -81,6 +90,14 @@ export function App() {
   /** Another project, being opened: the one shown waits under a spinner, as its engine has already stopped. */
   const [switching, setSwitching] = useState<{ dir: string; name: string } | null>(null);
   const [chatWidth, setChatWidth] = useState(savedChatWidth);
+  const [sidebarOpen, setSidebarOpen] = useState(savedSidebar);
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, sidebarOpen ? "shown" : "hidden");
+    } catch {
+      /* not kept: it is shown again next time */
+    }
+  }, [sidebarOpen]);
   const [resizing, setResizing] = useState(false);
   // The window resized: the chat's width is held to it again.
   const [, setWindowWidth] = useState(window.innerWidth);
@@ -294,6 +311,13 @@ export function App() {
         else if (action === "new-project") setCreating(true);
         else if (action === "switch-project") setSwitcher((open) => !open);
         else if (action === "chat") setChatOpen((open) => !open);
+        else if (action === "sidebar") setSidebarOpen((open) => !open);
+        // ⌘R, as in a browser: in the preview the page being tried - the terminal is not reloaded - else the window,
+        // which is given its project back.
+        else if (action === "reload") {
+          if (view !== "preview") location.reload();
+          else if (pane === "browser") void window.turri.preview.go("reload");
+        }
         else if (action === "reveal" && project) void window.turri.reveal(project.dir);
         else if (action === "doctor") (setDoctorModels(false), setDoctorOpen(true));
         else if (action === "sign-in") setSignIn({ provider: null });
@@ -302,7 +326,7 @@ export function App() {
         else if (action === "about" || action === "privacy" || action === "notices") setAbout(action);
         else if (action === "getting-started") setGuide(true);
       }),
-    [regenerate, glimpse, conform, release, project, spec],
+    [regenerate, glimpse, conform, release, project, spec, view, pane],
   );
 
   // What the person is looking at, for turri to know: the view, and the file open in it - or the preview's browser or terminal.
@@ -379,47 +403,52 @@ export function App() {
 
   return (
     <>
-      <div className={`app ${chatOpen ? "with-chat" : ""} ${resizing ? "resizing" : ""}`} style={{ "--chat-width": `${clampChat(chatWidth)}px` } as React.CSSProperties} inert={switching !== null}>
-        <aside className="sidebar">
-          <div className="titlebar-space" />
-          <div className="project-name" title={project.dir}>
-            <Jellyfish size={18} swimming={running.length > 0} />
-            <span>{project.name}</span>
-            {/* Its settings - config.turri.yaml's - in a sheet, changed through /turri-config as the person would type it. */}
-            <button className="icon-button project-settings-button" onClick={() => setProjectSettingsOpen(true)} title="project settings - its models, conformance tests, review, pulses at once, debug" aria-label="project settings">
-              <Icon name="gear" />
-            </button>
-          </div>
-          <div className="sidebar-section">files</div>
-          <FileTree
-            root={project.dir}
-            specs={project.specs}
-            selected={selected}
-            isRunning={(module) => runningFor(module) !== undefined}
-            onSelect={(path) => {
-              setSelected(path);
-              setView("spec");
-            }}
-          />
-          <div className="sidebar-footer">
-            {running.length > 0 ? (
-              <button className="link" onClick={() => setView("work")}>
-                <Jellyfish size={22} /> {running.length} pulse{running.length === 1 ? "" : "s"} running
+      <div className={`app ${chatOpen ? "with-chat" : ""} ${sidebarOpen ? "" : "no-sidebar"} ${resizing ? "resizing" : ""}`} style={{ "--chat-width": `${clampChat(chatWidth)}px` } as React.CSSProperties} inert={switching !== null}>
+        {sidebarOpen && (
+          <aside className="sidebar">
+            <div className="titlebar-space" />
+            <div className="project-name" title={project.dir}>
+              <Jellyfish size={18} swimming={running.length > 0} />
+              <span>{project.name}</span>
+              {/* Its settings - config.turri.yaml's - in a sheet, changed through /turri-config as the person would type it. */}
+              <button className="icon-button project-settings-button" onClick={() => setProjectSettingsOpen(true)} title="project settings - its models, conformance tests, review, pulses at once, debug" aria-label="project settings">
+                <Icon name="gear" />
               </button>
-            ) : (
-              <span className="muted">idle</span>
-            )}
-            {problems(machine).length > 0 && (
-              <button className="link machine-wanting" onClick={() => (setDoctorModels(false), setDoctorOpen(true))} title={problems(machine).map((check) => `${check.name}: ${check.detail}`).join("\n")}>
-                <Icon name="warn" size={12} /> {toSeeTo(problems(machine))}
-              </button>
-            )}
-            <TurriVersionLine />
-          </div>
-        </aside>
+            </div>
+            <div className="sidebar-section">files</div>
+            <FileTree
+              root={project.dir}
+              specs={project.specs}
+              selected={selected}
+              isRunning={(module) => runningFor(module) !== undefined}
+              onSelect={(path) => {
+                setSelected(path);
+                setView("spec");
+              }}
+            />
+            <div className="sidebar-footer">
+              {running.length > 0 ? (
+                <button className="link" onClick={() => setView("work")}>
+                  <Jellyfish size={22} /> {running.length} pulse{running.length === 1 ? "" : "s"} running
+                </button>
+              ) : (
+                <span className="muted">idle</span>
+              )}
+              {problems(machine).length > 0 && (
+                <button className="link machine-wanting" onClick={() => (setDoctorModels(false), setDoctorOpen(true))} title={problems(machine).map((check) => `${check.name}: ${check.detail}`).join("\n")}>
+                  <Icon name="warn" size={12} /> {toSeeTo(problems(machine))}
+                </button>
+              )}
+              <TurriVersionLine />
+            </div>
+          </aside>
+        )}
 
         <main className="main">
           <header className="toolbar">
+            <button className="icon-button sidebar-toggle" onClick={() => setSidebarOpen((open) => !open)} title={`${sidebarOpen ? "hide" : "show"} the files (${keys("B")})`} aria-label={sidebarOpen ? "hide the files" : "show the files"} aria-pressed={sidebarOpen}>
+              <Icon name="sidebar" />
+            </button>
             <div className="segmented" role="tablist">
               {(["spec", "work", "preview"] as View[]).map((name) => (
                 <button key={name} role="tab" aria-selected={view === name} className={view === name ? "on" : ""} onClick={() => setView(name)}>
