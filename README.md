@@ -66,7 +66,7 @@ Then tell turri what to build:
 
 - **turri**, on the right (⌘J) - the conversation. It writes the \*\*\*plain with you and regenerates the code from it; tool calls show as what they do, pulses as one line each, and turri's questions are docked in the chat as buttons. Type `/` for its commands.
 - **files**, on the left - the whole project: each \*\*\*plain with how much of it is built and everything beside it; the gear by the project's name opens its settings, every one of its config.turri.yaml.
-- **intent** (⌘1) - the `.plain` file, coloured by turri's \*\*\*plain grammar, with each functional spec's state beside it: pink when its code is built, cyan when its conformance tests pass too. Click a mark to regenerate that functional spec or test it; **regenerate** (⌘R) asks how much to rebuild.
+- **intent** (⌘1) - the `.plain` file, coloured by turri's \*\*\*plain grammar, with each functional spec's state beside it: pink when its code is built, cyan when its conformance tests pass too. Click a mark to regenerate that functional spec or test it; **regenerate** asks how much to rebuild.
 - **work** (⌘2) - every pulse live: its stage, what its agent is doing, what it cost, and the \*\*\*plain it works on; earlier sessions' pulses from turri's ledger below.
 - **preview** (⌘3) - the app you are building, in a browser pane or a terminal in the project's folder. turri tries it there too - opening pages, clicking, running commands - and the window shows you as it does. **release** puts what is built in `dist/` and starts it.
 - **Sign in to your models** (File menu, the welcome screen, or `/login` in the chat) - every model provider pi knows, searchable, each connected or not and how: sign in with a subscription in your browser - Claude Pro/Max, ChatGPT, GitHub Copilot - or type an API key. No terminal needed; it is kept where the turri CLI keeps it.
@@ -75,7 +75,7 @@ Then tell turri what to build:
 - **Settings** (⌘,) - the look, the models new projects start on, how the app updates itself. **About** has the versions, what turri sends and where - [privacy](docs/privacy.md): no telemetry - and the third-party notices.
 - A window for each project, native menus and shortcuts, notifications when a pulse lands, turri's dark and light themes.
 
-Shortcuts are written here as on macOS; on Linux Ctrl takes ⌘'s place - Ctrl+J, Ctrl+R - and the preview's terminal copies and pastes with Ctrl+Shift+C and Ctrl+Shift+V, leaving Ctrl+C to the shell.
+Shortcuts are written here as on macOS; on Linux Ctrl takes ⌘'s place - Ctrl+J, Ctrl+S - and the preview's terminal copies and pastes with Ctrl+Shift+C and Ctrl+Shift+V, leaving Ctrl+C to the shell.
 
 Every detail: [the window](docs/window.md).
 

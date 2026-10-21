@@ -25,4 +25,16 @@ test.describe("the welcome screen", () => {
     const menus = await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.items.map((item) => item.label));
     expect(menus.slice(-3)).toEqual(["***plain", "Window", "Help"]);
   });
+
+  test("reloads on ⌘R, as a browser does - never regenerates", async ({ launched: { app } }) => {
+    const bound = await app.evaluate(({ Menu }) => {
+      const all = (items: Electron.MenuItem[]): Electron.MenuItem[] => items.flatMap((item) => [item, ...(item.submenu ? all(item.submenu.items) : [])]);
+      const items = all(Menu.getApplicationMenu()!.items);
+      return {
+        onR: items.filter((item) => item.accelerator === "CmdOrCtrl+R").map((item) => item.label),
+        regenerate: items.find((item) => item.label === "Regenerate…")?.accelerator ?? null,
+      };
+    });
+    expect(bound).toEqual({ onR: ["Reload"], regenerate: null });
+  });
 });

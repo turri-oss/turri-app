@@ -671,7 +671,16 @@ function buildMenu() {
         { label: "Zoom In", accelerator: "CmdOrCtrl+=", click: () => setZoom(zoom + 0.5), visible: false, acceleratorWorksWhenHidden: true },
         { label: "Zoom Out", accelerator: "CmdOrCtrl+-", click: () => setZoom(zoom - 0.5) },
         { type: "separator" },
-        { role: "reload" },
+        // ⌘R reloads, as in a browser: the page being tried, when the preview is in front - else the window itself.
+        {
+          label: "Reload",
+          accelerator: "CmdOrCtrl+R",
+          click: () => {
+            const workspace = focused();
+            if (workspace?.preview.isShown()) workspace.preview.go("reload");
+            else workspace?.window.webContents.reload();
+          },
+        },
         { role: "toggleDevTools" },
         { type: "separator" },
         { role: "togglefullscreen" },
@@ -681,7 +690,7 @@ function buildMenu() {
     {
       label: "***plain",
       submenu: [
-        { label: "Regenerate…", accelerator: "CmdOrCtrl+R", click: menuAction("regenerate-how"), enabled: ready },
+        { label: "Regenerate…", click: menuAction("regenerate-how"), enabled: ready },
         { label: "Regenerate What Changed", accelerator: "CmdOrCtrl+Shift+R", click: menuAction("regenerate"), enabled: ready },
         { label: "Preview the Plan", click: menuAction("glimpse"), enabled: ready },
         { label: "Write Conformance Tests", click: menuAction("conform"), enabled: ready },

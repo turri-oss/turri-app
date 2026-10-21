@@ -440,8 +440,8 @@ export function App() {
                   spec && runningFor(spec.module)
                     ? "turri is regenerating this module"
                     : spec && !spec.functionalSpecs.some((entry) => entry.built)
-                      ? `regenerate all of it - nothing is built yet (${keys("R")})`
-                      : `regenerate - what changed, chosen functional specs, or from scratch (${keys("R")})`
+                      ? "regenerate all of it - nothing is built yet"
+                      : "regenerate - what changed, chosen functional specs, or from scratch"
                 }
               >
                 {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} regenerate…

@@ -241,7 +241,10 @@ export function createPreview({ windowOf, send }: { windowOf: () => BrowserWindo
     return run(params ?? {});
   }
 
-  return { place, open, go, state, dispose, reloadSoon, request };
+  /** Whether the pane is over the window now: the Preview view in front, its browser chosen, nothing covering it. */
+  const isShown = () => shown;
+
+  return { place, open, go, state, dispose, reloadSoon, request, isShown };
 }
 
 /** The element an action is on: by the number browser_read gave it, or by a CSS selector. */
