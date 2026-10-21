@@ -30,7 +30,7 @@ npm start
 
 turri itself comes with it, from npm, and runs on Electron's own Node: nothing else is installed. If npm held back Electron's or esbuild's install scripts, run `npm install-scripts approve electron esbuild` and `npm rebuild`.
 
-Then, on the welcome screen, **start a new project** - name its folder, choose its models: Anthropic, OpenAI, Google, Amazon Bedrock or any other pi supports - or **open** a folder that has turri's `config.turri.yaml` in it. Models are reached as in turri: the provider's API key exported in your shell (`ANTHROPIC_API_KEY`, ... - the app reads your login shell's environment as it starts, so it has your keys and PATH even opened from Finder or the Dock), what pi already has from a `/login` in turri, or a cloud account - see turri's [models](https://github.com/turri-oss/turri#models).
+Then, on the welcome screen, **start a new project** - name its folder, choose its models: Anthropic, OpenAI, Google, Amazon Bedrock or any other pi supports - or **open** a folder that has turri's `config.turri.yaml` in it. Models are reached as in turri: the provider's API key exported in your shell (`ANTHROPIC_API_KEY`, ... - the app reads your login shell's environment as it starts, so it has your keys and PATH even opened from Finder or the Dock), a sign-in from the window - File > Sign In to Model Providers…, with a subscription in your browser or an API key - which is what pi has from a `/login` in turri too, or a cloud account - see turri's [models](https://github.com/turri-oss/turri#models).
 
 Then tell turri what to build:
 
@@ -43,6 +43,7 @@ Then tell turri what to build:
 - **intent** (⌘1) - the `.plain` file, coloured by turri's \*\*\*plain grammar, with each functional spec's state beside it: pink when its code is built, cyan when its conformance tests pass too. Click a mark to regenerate that functional spec or test it; **regenerate** (⌘R) asks how much to rebuild.
 - **work** (⌘2) - every pulse live: its stage, what its agent is doing, what it cost, and the \*\*\*plain it works on; earlier sessions' pulses from turri's ledger below.
 - **preview** (⌘3) - the app you are building, in a browser pane or a terminal in the project's folder. turri tries it there too - opening pages, clicking, running commands - and the window shows you as it does. **release** puts what is built in `dist/` and starts it.
+- **Sign in to your models** (File menu, the welcome screen, or `/login` in the chat) - every model provider pi knows, searchable, each connected or not and how: sign in with a subscription in your browser - Claude Pro/Max, ChatGPT, GitHub Copilot - or type an API key. No terminal needed; it is kept where the turri CLI keeps it.
 - **Check this machine** (Help menu) - `turri doctor` in the window: bash, git, the OS sandbox, a model provider, and in a project its toolchains and what its testing scripts run - each with what to do about it, and the models asked only when you say. Anything missing is said on the welcome screen and at the foot of the sidebar; a project just started is checked at once, its models asked too.
 - A window for each project, native menus and shortcuts, notifications when a pulse lands, turri's dark and light themes.
 
@@ -53,7 +54,6 @@ Every detail: [the window](docs/window.md).
 ## What is not here yet
 
 - **A download** - a signed and notarised `.dmg` for macOS, an AppImage and `.deb` for Linux, that update themselves.
-- **Signing in from the window** - models are signed in to as in turri: an API key in the environment, or `/login` in turri in a terminal.
 - **Resuming a conversation** - each project opened starts a new one.
 - **turri's terminal panels** - the side panel, `/lineage`'s picker - have no window form yet; the work view takes the side panel's place.
 - **Settings as a form** (but for debug's switch); stacks, spec conflicts and start-overs as dialogs.

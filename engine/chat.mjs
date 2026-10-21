@@ -34,15 +34,21 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser, t
   await loader.reload();
   const { session } = await pi.createAgentSession({ cwd, resourceLoader: loader, sessionManager: pi.SessionManager.create(cwd) });
 
-  // The chat runs on harness-model, as `turri` starts pi with it.
-  if (harnessModel) {
+  // The chat runs on harness-model, as `turri` starts pi with it - and is put on it after a sign-in, when it could not
+  // be before.
+  let onHarness = false;
+  const onHarnessModel = async ({ quiet = true } = {}) => {
+    if (!harnessModel || onHarness) return;
     const [spec, level] = splitLevel(harnessModel);
     const slash = spec.indexOf("/");
     const found = slash > 0 ? new pi.ModelRegistry(session.modelRuntime).find(spec.slice(0, slash), spec.slice(slash + 1)) : undefined;
-    if (found !== undefined) await session.setModel(found);
-    else emit("chat:notify", { level: "warning", text: `harness-model ${spec} was not found: the chat uses pi's default model.` });
-    if (level) session.setThinkingLevel(level);
-  }
+    if (found !== undefined) {
+      await session.setModel(found);
+      onHarness = true;
+    } else if (!quiet) emit("chat:notify", { level: "warning", text: `harness-model ${spec} was not found: the chat uses pi's default model.` });
+    if (level && (found !== undefined || !quiet)) session.setThinkingLevel(level);
+  };
+  await onHarnessModel({ quiet: false });
 
   // "tui": jobs run in the background and the chat stays free, as in the terminal.
   await session.bindExtensions({
@@ -105,8 +111,14 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser, t
   return {
     session,
     history: () => session.messages.flatMap((message) => [normalise(message)].flat()).filter(Boolean),
-    /** Say something to turri: a slash command runs at once; while it is answering, it hears it after its turn. */
+    /**
+     * Say something to turri: a slash command runs at once; while it is answering, it hears it after its turn. /login
+     * and /logout are pi's terminal's alone - typed here they would go to the model as words - so they open the
+     * window's sign-in sheet instead, on the provider named if one is.
+     */
     send: (text) => {
+      const signIn = /^\/(?:login|logout)(?:\s+(\S+))?\s*$/.exec(text.trim());
+      if (signIn !== null) return emit("auth:open", { provider: signIn[1] ?? null });
       const run = session.isStreaming ? session.followUp(text) : session.prompt(text);
       Promise.resolve(run).catch((error) => emit("chat:notify", { level: "error", text: error instanceof Error ? error.message : String(error) }));
     },
@@ -121,8 +133,10 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser, t
         ...session.resourceLoader.getSkills().skills.map((skill) => ({ name: `skill:${skill.name}`, description: skill.description })),
       ]
         .filter((command) => command.name !== "halt")
-        .map((command) => ({ name: `/${command.name}`, description: command.description ?? "" })),
+        .map((command) => ({ name: `/${command.name}`, description: command.description ?? "" }))
+        .concat({ name: "/login", description: "sign in to a model provider - with an API key, or a subscription in the browser" }),
     abort: () => session.abort(),
+    onHarnessModel,
     model: () => (session.model ? `${session.model.provider}/${session.model.id}` : null),
     stats,
     dispose: () => session.dispose(),

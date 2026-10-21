@@ -14,6 +14,38 @@ export interface Check {
   fix?: string;
 }
 
+/** A model provider as the sign-in sheet lists it: how it can be signed in to, and whether and how it is connected now. */
+export interface AuthProvider {
+  id: string;
+  name: string;
+  /** Its sign-in in the browser is a subscription's: Claude Pro/Max, ChatGPT, GitHub Copilot. */
+  subscription: boolean;
+  oauth: { name: string; label: string | null } | null;
+  /** Not interactive: configured outside turri only - an AWS profile, a credentials file. */
+  apiKey: { name: string; interactive: boolean } | null;
+  connected: boolean;
+  how: "oauth" | "api_key" | null;
+  /** Where its credential comes from: stored by a sign-in, the environment (`label` names the variable), models.json. */
+  source: "stored" | "runtime" | "environment" | "fallback" | "models_json_key" | "models_json_command" | null;
+  label: string | null;
+  /** What a sign-in stored for it, which signing out removes. */
+  stored: "oauth" | "api_key" | null;
+  /** The project's models are its. */
+  project: boolean;
+}
+
+/** What pi asks during a sign-in, and what it says - pi's AuthPrompt and AuthEvent. */
+export type AuthPrompt =
+  | { type: "text" | "secret" | "manual_code"; message: string; placeholder?: string }
+  | { type: "select"; message: string; options: Array<{ id: string; label: string; description?: string }> };
+export type AuthEvent =
+  | { type: "info"; message: string; links?: Array<{ url: string; label?: string }> }
+  | { type: "auth_url"; url: string; instructions?: string }
+  | { type: "device_code"; userCode: string; verificationUri: string; intervalSeconds?: number; expiresInSeconds?: number }
+  | { type: "progress"; message: string };
+
+const authCall = <T>(method: string, params?: unknown) => ipcRenderer.invoke("auth:call", method, params) as Promise<T>;
+
 /** What the window may ask of the app: the engine's methods, a few native services, and the events it is sent. */
 const api = {
   call: <T>(method: string, params?: unknown) => ipcRenderer.invoke("engine:call", method, params) as Promise<T>,
@@ -22,7 +54,21 @@ const api = {
   vendors: () => ipcRenderer.invoke("project:vendors"),
   /** turri doctor's checks - this machine's, and the open project's or the one named - from the engine; null from a turri without them. */
   doctor: (models = false, dir?: string) => ipcRenderer.invoke("doctor:run", models, dir) as Promise<Check[] | null>,
-  startProject: (dir: string, vendor: string, bedrock?: { maker: string; region: string }) => ipcRenderer.invoke("project:start", dir, vendor, bedrock),
+  /**
+   * Signing in to the model providers, through the window's engine - started for it before a project is open. A sign-in
+   * goes on in events: engine:auth:prompt, engine:auth:event, engine:auth:withdrawn and engine:auth:done.
+   */
+  auth: {
+    providers: (dir?: string) => authCall<{ kept: string; providers: AuthProvider[] }>("authProviders", dir !== undefined ? { dir } : {}),
+    login: (provider: string, method: "oauth" | "api_key") => authCall<{ login: number }>("authLogin", { provider, method }),
+    /** A prompt answered - null cancels the sign-in. */
+    answer: (id: number, value: string | null) => authCall<boolean>("authAnswer", { id, value }),
+    cancel: (login: number) => authCall<boolean>("authCancel", { login }),
+    logout: (provider: string) => authCall<boolean>("authLogout", { provider }),
+  },
+  /** A new project started on a vendor's models - on Bedrock, the maker and geography chosen, and the two models picked there. */
+  startProject: (dir: string, vendor: string, bedrock?: { maker: string; region: string }, models?: { harness: string; coding: string }) =>
+    ipcRenderer.invoke("project:start", dir, vendor, bedrock, models),
   abandonProject: (dir: string) => ipcRenderer.invoke("project:abandon", dir),
   openProject: (dir: string) => ipcRenderer.invoke("project:open", dir),
   recents: () => ipcRenderer.invoke("project:recents") as Promise<string[]>,

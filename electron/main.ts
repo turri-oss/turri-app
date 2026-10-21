@@ -93,7 +93,7 @@ interface Workspace {
   readonly name: string | undefined;
   call(method: string, params?: unknown): Promise<unknown>;
   openProject(dir: string): Promise<unknown>;
-  startProject(dir: string, vendor: string, bedrock?: { maker: string; region: string }): Promise<unknown>;
+  startProject(dir: string, vendor: string, bedrock?: { maker: string; region: string }, models?: { harness: string; coding: string }): Promise<unknown>;
   /** Its engine, started if no project has started it yet: for what it is asked before a project opens. */
   anEngine(): Promise<void>;
 }
@@ -250,6 +250,8 @@ function createWorkspace(): Workspace {
 
   function onEngineEvent(event: string, data: any) {
     send(`engine:${event}`, data);
+    // A sign-in's page, opened in the person's browser - the window shows the address too, for when it does not open.
+    if (event === "auth:event" && data.event.type === "auth_url" && /^https?:\/\//.test(data.event.url)) void shell.openExternal(data.event.url);
     // New code under the preview: it is loaded again.
     if (event === "finished" && data.status === "succeeded") preview.reloadSoon();
     if (event === "status") {
@@ -311,9 +313,9 @@ function createWorkspace(): Workspace {
   }
 
   /** A new project's config.turri.yaml, written by turri with the models chosen - then the project, opened on them. */
-  async function startProject(dir: string, vendor: string, bedrock?: { maker: string; region: string }) {
+  async function startProject(dir: string, vendor: string, bedrock?: { maker: string; region: string }, models?: { harness: string; coding: string }) {
     await anEngine();
-    const { message } = (await call("initConfig", { dir, vendor, bedrock })) as { message: string };
+    const { message } = (await call("initConfig", { dir, vendor, bedrock, models })) as { message: string };
     // Its config written, the project is made, whether it opens or not: one that does not - no credentials for the models
     // chosen, say - is said so, not thrown, for the window to say why and try again.
     try {
@@ -489,6 +491,8 @@ function buildMenu() {
         { label: "New Window", accelerator: "CmdOrCtrl+Shift+N", click: () => void createWorkspace() },
         { label: "Switch Project…", accelerator: "CmdOrCtrl+Shift+P", click: menuAction("switch-project") },
         { type: "separator" },
+        { label: "Sign In to Model Providers…", click: menuAction("sign-in") },
+        { type: "separator" },
         { label: "Save Spec", accelerator: "CmdOrCtrl+S", click: menuAction("save"), enabled: ready },
         { type: "separator" },
         { label: MAC ? "Reveal Project in Finder" : "Show Project in File Manager", click: menuAction("reveal"), enabled: ready },
@@ -569,7 +573,17 @@ ipcMain.handle("doctor:run", async (event, models: boolean, dir?: string) => {
   await workspace.anEngine();
   return workspace.call("doctor", { models, ...(dir !== undefined ? { dir } : {}) });
 });
-ipcMain.handle("project:start", (event, dir: string, vendor: string, bedrock?: { maker: string; region: string }) => workspaceOf(event.sender).startProject(dir, vendor, bedrock));
+// Signing in to the model providers, asked of the window's engine - started for it if need be, as on the welcome screen.
+const AUTH_METHODS = new Set(["authProviders", "authLogin", "authAnswer", "authCancel", "authLogout"]);
+ipcMain.handle("auth:call", async (event, method: string, params: unknown) => {
+  if (!AUTH_METHODS.has(method)) throw new Error(`Not a sign-in method: ${method}`);
+  const workspace = workspaceOf(event.sender);
+  await workspace.anEngine();
+  return workspace.call(method, params);
+});
+ipcMain.handle("project:start", (event, dir: string, vendor: string, bedrock?: { maker: string; region: string }, models?: { harness: string; coding: string }) =>
+  workspaceOf(event.sender).startProject(dir, vendor, bedrock, models),
+);
 // A new project given up before it started: its folder, made for it and still empty, taken away again.
 ipcMain.handle("project:abandon", (_event, dir: string) => {
   try {

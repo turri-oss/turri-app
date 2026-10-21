@@ -4,6 +4,7 @@
 // slash commands, and what its jobs do is sent to the window as they do it. The app never shells out to `turri`.
 import turri, { turriFrom } from "./turri.mjs";
 import { startChat } from "./chat.mjs";
+import { createAuth } from "./auth.mjs";
 import { existsSync, readdirSync, readFileSync, statSync, watch, writeFileSync } from "node:fs";
 import { basename, join, relative, resolve, sep } from "node:path";
 
@@ -56,6 +57,24 @@ const host = {
     input: (title, context) => ask({ kind: "input", title, message: context }),
   },
 };
+
+// ---------- signing in to the model providers ----------
+
+/** pi's model runtime of the engine's own, for signing in - and its catalogue - before a project's chat has one. */
+let ownRuntime;
+const modelRuntime = async () => chat?.session.modelRuntime ?? (await (ownRuntime ??= turri.pi.ModelRuntime.create()));
+/**
+ * Sign-ins go through the open chat's runtime, so the conversation has a credential as soon as it is stored - and a
+ * chat that could not start on harness-model for want of one is put on it. With no chat, through the engine's own.
+ */
+const auth = createAuth({
+  emit,
+  runtime: modelRuntime,
+  projectDir: () => projectDir,
+  signedIn: async () => {
+    await chat?.onHarnessModel();
+  },
+});
 
 // ---------- the project ----------
 
@@ -284,29 +303,136 @@ function writeFile({ file, text }) {
 
 // ---------- a new project ----------
 
-/** turri's vendors and the two models each gives - and Bedrock's, by maker and geography - for the window to choose from. */
-function vendors() {
-  const bedrockModels = {};
-  for (const [maker, regions] of Object.entries(turri.BEDROCK_REGIONS)) {
-    for (const region of regions) bedrockModels[`${maker}/${region}`] = turri.bedrockModels({ maker, region });
-  }
+// ---------- Amazon Bedrock's models ----------
+
+// On Bedrock a new project can run on any pair of pi's catalogue: whose models, where they run, and which two. A turri
+// that knows them (piModelCatalogue - after 0.1.9) says each - the makers and their geographies, each geography's models,
+// the pair to offer, the AWS region it needs - and writes the config with the pair given. An older one knows only its own
+// two makers' pairs: the engine reads pi's catalogue itself, offers the same, and puts the pair picked in the place of
+// turri's own in the file turri wrote.
+
+/** Whether the turri running takes any pair of pi's catalogue - initConfig's models - and says what Bedrock serves. */
+const KNOWS_CATALOGUE = typeof turri.piModelCatalogue === "function";
+let catalogue;
+const catalogueNow = async () => (catalogue ??= await turri.piModelCatalogue());
+
+/**
+ * Bedrock as the window offers it: each maker - Anthropic's and OpenAI's first - with the geographies its chat models run
+ * in, and in each its models, the strongest first, the pair offered, and the AWS region to call it in when it needs one.
+ */
+async function bedrockOffer() {
+  if (!KNOWS_CATALOGUE) return olderBedrockOffer();
+  const known = await catalogueNow();
+  return turri.bedrockMakers(known).map(({ maker, label, regions }) => ({
+    maker,
+    label,
+    regions: regions.map((region) => ({
+      region,
+      inRegion: region === turri.BEDROCK_IN_REGION,
+      awsRegion: turri.bedrockNeedsAwsRegion(region) ? turri.bedrockAwsRegion(region) : null,
+      models: strongestFirst(turri.bedrockModelsIn(known, { maker, region }).map((model) => modelView(model.id, model))),
+      pair: turri.bedrockDefaultModels(known, { maker, region }) ?? null,
+    })),
+  }));
+}
+
+/** A model as the window lists it: "Grok 4.7 (Global)" without where it runs, which the geography chosen says. */
+function modelView(id, model) {
+  return { id: `amazon-bedrock/${id}`, name: model.name.replace(/\s*\([^)]*\)$/, ""), reasoning: model.reasoning === true, cost: (model.cost?.input ?? 0) + (model.cost?.output ?? 0) };
+}
+
+/** The strongest - the dearest, and of one price the newest - first. */
+const strongestFirst = (models) => models.sort((a, b) => b.cost - a.cost || b.id.localeCompare(a.id, undefined, { numeric: true }));
+
+// What a turri of 0.1.9 and before does not say, said here as the newer one says it.
+const GEOGRAPHIES = ["global", "us", "eu", "jp", "au", "apac", "in", "ca", "us-gov"];
+const IN_REGION = "in-region";
+const AWS_REGION_IN = { global: "us-east-1", us: "us-east-1", eu: "eu-central-1", jp: "ap-northeast-1", au: "ap-southeast-2", apac: "ap-southeast-1", in: "ap-south-1", ca: "ca-central-1", "us-gov": "us-gov-west-1" };
+const MAKER_LABELS = { anthropic: "Anthropic", openai: "OpenAI", xai: "xAI", moonshotai: "Moonshot AI", moonshot: "Moonshot", zai: "Z.ai", meta: "Meta", mistral: "Mistral", qwen: "Qwen", deepseek: "DeepSeek", amazon: "Amazon", google: "Google", minimax: "MiniMax", nvidia: "NVIDIA", writer: "Writer" };
+
+async function olderBedrockOffer() {
+  const all = (await modelRuntime()).getModels("amazon-bedrock").map((model) => {
+    const parts = model.id.split(".");
+    const region = GEOGRAPHIES.includes(parts[0]) ? parts.shift() : IN_REGION;
+    return { ...modelView(model.id, model), maker: parts[0], region };
+  });
+  const makers = [...new Set(all.map((model) => model.maker))];
+  const first = (maker) => (maker === "anthropic" ? 0 : maker === "openai" ? 1 : 2);
+  return makers
+    .map((maker) => ({
+      maker,
+      label: MAKER_LABELS[maker] ?? maker,
+      regions: [...GEOGRAPHIES, IN_REGION]
+        .filter((region) => all.some((model) => model.maker === maker && model.region === region))
+        .map((region) => {
+          const models = strongestFirst(all.filter((model) => model.maker === maker && model.region === region));
+          return { region, inRegion: region === IN_REGION, awsRegion: ["global", "us", IN_REGION].includes(region) ? null : AWS_REGION_IN[region], models, pair: olderPair(maker, region, models) };
+        }),
+    }))
+    .sort((a, b) => first(a.maker) - first(b.maker) || a.label.localeCompare(b.label));
+}
+
+/** turri's own pair where it has one; else the strongest that reasons, and the cheapest costing at least a fifth of it. */
+function olderPair(maker, region, models) {
+  const turris = turri.BEDROCK_REGIONS[maker]?.includes(region) ? turri.bedrockModels({ maker, region }) : undefined;
+  if (turris !== undefined) return turris;
+  const talk = models.find((model) => model.reasoning) ?? models[0];
+  if (talk === undefined) return null;
+  const code = [...models].reverse().find((model) => model.cost >= talk.cost / 5) ?? talk;
+  return { harness: talk.id, coding: code.id, strong: talk.id };
+}
+
+/** turri's vendors and the two models each gives - and Bedrock's offer - for the window to choose from. */
+async function vendors() {
   return {
     vendors: Object.entries(turri.VENDORS).map(([id, preset]) => ({ id, label: preset.label, harness: preset.harness, coding: preset.coding })),
-    regions: turri.BEDROCK_REGIONS,
     bedrockDefault: turri.BEDROCK_DEFAULT,
-    bedrockModels,
+    bedrock: await bedrockOffer(),
   };
 }
 
+/** A model id as it stands in the config - not part of a longer one - to put another in its place. */
+const modelIn = (id) => new RegExp(`${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w.-])`, "g");
+
 /**
- * A new project's config.turri.yaml, as `turri init-config` writes it, with the chosen vendor's models. What turri says
- * of it is kept up to its terminal advice - the commands to run next - which a window has no use for.
+ * A new project's config.turri.yaml, as `turri init-config` writes it, with the chosen vendor's models - on Bedrock, the
+ * maker, the geography and the two models picked there. A model turri refuses writes nothing, and says why. What turri
+ * says of it is kept up to its terminal advice - how to sign in (keys to export, /login) and the commands to run next -
+ * which a window has no use for: it signs in in its own sheet.
  */
-function initConfig({ dir, vendor, bedrock }) {
-  const { message } = turri.initConfig(dir, { vendor, ...(bedrock !== undefined ? { bedrock } : {}) });
+async function initConfig({ dir, vendor, bedrock, models }) {
+  const onBedrock = vendor === "amazon-bedrock";
+  let message;
+  if (KNOWS_CATALOGUE) {
+    const done = await turri.initConfig(dir, { vendor, ...(onBedrock ? { bedrock, ...(models !== undefined ? { models } : {}) } : {}), catalogue: await catalogueNow() });
+    if (!done.written) throw new Error(done.message.trim());
+    message = done.message;
+  } else message = await olderInitConfig({ dir, vendor, bedrock, models: onBedrock ? models : undefined });
   const lines = message.split("\n");
-  const then = lines.findIndex((line) => line.trim() === "Then");
-  return { message: (then === -1 ? lines : lines.slice(0, then)).join("\n").trim() };
+  const advice = lines.findIndex((line) => /^Sign in to /.test(line.trim()) || line.trim() === "Then");
+  return { message: (advice === -1 ? lines : lines.slice(0, advice)).join("\n").trim() };
+}
+
+/**
+ * An older turri's config, for a pair it does not know: it writes its own - for the geography chosen when it has one
+ * there - and the pair picked is put in the place of its own, wherever the file names them, its comments too.
+ */
+async function olderInitConfig({ dir, vendor, bedrock, models }) {
+  const turris = bedrock !== undefined && turri.BEDROCK_REGIONS[bedrock.maker]?.includes(bedrock.region) ? bedrock : undefined;
+  const { message } = await turri.initConfig(dir, { vendor, ...(turris !== undefined ? { bedrock: turris } : {}) });
+  const preset = vendor === "amazon-bedrock" ? turri.bedrockModels(turris ?? turri.BEDROCK_DEFAULT) : turri.VENDORS[vendor];
+  if (models === undefined || (models.harness === preset.harness && models.coding === preset.coding)) return message;
+  const file = join(dir, "config.turri.yaml");
+  // Through placeholders: the two picked may be turri's the other way round.
+  const swap = (text) =>
+    text
+      .replace(modelIn(preset.harness), "\u0000harness")
+      .replace(modelIn(preset.strong), "\u0000harness")
+      .replace(modelIn(preset.coding), "\u0000coding")
+      .replaceAll("\u0000harness", models.harness)
+      .replaceAll("\u0000coding", models.coding);
+  writeFileSync(file, swap(readFileSync(file, "utf8")));
+  return swap(message).replace(/with .+ on Amazon Bedrock \([^)]*\) models/, `with models on Amazon Bedrock (${bedrock?.region ?? "global"})`);
 }
 
 /** A question for the person, put in the window; answered through `answer`. */
@@ -608,10 +734,11 @@ function transcript({ id }) {
 
 // ---------- the wire ----------
 
-const methods = { newChat, look, open, vendors, initConfig, summary, listFiles, readFile, writeFile, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, earlierPulses, pastPulseDetail, sendChat, abortChat, chatHistory, commands, answer, doctor };
+const methods = { ...auth, newChat, look, open, vendors, initConfig, summary, listFiles, readFile, writeFile, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, earlierPulses, pastPulseDetail, sendChat, abortChat, chatHistory, commands, answer, doctor };
 
-// What the window may ask before a project is open: to open one, to start a new one, or whether the machine is ready.
-const BEFORE_A_PROJECT = new Set(["open", "vendors", "initConfig", "doctor"]);
+// What the window may ask before a project is open: to open one, to start a new one, whether the machine is ready, or to
+// sign in to the model providers.
+const BEFORE_A_PROJECT = new Set(["open", "vendors", "initConfig", "doctor", ...Object.keys(auth)]);
 
 // The app gone - quit, crashed, killed - the engine goes with it: never a chat left running with no window.
 process.on("disconnect", () => {

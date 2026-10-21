@@ -6,6 +6,7 @@ import { SpecView } from "./SpecView.tsx";
 import { WorkView } from "./WorkView.tsx";
 import { PlanSheet, type Plan } from "./PlanSheet.tsx";
 import { DoctorSheet, problems, toSeeTo } from "./DoctorSheet.tsx";
+import { AuthSheet } from "./AuthSheet.tsx";
 import type { Check } from "../electron/preload.ts";
 import { RegenerateSheet, type Regeneration } from "./RegenerateSheet.tsx";
 import { NewProject } from "./NewProject.tsx";
@@ -52,6 +53,8 @@ export function App() {
   const [doctorOpen, setDoctorOpen] = useState(false);
   const [doctorModels, setDoctorModels] = useState(false);
   const [machine, setMachine] = useState<Check[] | null>(null);
+  // Signing in to the model providers: the sheet, open on a provider when one was named - /login anthropic.
+  const [signIn, setSignIn] = useState<{ provider: string | null } | null>(null);
   // Regenerate, chosen how - open with the functional specs it starts on, if any.
   const [choosing, setChoosing] = useState<string[] | null>(null);
   // Lines of a spec to bring into view and light: a pulse's part of it, shown from the work.
@@ -189,6 +192,8 @@ export function App() {
       // turri works in the preview with its browser tools: the window shows it, so the person sees what it does.
       window.turri.on("preview:reveal", () => (setView("preview"), setPane("browser"))),
       window.turri.on("terminal:reveal", () => (setView("preview"), setPane("terminal"))),
+      // /login typed in the chat: pi's terminal would sign in there, the window does it in its sheet.
+      window.turri.on("engine:auth:open", ({ provider }: { provider: string | null }) => setSignIn({ provider })),
       window.turri.on("engine:chat:ask", (question: Question) => {
         setQuestions((all) => [...all, question]);
         setChatOpen(true);
@@ -281,6 +286,7 @@ export function App() {
         else if (action === "chat") setChatOpen((open) => !open);
         else if (action === "reveal" && project) void window.turri.reveal(project.dir);
         else if (action === "doctor") (setDoctorModels(false), setDoctorOpen(true));
+        else if (action === "sign-in") setSignIn({ provider: null });
       }),
     [regenerate, glimpse, conform, release, project, spec],
   );
@@ -320,13 +326,25 @@ export function App() {
       }}
     />
   );
+  const authSheet = signIn !== null && (
+    <AuthSheet
+      dir={project?.dir}
+      initial={signIn.provider}
+      onClose={() => {
+        setSignIn(null);
+        // Signed in: the foot of the sidebar says so at once.
+        if (project !== null) void window.turri.doctor().then(setMachine).catch(() => {});
+      }}
+    />
+  );
   if (project === null)
     return (
       <>
-        <Welcome onOpened={opened} onNew={() => setCreating(true)} onDoctor={() => (setDoctorModels(false), setDoctorOpen(true))} />
+        <Welcome onOpened={opened} onNew={() => setCreating(true)} onDoctor={() => (setDoctorModels(false), setDoctorOpen(true))} onSignIn={() => setSignIn({ provider: null })} />
         {newProject}
         {projectSwitcher}
         {doctorSheet}
+        {authSheet}
       </>
     );
 
@@ -430,7 +448,7 @@ export function App() {
           <section className="content">
             {view === "preview" ? (
               // A sheet over the window would be under the pane: while one is open, the pane steps aside.
-              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || creating || choosing !== null || switching !== null || switcher} pane={pane} onPane={setPane} />
+              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || signIn !== null || creating || choosing !== null || switching !== null || switcher} pane={pane} onPane={setPane} />
             ) : view === "work" ? (
               <WorkView
                 status={status}
@@ -566,6 +584,7 @@ export function App() {
       {newProject}
       {projectSwitcher}
       {doctorSheet}
+      {authSheet}
     </>
   );
 }

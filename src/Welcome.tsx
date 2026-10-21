@@ -7,7 +7,7 @@ import { problems, toSeeTo } from "./DoctorSheet.tsx";
 import type { Project } from "./types.ts";
 import { Icon, Jellyfish, Spinner, TurriVersionLine } from "./ui.tsx";
 
-export function Welcome({ onOpened, onNew, onDoctor }: { onOpened: (project: Project | null) => void; onNew: () => void; onDoctor: () => void }) {
+export function Welcome({ onOpened, onNew, onDoctor, onSignIn }: { onOpened: (project: Project | null) => void; onNew: () => void; onDoctor: () => void; onSignIn: () => void }) {
   const [recents, setRecents] = useState<string[]>([]);
   const [opening, setOpening] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +24,8 @@ export function Welcome({ onOpened, onNew, onDoctor }: { onOpened: (project: Pro
     void window.turri.recents().then(setRecents);
     void window.turri.doctor().then(setMachine).catch(() => {});
   }, []);
+  // Signed in from the menu or the button: what is missing is checked again.
+  useEffect(() => window.turri.on("engine:auth:done", ({ ok }: { ok: boolean }) => ok && void window.turri.doctor().then(setMachine).catch(() => {})), []);
 
   const open = async (dir?: string) => {
     setError(null);
@@ -63,6 +65,9 @@ export function Welcome({ onOpened, onNew, onDoctor }: { onOpened: (project: Pro
             {opening === "…" ? <Spinner /> : <Icon name="folder" />} open a project…
           </button>
         </div>
+        <button className="link welcome-sign-in" onClick={onSignIn}>
+          <Icon name="key" size={13} /> sign in to your models…
+        </button>
         {error && <p className="error-text">{error}</p>}
         {problems(machine).length > 0 && (
           <button className="link machine-wanting" onClick={onDoctor}>

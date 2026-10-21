@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Check } from "../electron/preload.ts";
+import { AuthSheet } from "./AuthSheet.tsx";
 import { Icon, Spinner } from "./ui.tsx";
 
 const MARK: Record<Check["level"], string> = { ok: "✓", missing: "✗", limited: "!", info: "·" };
@@ -88,6 +89,8 @@ export function DoctorChecks({ doctor }: { doctor: ReturnType<typeof useDoctor> 
 export function DoctorSheet({ project, askModels = false, onClose }: { project: string | null; askModels?: boolean; onClose: () => void }) {
   const doctor = useDoctor(askModels);
   const { checks, models, checking, run } = doctor;
+  // Signing in to a model provider, over the checks - which are run again once it closes, the models not asked again.
+  const [signingIn, setSigningIn] = useState(false);
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
@@ -98,6 +101,9 @@ export function DoctorSheet({ project, askModels = false, onClose }: { project: 
         </p>
         <DoctorChecks doctor={doctor} />
         <div className="sheet-actions">
+          <button className="button sheet-actions-start" onClick={() => setSigningIn(true)} title="sign in to the providers turri's models come from - a subscription, or an API key">
+            <Icon name="key" /> sign in to your models…
+          </button>
           {project !== null && checks && !models && (
             <button className="button" onClick={() => void run(true)} disabled={checking} title="sends each model config.turri.yaml names a word, to see that it answers - which costs a little">
               ask the models too
@@ -111,6 +117,7 @@ export function DoctorSheet({ project, askModels = false, onClose }: { project: 
           </button>
         </div>
       </div>
+      {signingIn && <AuthSheet onClose={() => (setSigningIn(false), void run(false))} />}
     </div>
   );
 }
