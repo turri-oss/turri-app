@@ -169,7 +169,6 @@ body {
   color: var(--fg);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
-  user-select: none;
   cursor: default;
   overflow: hidden;
 }
@@ -763,7 +762,6 @@ code {
   caret-color: var(--fg);
   resize: none;
   outline: none;
-  user-select: text;
 }
 .editor textarea::selection {
   background: color-mix(in srgb, var(--accent) 30%, transparent);
@@ -972,7 +970,6 @@ code {
   white-space: pre-wrap;
   font-family: var(--mono);
   font-size: 12px;
-  user-select: text;
 }
 
 /* ---------- work ---------- */
@@ -1071,11 +1068,6 @@ code {
 .job-title span {
   font-size: 12px;
 }
-/* What the work view says can be selected and copied (⌘C), as the chat can. */
-.work-view .job,
-.work-view .module-plan {
-  user-select: text;
-}
 /* A pulse's copy button: shown with the pointer on its card. */
 .job-copy {
   flex: none;
@@ -1154,7 +1146,6 @@ code {
   margin: 8px 0 0 32px;
   color: var(--fg-2);
   font-size: 12px;
-  user-select: text;
   cursor: auto;
 }
 .job-report-toggle {
@@ -1187,7 +1178,6 @@ code {
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--amber) 12%, var(--card));
   white-space: pre-wrap;
-  user-select: text;
 }
 .job-report-toggles {
   display: flex;
@@ -1337,7 +1327,6 @@ code {
   flex: 1;
   overflow-y: auto;
   padding: 12px 14px 40px;
-  user-select: text;
 }
 .toggle {
   display: inline-flex;
@@ -1425,7 +1414,6 @@ code {
   padding: 8px 0;
   margin: 6px 0;
   overflow-x: auto;
-  user-select: text;
 }
 .t-diff div {
   padding: 0 10px;
@@ -1514,7 +1502,6 @@ code {
   padding: 10px 12px;
   max-height: 320px;
   overflow: auto;
-  user-select: text;
 }
 .sheet-actions {
   display: flex;
@@ -1564,7 +1551,6 @@ code {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  user-select: text;
 }
 .chat-empty {
   margin: auto 0;
@@ -1805,7 +1791,6 @@ code {
   padding: 8px 10px;
   font: inherit;
   outline: none;
-  user-select: text;
 }
 .composer textarea:focus {
   border-color: var(--accent);
@@ -2028,7 +2013,6 @@ code {
   padding: 10px 12px;
   margin-bottom: 12px;
   font-size: 12.5px;
-  user-select: text;
 }
 .options {
   display: flex;
@@ -2083,7 +2067,6 @@ code {
   font: inherit;
   resize: vertical;
   outline: none;
-  user-select: text;
 }
 
 /* ---------- pixels ---------- */
@@ -2558,7 +2541,6 @@ code {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 6px 0;
-  user-select: text;
 }
 .pulse-spec-lines > div {
   display: flex;
@@ -2920,7 +2902,6 @@ code {
   background: var(--bg-2);
   border-radius: var(--radius-small);
   padding: 4px 8px;
-  user-select: text;
 }
 .doctor-summary {
   margin: 12px 0 0;
@@ -3032,7 +3013,6 @@ code {
   background: var(--bg-2);
   border-radius: var(--radius-small);
   padding: 4px 8px;
-  user-select: text;
 }
 .auth-device {
   display: flex;
@@ -3051,7 +3031,6 @@ code {
   background: var(--bg-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  user-select: text;
 }
 .auth-lines {
   list-style: none;
@@ -3059,7 +3038,6 @@ code {
   padding: 0;
   font-size: 12.5px;
   color: var(--fg-2);
-  user-select: text;
 }
 .auth-waiting {
   display: flex;
@@ -3270,7 +3248,6 @@ a.button {
   grid-template-columns: max-content 1fr;
   gap: 4px 18px;
   margin: 8px 0;
-  user-select: text;
 }
 .about-versions > div {
   display: contents;
@@ -3329,5 +3306,4 @@ a.button {
   padding: 8px 10px;
   max-height: 240px;
   overflow: auto;
-  user-select: text;
 }

@@ -85,3 +85,21 @@ test.describe("the window's reach", () => {
     expect(existsSync(empty)).toBe(true);
   });
 });
+
+test.describe("the window's text", () => {
+  // A button's label is not among them: a click presses it - or, disabled, is not heard - as in any app.
+  test("can all be selected, as in a document - the sidebar, the headers, the chat", async ({ launched: { window: page } }) => {
+    await expect(page.locator(".chat-model")).toBeVisible();
+    for (const [where, text] of [
+      [page.locator(".sidebar dt", { hasText: "harness-model" }), "harness-model"],
+      [page.locator(".sidebar-section", { hasText: "settings" }), "settings"],
+      [page.locator(".chat-title"), "turri"],
+      [page.locator(".chat-model"), "claude-sonnet-5-5"],
+      [page.locator(".editor-pane .pane-header").getByText("hello.plain", { exact: true }), "hello.plain"],
+      [page.locator(".editor-pane .pane-header").getByText("0 of 1 built"), "0 of 1 built"],
+    ] as const) {
+      await where.click({ clickCount: 3 });
+      expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toContain(text);
+    }
+  });
+});
