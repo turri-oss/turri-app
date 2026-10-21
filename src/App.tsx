@@ -410,10 +410,6 @@ export function App() {
             <div className="project-name" title={project.dir}>
               <Jellyfish size={18} swimming={running.length > 0} />
               <span>{project.name}</span>
-              {/* Its settings - config.turri.yaml's - in a sheet, changed through /turri-config as the person would type it. */}
-              <button className="icon-button project-settings-button" onClick={() => setProjectSettingsOpen(true)} title="project settings - its models, conformance tests, review, pulses at once, debug" aria-label="project settings">
-                <Icon name="gear" />
-              </button>
             </div>
             <div className="sidebar-section">files</div>
             <FileTree
@@ -457,6 +453,11 @@ export function App() {
               ))}
             </div>
             <div className="toolbar-actions">
+              {/* The project's settings - config.turri.yaml's - in a sheet, changed through /turri-config as the person would type
+                  it: in the toolbar, there with the files hidden too. */}
+              <button className="icon-button project-settings-button" onClick={() => setProjectSettingsOpen(true)} title="project settings - its models, conformance tests, review, pulses at once, debug" aria-label="project settings">
+                <Icon name="gear" />
+              </button>
               <button className="button" disabled={!releasable} onClick={() => void release()} title={releasable ? "release what is built to try, and hear from turri what to test" : "nothing is built yet: regenerate first"}>
                 <Icon name="release" /> release
               </button>

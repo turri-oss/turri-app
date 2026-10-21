@@ -161,6 +161,9 @@ test.describe("the files' sidebar", () => {
     await expect.poll(left).toBe(12);
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send("fullscreen", false));
     await expect.poll(left).toBe(lights);
+    // The project's settings are in the toolbar: there with the files hidden too.
+    await page.getByRole("button", { name: "project settings" }).click();
+    await expect(page.getByRole("dialog", { name: "project settings" })).toBeVisible();
   });
 
   test("is shown or hidden on ⌘B, by View's menu", async ({ launched: { app } }) => {

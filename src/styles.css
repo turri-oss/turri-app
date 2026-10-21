@@ -285,11 +285,11 @@ code {
   font-size: 14px;
   padding: 0 8px 10px;
 }
-.project-name .project-settings-button {
-  margin-left: auto;
-  color: var(--fg-3);
+.project-settings-button {
+  align-self: center;
+  color: var(--fg-2);
 }
-.project-name .project-settings-button:hover {
+.project-settings-button:hover {
   color: var(--fg);
 }
 
