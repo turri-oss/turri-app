@@ -231,7 +231,7 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
             )}
             {gaps > 0 && (
               <button className="link job-report-toggle gaps-toggle" onClick={() => toggle("gaps")} aria-expanded={reading === "gaps"}>
-                <Icon name="chevron" size={12} /> <span className="gaps-count">{gaps}</span> spec gap{gaps === 1 ? "" : "s"}
+                <Icon name="chevron" size={12} /> <span className="gaps-count">{gaps}</span> ***plain gap{gaps === 1 ? "" : "s"}
               </button>
             )}
           </div>
@@ -241,7 +241,7 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
               {job.specGaps.map((gap, index) => (
                 <li key={index}>
                   <div>
-                    <strong>the spec does not say:</strong> {gap.question}
+                    <strong>the ***plain does not say:</strong> {gap.question}
                   </div>
                   <div className="muted">Meanwhile, the pulse assumed: {gap.assumption}</div>
                 </li>
@@ -429,7 +429,7 @@ function Transcript({ job, onClose, onShowInSpec }: { job: Job; onClose: () => v
         <div className="segmented transcript-tabs" role="tablist">
           {(["spec", "conversation"] as const).map((name) => (
             <button key={name} role="tab" aria-selected={tab === name} className={tab === name ? "on" : ""} onClick={() => setTab(name)}>
-              {name}
+              {name === "spec" ? "***plain" : name}
             </button>
           ))}
         </div>

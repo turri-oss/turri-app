@@ -171,7 +171,7 @@ export function SpecView(props: {
       setSaved(text);
       setOnDisk(null);
       props.onSaved(next);
-      if (!next.ok) props.say(`saved, but the spec does not parse: ${next.error}`, "error");
+      if (!next.ok) props.say(`saved, but the ***plain does not parse: ${next.error}`, "error");
     } finally {
       setSaving(false);
     }
@@ -393,7 +393,7 @@ export function SpecView(props: {
           <div className="parse-error">
             <Icon name="warn" />
             <div>
-              <strong>the spec does not parse</strong>
+              <strong>the ***plain does not parse</strong>
               <p>{spec.error}</p>
             </div>
           </div>
@@ -535,15 +535,15 @@ function SpecStatePop(props: { frid: string; x: number; y: number; state: State;
   // The stage as the pulse says it, without the module it is said of: "server: running the unit tests".
   const stage = (running && stageOf(running))?.replace(new RegExp(`^${props.module.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}( functionality \\S+)?: `), "");
   const [title, detail] = props.isNew
-    ? ["new - not saved yet", "save the spec, then regenerate builds it."]
+    ? ["new - not saved yet", "save the ***plain, then regenerate builds it."]
     : working
-      ? [conformance ? "conformance testing" : "regenerating", stage ?? (conformance ? "its conformance tests are being written and run." : "its code is being regenerated from the spec.")]
+      ? [conformance ? "conformance testing" : "regenerating", stage ?? (conformance ? "its conformance tests are being written and run." : "its code is being regenerated from the ***plain.")]
       : state === "now"
         ? ["regenerating", "a pulse is building it now."]
         : state === "conformed"
-          ? ["regenerated and conformance tested", "its code is built from the spec as it is, and its conformance tests pass."]
+          ? ["regenerated and conformance tested", "its code is built from the ***plain as it is, and its conformance tests pass."]
           : state === "built"
-            ? ["regenerated", "its code is built from the spec as it is. it has no passing conformance tests yet."]
+            ? ["regenerated", "its code is built from the ***plain as it is. it has no passing conformance tests yet."]
             : ["not regenerated yet", "regenerate builds it - or click its mark to build it alone."];
   // Kept inside the window: below the line, or above it near the bottom.
   const left = Math.min(props.x + 12, window.innerWidth - 340);

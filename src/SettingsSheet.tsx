@@ -165,7 +165,7 @@ export function SettingsSheet({ onClose, onPrivacy }: { onClose: () => void; onP
               <h3>privacy</h3>
               <p className="small">
                 no telemetry: the app collects nothing about how you use it. what turri sends goes to the model providers you choose, under your own account - your
-                specs, code and conversation among it.{" "}
+                ***plain, code and conversation among it.{" "}
                 <button className="link" onClick={onPrivacy}>
                   what turri sends, and where
                 </button>

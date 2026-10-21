@@ -635,7 +635,7 @@ function conform({ file, frids }) {
 
 function release({ file }) {
   chat.send(
-    `Release ${relative(projectDir, file)} for me to try. Once it runs, open it in the preview where I can watch - the terminal or the browser, whichever suits what it is - and check it starts. Then tell me how to open or run it, and what to test: what was built from the spec, and for each the steps to check it works and what I should see.`,
+    `Release ${relative(projectDir, file)} for me to try. Once it runs, open it in the preview where I can watch - the terminal or the browser, whichever suits what it is - and check it starts. Then tell me how to open or run it, and what to test: what was built from the ***plain, and for each the steps to check it works and what I should see.`,
   );
   return true;
 }

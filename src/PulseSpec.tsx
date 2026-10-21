@@ -59,9 +59,9 @@ export function unchangedSpec(job: Job): boolean {
  */
 export function turriSays(text: string): string {
   return text
-    .replace(/\bthe spec changed inside what it regenerates\b/gi, "the spec was edited while it ran")
-    .replace(/\b(once|whenever|until|when) the spec changes\b/gi, "$1 the spec is edited")
-    .replace(/\ba spec change does not start it\b/gi, "editing the spec does not start it")
+    .replace(/\bthe spec changed inside what it regenerates\b/gi, "the ***plain was edited while it ran")
+    .replace(/\b(once|whenever|until|when) the spec changes\b/gi, "$1 the ***plain is edited")
+    .replace(/\ba spec change does not start it\b/gi, "editing the ***plain does not start it")
     .replace(/\s+(for )?(a |the )?spec change\b/gi, "")
     .replace(/\bspec change\s*/gi, "")
     .replace(/\s{2,}/g, " ")
@@ -88,7 +88,7 @@ export function hasSpecPart(job: Job): boolean {
 export function PulseSpec({ job, onShowInSpec }: { job: Job; onShowInSpec: (file: string, lines: number[]) => void }) {
   const files = job.diff?.trim() ? filesOf(job.diff, job.diffWhere) : [];
   const building = buildingOf(job);
-  if (files.length === 0 && building === null) return <p className="muted pad">this pulse works on no part of the spec it says: read its conversation.</p>;
+  if (files.length === 0 && building === null) return <p className="muted pad">this pulse works on no part of the ***plain it says: read its conversation.</p>;
   return (
     <div className="pulse-spec">
       {building && (
@@ -121,7 +121,7 @@ export function PulseSpec({ job, onShowInSpec }: { job: Job; onShowInSpec: (file
               </span>
               {lines.length > 0 && (
                 <button className="link" onClick={() => onShowInSpec(file.file, lines)}>
-                  show in the spec
+                  show in the ***plain
                 </button>
               )}
             </div>

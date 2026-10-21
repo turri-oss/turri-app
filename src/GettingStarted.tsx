@@ -70,7 +70,7 @@ export function GettingStarted({
             <p className="muted small">{provider!.detail}</p>
           ) : (
             <>
-              <p className="muted small">sign in to a model provider - a subscription such as Claude Pro or ChatGPT Plus, or an API key. turri sends it your specs and code as it works.</p>
+              <p className="muted small">sign in to a model provider - a subscription such as Claude Pro or ChatGPT Plus, or an API key. turri sends it your ***plain and code as it works.</p>
               <button className="button small" onClick={onSignIn}>
                 <Icon name="key" size={13} /> sign in to your models…
               </button>
@@ -82,7 +82,7 @@ export function GettingStarted({
         <span className="step-mark">3</span>
         <div>
           <strong>start your first project</strong>
-          <p className="muted small">name its folder and choose its models. then tell turri what you want to build: it writes the spec with you in the chat, builds the code from it, and you try it in the preview.</p>
+          <p className="muted small">name its folder and choose its models. then tell turri what you want to build: it writes the ***plain with you in the chat, builds the code from it, and you try it in the preview.</p>
           {onNew && (
             <button className="button small primary" onClick={onNew}>
               <Icon name="plus" size={13} /> start a new project…

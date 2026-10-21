@@ -472,7 +472,7 @@ export function App() {
                 focus={focusPulse}
                 onShowInSpec={(rel, lines) => {
                   const shown = project.specs.find((entry) => entry.rel === rel);
-                  if (shown === undefined) return say(`${rel} is not one of the project's specs now.`, "error");
+                  if (shown === undefined) return say(`${rel} is not one of the project's ***plain files now.`, "error");
                   setSelected(shown.file);
                   setView("spec");
                   setReveal({ file: shown.file, lines, at: Date.now() });
@@ -482,8 +482,8 @@ export function App() {
               <FileView key={file} root={project.dir} file={file} onDirty={setDirty} saveRef={saveRef} say={say} />
             ) : spec === null ? (
               project.specs.length === 0 && (
-                <Empty icon="doc" title="no spec yet">
-                  tell turri what you want to build. it writes the first spec with you, then builds the code from it.
+                <Empty icon="doc" title="no ***plain yet">
+                  tell turri what you want to build. it writes the first ***plain with you, then builds the code from it.
                 </Empty>
               )
             ) : (

@@ -6,10 +6,10 @@ What turri desktop sends, and where - and what stays on your machine. The window
 
 ## To the model providers you choose
 
-turri is an agent: to write your spec with you and build its code, it sends what it works on to the models your project's `config.turri.yaml` names - with your subscription or API key, under that provider's terms:
+turri is an agent: to write your \*\*\*plain with you and build its code, it sends what it works on to the models your project's `config.turri.yaml` names - with your subscription or API key, under that provider's terms:
 
 - what you say in the chat, and the conversation so far;
-- your specs, and the files of the project turri and its agents read - code, tests, templates, config;
+- your \*\*\*plain files, and the files of the project turri and its agents read - code, tests, templates, config;
 - what commands and test runs print, and what the preview's terminal shows when turri reads it;
 - the preview's pages when turri tries them - their text, controls and console, and screenshots of them.
 

@@ -624,7 +624,7 @@ function buildMenu() {
         { type: "separator" },
         { label: "Sign In to Model Providers…", click: menuAction("sign-in") },
         { type: "separator" },
-        { label: "Save Spec", accelerator: "CmdOrCtrl+S", click: menuAction("save"), enabled: ready },
+        { label: "Save ***plain", accelerator: "CmdOrCtrl+S", click: menuAction("save"), enabled: ready },
         { type: "separator" },
         { label: MAC ? "Reveal Project in Finder" : "Show Project in File Manager", click: menuAction("reveal"), enabled: ready },
         { type: "separator" },
@@ -669,7 +669,7 @@ function buildMenu() {
     { role: "windowMenu" },
     // At the right, before Help: what turri does with the spec in front.
     {
-      label: "Spec",
+      label: "***plain",
       submenu: [
         { label: "Regenerate…", accelerator: "CmdOrCtrl+R", click: menuAction("regenerate-how"), enabled: ready },
         { label: "Regenerate What Changed", accelerator: "CmdOrCtrl+Shift+R", click: menuAction("regenerate"), enabled: ready },

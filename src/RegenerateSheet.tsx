@@ -63,7 +63,7 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
     {
       id: "changed",
       title: "what changed",
-      detail: spec.drifted === false ? "the code is built from the spec as it is now: there is nothing to bring up to it." : "the code brought up to the spec as it is now - only what changed is built.",
+      detail: spec.drifted === false ? "the code is built from the ***plain as it is now: there is nothing to bring up to it." : "the code brought up to the ***plain as it is now - only what changed is built.",
     },
     { id: "again", title: "chosen functional specs again", detail: "built ones, built again though they did not change - the code for them rewritten from the spec." },
     { id: "scratch", title: `all of ${spec.module} from scratch`, detail: "its code and conformance tests deleted - committed first, so its history keeps them - and every functional spec built again." },

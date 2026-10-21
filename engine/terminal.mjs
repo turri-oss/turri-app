@@ -15,7 +15,7 @@ const KEYS = ["enter", "tab", "escape", "backspace", "up", "down", "left", "righ
 
 const GUIDELINES = [
   "The terminal_* tools drive the terminal in the person's preview view - a shell in the project's folder - and the person watches what you do there.",
-  "Use them to try what you built as the person would: run a CLI with the arguments the spec gives it, answer its prompts, read what it prints. For your own work - building, installing, tests - use bash as usual.",
+  "Use them to try what you built as the person would: run a CLI with the arguments the ***plain gives it, answer its prompts, read what it prints. For your own work - building, installing, tests - use bash as usual.",
   "terminal_run returns once the command is back at the prompt, or once it has gone quiet while still running - waiting for input, or serving: say so, and answer it with terminal_type, or stop it with the key ctrl-c.",
   "A server started there runs on in the person's terminal: to try it in the browser too, run it with terminal_run, then open it with browser_navigate.",
 ];

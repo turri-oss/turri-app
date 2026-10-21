@@ -23,7 +23,7 @@ function About() {
     <div className="about">
       <Jellyfish size={56} swimming={false} />
       <p>
-        turri as an app, for people who do not live in a terminal: the spec is the source of truth, and turri regenerates the code from it.{" "}
+        turri as an app, for people who do not live in a terminal: the ***plain is the source of truth, and turri regenerates the code from it.{" "}
         <a href={REPOSITORY} target="_blank" rel="noreferrer">
           its source
         </a>
@@ -53,12 +53,12 @@ function Privacy() {
       </p>
       <h3>to the model providers you choose</h3>
       <p>
-        turri is an agent: to write your spec with you and build its code, it sends what it works on to the models your project's <code>config.turri.yaml</code> names - with your
+        turri is an agent: to write your ***plain with you and build its code, it sends what it works on to the models your project's <code>config.turri.yaml</code> names - with your
         subscription or API key, under that provider's terms. that is:
       </p>
       <ul>
         <li>what you say in the chat, and the conversation so far;</li>
-        <li>your specs, and the files of the project turri and its agents read - code, tests, templates, config;</li>
+        <li>your ***plain, and the files of the project turri and its agents read - code, tests, templates, config;</li>
         <li>what commands and test runs print, and what the preview's terminal shows when turri reads it;</li>
         <li>the preview's pages when turri tries them - their text, controls and console, and screenshots of them.</li>
       </ul>

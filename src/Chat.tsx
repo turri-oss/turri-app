@@ -120,7 +120,7 @@ export function Chat(props: {
         {props.items.every((item) => item.role === "note") && !props.streaming && (
           <div className="chat-empty">
             <Jellyfish size={110} lifecycle />
-            <p>tell turri what you want to build, or what to change. it writes the spec with you, then regenerates the code from it.</p>
+            <p>tell turri what you want to build, or what to change. it writes the ***plain with you, then regenerates the code from it.</p>
             {props.fresh ? (
               <>
                 <button
@@ -132,7 +132,7 @@ export function Chat(props: {
                 >
                   i want to build…
                 </button>
-                <button className="hint" onClick={() => props.onSend("Help me work out what to build: ask me what you need to know, then write the first spec.")}>
+                <button className="hint" onClick={() => props.onSend("Help me work out what to build: ask me what you need to know, then write the first ***plain.")}>
                   help me work out what to build
                 </button>
               </>

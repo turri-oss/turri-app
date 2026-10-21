@@ -11,7 +11,7 @@ electron/terminal.ts the preview's terminal - a shell on a pty - and what turri'
 electron/preload.ts  what the window may ask of the app (window.turri)
 electron/settings.ts the app's settings beyond its look: settings.json in its userData
 scripts/notices.mjs  the third-party notices About lists, written to dist-electron/ as the app is built
-engine/engine.mjs    a Node process per open project that imports turri's src/: the chat, the spec, the work
+engine/engine.mjs    a Node process per open project that imports turri's src/: the chat, the ***plain, the work
 engine/chat.mjs      pi's agent session with turri's extension; its dialogs and notices become window events
 engine/browser.mjs   the browser tools, a pi extension of the app's own beside turri's
 engine/terminal.mjs  the terminal tools, another
@@ -69,7 +69,7 @@ Installed apps update themselves (`electron/updates.ts`, electron-updater): they
 
 ## Checking a change
 
-`npm run typecheck`, then `npm test`: it builds the app and runs its tests (`tests/`) - the real window, driven by Playwright's Electron support. Each test launches the app from the build on a copy of a fixture project (`tests/fixture/hello`), with its userData (`--user-data-dir`) and pi's folder (`PI_CODING_AGENT_DIR`) in a scratch folder of its own and a dummy `ANTHROPIC_API_KEY`, so it touches neither the person's recents nor their credentials - and calls no model: the welcome screen opening a recent project, the spec editor (its two layers measured alike, a save, a change on disk) and slash commands that only print. `tests/app.ts` is the launch; `npx playwright test -g <name>` runs one, and a failure leaves a trace in `test-results/` (`npx playwright show-trace <it>`). A new test of the window goes there too, as long as it calls no model. `.github/workflows/test.yml` runs them on macOS and Linux - under a virtual display there - for each push to main and each pull request, and keeps a failure's traces as the run's artifact.
+`npm run typecheck`, then `npm test`: it builds the app and runs its tests (`tests/`) - the real window, driven by Playwright's Electron support. Each test launches the app from the build on a copy of a fixture project (`tests/fixture/hello`), with its userData (`--user-data-dir`) and pi's folder (`PI_CODING_AGENT_DIR`) in a scratch folder of its own and a dummy `ANTHROPIC_API_KEY`, so it touches neither the person's recents nor their credentials - and calls no model: the welcome screen opening a recent project, the \*\*\*plain editor (its two layers measured alike, a save, a change on disk) and slash commands that only print. `tests/app.ts` is the launch; `npx playwright test -g <name>` runs one, and a failure leaves a trace in `test-results/` (`npx playwright show-trace <it>`). A new test of the window goes there too, as long as it calls no model. `.github/workflows/test.yml` runs them on macOS and Linux - under a virtual display there - for each push to main and each pull request, and keeps a failure's traces as the run's artifact.
 
 What a test does not reach, look at in the real window. `electron/main.ts` has hooks for that - `TURRI_APP_OPEN=<project dir>` opens a project at start, `TURRI_APP_VIEW=spec|work` switches to a view, and `TURRI_APP_SCREENSHOT=<file.png>` captures the window after about 2.5s and quits:
 
@@ -83,4 +83,4 @@ What differs between macOS and Linux is said in one place on each side: `MAC` in
 
 Signing in writes pi's `auth.json` - the person's own, `~/.pi/agent/auth.json`, which the turri CLI reads too. To try the sign-in sheet, start the app with `PI_CODING_AGENT_DIR=<a scratch folder>`: pi then keeps its credentials, settings and device id there, every engine inherits it, and a fake API key can be saved and signed out of without touching the real file. A subscription's sign-in opens the provider's page in the browser; nothing is stored until it is completed there.
 
-Regenerate, Preview plan and every chat message call the project's models and spend money; check with what calls none - opening a project, the spec, slash commands that only print - where you can.
+Regenerate, Preview plan and every chat message call the project's models and spend money; check with what calls none - opening a project, the \*\*\*plain, slash commands that only print - where you can.

@@ -8,7 +8,7 @@
 
 **turri** builds regenerative software: what lasts is the system's intent, and the code is derived from it - cheap to throw away and build again. You tell **turri** what the system should do; **turri** writes that down as durable intent, with the tests that say when it is met, and builds the code from it. From then on the durable intent is the source of truth: as it changes, the code is regenerated from it rather than patched in place, and never left to drift from it.
 
-**turri desktop** is turri as a desktop app for macOS and Linux. It runs turri's own conversation and work loop - the same chat, tools, slash commands, skills and pulses as `turri` on the command line - and shows them in native UI: the spec beside the chat, every pulse live, and the app being built, tried in a browser or a terminal of its own. turri itself, the command line, is at [turri-oss/turri](https://github.com/turri-oss/turri).
+**turri desktop** is turri as a desktop app for macOS and Linux. It runs turri's own conversation and work loop - the same chat, tools, slash commands, skills and pulses as `turri` on the command line - and shows them in native UI: the \*\*\*plain beside the chat, every pulse live, and the app being built, tried in a browser or a terminal of its own. turri itself, the command line, is at [turri-oss/turri](https://github.com/turri-oss/turri).
 
 <p align="center"><img src="docs/images/turri-desktop.png" alt="turri desktop with the guestbook project open: the project's files and settings on the left, backend.plain in the middle with each functional spec's state, and the chat with turri on the right"></p>
 
@@ -64,8 +64,8 @@ Then tell turri what to build:
 
 ## A tour
 
-- **turri**, on the right (⌘J) - the conversation. It writes the spec with you and regenerates the code from it; tool calls show as what they do, pulses as one line each, and turri's questions are docked in the chat as buttons. Type `/` for its commands.
-- **files**, on the left - the whole project: each spec with how much of it is built, everything beside it, and the project's settings.
+- **turri**, on the right (⌘J) - the conversation. It writes the \*\*\*plain with you and regenerates the code from it; tool calls show as what they do, pulses as one line each, and turri's questions are docked in the chat as buttons. Type `/` for its commands.
+- **files**, on the left - the whole project: each \*\*\*plain with how much of it is built, everything beside it, and the project's settings.
 - **intent** (⌘1) - the `.plain` file, coloured by turri's \*\*\*plain grammar, with each functional spec's state beside it: pink when its code is built, cyan when its conformance tests pass too. Click a mark to regenerate that functional spec or test it; **regenerate** (⌘R) asks how much to rebuild.
 - **work** (⌘2) - every pulse live: its stage, what its agent is doing, what it cost, and the \*\*\*plain it works on; earlier sessions' pulses from turri's ledger below.
 - **preview** (⌘3) - the app you are building, in a browser pane or a terminal in the project's folder. turri tries it there too - opening pages, clicking, running commands - and the window shows you as it does. **release** puts what is built in `dist/` and starts it.
@@ -84,7 +84,7 @@ Every detail: [the window](docs/window.md).
 - **A signed Mac app** - the macOS build is not signed with a Developer ID or notarised, so macOS asks before it first opens, and it cannot update itself there. Nor is there an Intel Mac or arm64 Linux build yet.
 - **Resuming a conversation** - each project opened starts a new one.
 - **turri's terminal panels** - the side panel, `/lineage`'s picker - have no window form yet; the work view takes the side panel's place.
-- **Settings as a form** (but for debug's switch); stacks, spec conflicts and start-overs as dialogs.
+- **Settings as a form** (but for debug's switch); stacks, \*\*\*plain conflicts and start-overs as dialogs.
 - **Windows** - the app runs on macOS and Linux.
 
 ## Documentation

@@ -18,7 +18,7 @@ export function PlanSheet({ plan, onClose, onRegenerate }: { plan: Plan; onClose
       <div className="sheet" onClick={(event) => event.stopPropagation()}>
         <h2>the plan for {plan.spec.module}</h2>
         {work.length === 0 ? (
-          <p className="muted">nothing to regenerate: every codebase is built from the spec as it is.</p>
+          <p className="muted">nothing to regenerate: every codebase is built from the ***plain as it is.</p>
         ) : (
           work.map((status) => (
             <div key={status.module} className="module-plan">
