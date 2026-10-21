@@ -329,8 +329,43 @@ markdown.renderer.rules.link_open = (tokens, index, options, env, self) => {
   return linkOpen(tokens, index, options, env, self);
 };
 
+type Token = { text: string; role: string | null };
+
+// A ```plain block is coloured as the ***plain is, by turri's grammar: the engine's, asked for each block once, so a
+// block shows plain until its colours are back.
+const plainColours = new Map<string, Token[][]>();
+markdown.set({
+  highlight: (code, lang) => {
+    const lines = lang === "plain" ? plainColours.get(code.replace(/\n$/, "")) : undefined;
+    if (lines === undefined) return "";
+    const escape = markdown.utils.escapeHtml;
+    const html = lines.map((tokens) => tokens.map((token) => (token.role ? `<span class="plain-${token.role}">${escape(token.text)}</span>` : escape(token.text))).join("")).join("\n");
+    return `<pre class="plain-code"><code>${html}</code></pre>`;
+  },
+});
+
 export function Prose({ text }: { text: string }) {
-  const html = useMemo(() => markdown.render(text), [text]);
+  const [coloured, setColoured] = useState(0);
+  const html = useMemo(() => markdown.render(text), [text, coloured]);
+  useEffect(() => {
+    const blocks = markdown
+      .parse(text, {})
+      .filter((token) => token.type === "fence" && token.info.trim() === "plain")
+      .map((token) => token.content.replace(/\n$/, ""))
+      .filter((code) => !plainColours.has(code));
+    if (blocks.length === 0) return;
+    let alive = true;
+    // While turri is still writing a block it changes with each word: asked once it settles.
+    const timer = setTimeout(() => {
+      void Promise.all(blocks.map((code) => window.turri.call<Token[][]>("highlightSpec", { text: code }).then((lines) => plainColours.set(code, lines)))).then(
+        () => alive && setColoured((count) => count + 1),
+      );
+    }, 80);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [text]);
   return <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 

@@ -434,11 +434,6 @@ export function App() {
               ))}
             </div>
             <div className="toolbar-actions">
-              {!chatOpen && (
-                <button className={`button ${questions.length > 0 ? "asking" : ""}`} onClick={() => setChatOpen(true)} title={questions.length > 0 ? "turri is asking you something" : `talk to turri (${keys("J")})`}>
-                  <Icon name="spark" /> turri{questions.length > 0 && " · asks"}
-                </button>
-              )}
               <button className="button" disabled={!releasable} onClick={() => void release()} title={releasable ? "release what is built to try, and hear from turri what to test" : "nothing is built yet: regenerate first"}>
                 <Icon name="release" /> release
               </button>
@@ -457,6 +452,11 @@ export function App() {
               >
                 {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} regenerate…
               </button>
+              {!chatOpen && (
+                <button className={`button open-chat ${questions.length > 0 ? "asking" : ""}`} onClick={() => setChatOpen(true)} title={questions.length > 0 ? "turri is asking you something" : `talk to turri (${keys("J")})`}>
+                  <Jellyfish size={16} swimming={false} /> turri{questions.length > 0 && " · asks"}
+                </button>
+              )}
             </div>
           </header>
 

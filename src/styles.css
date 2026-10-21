@@ -1725,6 +1725,10 @@ code {
   padding: 0 4px;
   border-radius: var(--radius);
 }
+.prose pre.plain-code code {
+  background: none;
+  padding: 0;
+}
 .thinking-toggle {
   border: 0;
   background: none;
