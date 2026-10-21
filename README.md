@@ -1,6 +1,4 @@
-<p align="center"><img src="public/jellyfish/logo-mark.svg" width="96" alt="turri's mark: a pixel jellyfish"></p>
-
-<h1 align="center">turri desktop</h1>
+<p align="center"><img src="docs/images/turri-desktop-banner.gif" alt="turri desktop, beside its mark - the first coding agent with the power of regenerative software - and a pixel jellyfish regenerating, from a polyp on the sea floor"></p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue" alt="MIT licence"></a>
