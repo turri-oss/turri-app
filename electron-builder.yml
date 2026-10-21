@@ -19,24 +19,21 @@ directories:
   buildResources: build
 
 # What the app is: the window (dist), the main process and preload (dist-electron), the engine, and the icon the window
-# and the Dock are given. node_modules comes on its own - the dependencies only, as the window is bundled by Vite.
+# and the Dock are given. node_modules is the dependencies only - the window is bundled by Vite - copied as npm
+# installed them by scripts/after-pack.cjs, as electron-builder's own collector leaves some out.
 files:
   - package.json
   - dist/**
   - dist-electron/**
   - engine/**
   - build/icon.png
-  # node-pty's sources, the Windows prebuilds and winpty: none runs here.
-  - "!node_modules/node-pty/{deps,src,third_party,scripts,binding.gyp}"
-  - "!node_modules/node-pty/prebuilds/win32-*"
+  - "!node_modules/**"
+afterPack: scripts/after-pack.cjs
 
-# The engine is a Node process of its own, forked from engine/engine.mjs, and turri and pi read and start files of
-# their own beside their code: both are real files, not in the archive. So is node-pty, whose shell helper is started
-# by path.
-asar: true
-asarUnpack:
-  - engine/**
-  - node_modules/**
+# No archive: the engine is a Node process of its own, forked from engine/engine.mjs, turri and pi read and start files
+# of their own beside their code, and node-pty starts its shell helper by path - all of it real files, in
+# Resources/app.
+asar: false
 
 # node-pty ships built for macOS and is built for Linux by npm install, against Node-API: it runs on Electron as it is,
 # so nothing is rebuilt.

@@ -16,8 +16,6 @@ import { createUpdates, type UpdateState } from "./updates.ts";
  */
 
 const ROOT = join(__dirname, "..");
-/** Where the engine and node_modules are as files: beside app.asar in an app as installed, ROOT itself from source. */
-const UNPACKED = ROOT.replace(/\.asar$/, ".asar.unpacked");
 /** Run from source, not as installed: only then are the development hooks heard - TURRI_DEV, Vite, TURRI_APP_*. */
 const DEV = !app.isPackaged;
 /** macOS, or Linux: the window's chrome, the menu, the Dock and the file manager differ between them. */
@@ -263,7 +261,7 @@ function createWorkspace(): Workspace {
     // Electron's own Node runs it: turri comes compiled, from the @turri-dev/cli package, so no other Node is needed.
     // As installed it is always the package's turri: a TURRI_DEV in the person's shell is left out.
     const { TURRI_DEV, ...env } = process.env;
-    const child = fork(join(UNPACKED, "engine", "engine.mjs"), [], {
+    const child = fork(join(ROOT, "engine", "engine.mjs"), [], {
       execPath: process.execPath,
       execArgv: [],
       env: { ...(DEV ? process.env : env), ELECTRON_RUN_AS_NODE: "1" },

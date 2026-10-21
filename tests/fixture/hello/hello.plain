@@ -1,0 +1,15 @@
+---
+description: A greeting, for the app's tests to open.
+---
+
+***definitions***
+
+- :Greeter: is a command-line program that greets the person running it.
+
+***implementation reqs***
+
+- :Implementation: is written in Python 3.12, with no dependencies.
+
+***functional specs***
+
+- :Greeter: prints "hello, world" and exits with 0.
