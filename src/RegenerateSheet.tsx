@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Spec } from "./types.ts";
-import { Icon } from "./ui.tsx";
+import { Icon, withPlain } from "./ui.tsx";
 
 /** How to regenerate a module: each one of /regenerate's ways, said as turri takes it. */
 export type Regeneration =
@@ -44,7 +44,7 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
         {
           id: "changed",
           title: `all of ${spec.module}`,
-          detail: `nothing of it is built yet: its ${spec.functionalSpecs.length === 1 ? "functional spec" : `${spec.functionalSpecs.length} functional specs`} regenerated from the spec, in pulses - each built on the ones before it.`,
+          detail: `nothing of it is built yet: its ${spec.functionalSpecs.length === 1 ? "functional spec" : `${spec.functionalSpecs.length} functional specs`} regenerated from the ***plain, in pulses - each built on the ones before it.`,
         },
         ...(chained
           ? [{ id: "chain" as const, title: `${spec.module}, and its whole chain from scratch`, detail: `the modules it requires - ${spec.requires.join(", ")} - deleted and built again from the bottom first, then ${spec.module} on them.` }]
@@ -89,7 +89,7 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
           {ways.map((way) => (
             <button key={way.id} className={`option ${how === way.id ? "on" : ""}`} onClick={() => setHow(way.id)} aria-pressed={how === way.id}>
               <strong>{way.title}</strong>
-              <span className="option-detail">{way.detail}</span>
+              <span className="option-detail">{withPlain(way.detail)}</span>
             </button>
           ))}
         </div>

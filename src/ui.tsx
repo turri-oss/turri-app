@@ -127,6 +127,22 @@ export function PlainMark({ size = 16 }: { size?: number }) {
   return <img className="plain-mark" src="./plain/plain-mark.svg" width={size} height={Math.round((size * 243.9) / 439.2)} alt="" draggable={false} />;
 }
 
+/** ***plain as the window writes its name: its mark, then plain - copied as ***plain. */
+export function PlainName() {
+  return (
+    <span className="plain-name">
+      <img className="plain-mark" src="./plain/plain-mark.svg" alt="***" draggable={false} />
+      plain
+    </span>
+  );
+}
+
+/** Words with ***plain in them, each ***plain written as its name is: for what a string brings to the window. */
+export function withPlain(text: string): React.ReactNode {
+  const parts = text.split("***plain");
+  return parts.length === 1 ? text : parts.flatMap((part, at) => (at === 0 ? [part] : [<PlainName key={at} />, part]));
+}
+
 /** Working: four pixels chasing each other round a square. */
 export function Spinner() {
   return (
@@ -143,7 +159,7 @@ export function Empty({ icon, title, children }: { icon: string; title: string; 
   return (
     <div className="empty">
       <Icon name={icon} size={34} />
-      <h3>{title}</h3>
+      <h3>{withPlain(title)}</h3>
       {children && <p>{children}</p>}
     </div>
   );

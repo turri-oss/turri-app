@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ModuleStatus, Spec } from "./types.ts";
-import { Icon } from "./ui.tsx";
+import { Icon, PlainName, withPlain } from "./ui.tsx";
 import { turriSays } from "./PulseSpec.tsx";
 
 export interface Plan {
@@ -18,7 +18,7 @@ export function PlanSheet({ plan, onClose, onRegenerate }: { plan: Plan; onClose
       <div className="sheet" onClick={(event) => event.stopPropagation()}>
         <h2>the plan for {plan.spec.module}</h2>
         {work.length === 0 ? (
-          <p className="muted">nothing to regenerate: every codebase is built from the ***plain as it is.</p>
+          <p className="muted">nothing to regenerate: every codebase is built from the <PlainName /> as it is.</p>
         ) : (
           work.map((status) => (
             <div key={status.module} className="module-plan">
@@ -36,7 +36,7 @@ export function PlanSheet({ plan, onClose, onRegenerate }: { plan: Plan; onClose
               </ol>
               {status.planNotes?.map((note, index) => (
                 <p key={index} className="muted small">
-                  {turriSays(note)}
+                  {withPlain(turriSays(note))}
                 </p>
               ))}
             </div>

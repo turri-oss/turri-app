@@ -3361,3 +3361,13 @@ a.button {
   flex: none;
   vertical-align: middle;
 }
+/* ***plain's name, wherever the window writes it: its mark, the height of the text's lowercase, then plain - one word. */
+.plain-name {
+  white-space: nowrap;
+}
+.plain-name .plain-mark {
+  height: 0.62em;
+  width: auto;
+  margin-right: 0.08em;
+  vertical-align: baseline;
+}

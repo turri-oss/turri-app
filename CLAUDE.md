@@ -64,7 +64,7 @@ Regenerate, Preview plan and every chat message call the project's models and sp
 
 ## Conventions
 
-- The name is **turri**, lowercase, even at the start of a sentence; ***plain is written `***plain`.
+- The name is **turri**, lowercase, even at the start of a sentence; ***plain is written `***plain`. The window draws it as its name: ***plain's mark, then plain - `<PlainName />` in its own words, `withPlain(text)` for a string it shows, and the chat's Markdown does it in turri's words (never in code). What holds only text keeps `***plain`: a native menu, a tooltip, a placeholder, an aria-label.
 - **Never "spec"** in what the person reads - the window, its menus, the docs, `APP_SURFACE`: it is ***plain ("no ***plain yet", the ***plain menu, show in the ***plain), or ***plain's own words for its parts - its description, definitions, intent. A functional spec keeps its name, as ***plain calls it. Code keeps its names (`SpecView`, `view: "spec"`). In Markdown, write it `\*\*\*plain` outside code.
 - **The interface's own words are lowercase** - turri's brand: buttons, labels, headings, tooltips, placeholders, notices, sentences and all, and no CSS that shows them in capitals. What it shows as it is keeps its case: the ***plain, code, file names and paths, turri's messages, acronyms (API), other products' names (Finder, Mac) and keys (⌘R).
 - Prose in docs, comments and user-facing strings uses British spelling and a spaced hyphen ` - `, not an em dash.

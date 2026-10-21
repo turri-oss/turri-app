@@ -18,7 +18,7 @@ import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
 import { FileTree } from "./FileTree.tsx";
 import { FileView } from "./FileView.tsx";
 import { PreviewView, savedPane, savePane } from "./PreviewView.tsx";
-import { Empty, Icon, Jellyfish, Spinner, TurriVersionLine } from "./ui.tsx";
+import { Empty, Icon, Jellyfish, PlainName, Spinner, TurriVersionLine, withPlain } from "./ui.tsx";
 import { Chat, type ChatItem, type ChatStats, type Question, type SkillProgress } from "./Chat.tsx";
 import { keys } from "./platform.ts";
 
@@ -477,7 +477,7 @@ export function App() {
             ) : spec === null ? (
               project.specs.length === 0 && (
                 <Empty icon="doc" title="no ***plain yet">
-                  tell turri what you want to build. it writes the first ***plain with you, then builds the code from it.
+                  tell turri what you want to build. it writes the first <PlainName /> with you, then builds the code from it.
                 </Empty>
               )
             ) : (
@@ -581,7 +581,7 @@ export function App() {
         {plan !== null && plan !== "loading" && <PlanSheet plan={plan} onClose={() => setPlan(null)} onRegenerate={() => (setPlan(null), void regenerate())} />}
         {toast && (
           <div className={`toast ${toast.tone}`} onClick={() => setToast(null)}>
-            {toast.tone === "error" && <Icon name="warn" />} {toast.text}
+            {toast.tone === "error" && <Icon name="warn" />} {withPlain(toast.text)}
           </div>
         )}
       </div>

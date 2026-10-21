@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
 import type { Job, Spec } from "./types.ts";
-import { elapsed, Icon, PlainMark, Spinner, useTick } from "./ui.tsx";
+import { elapsed, Icon, PlainMark, PlainName, Spinner, useTick, withPlain } from "./ui.tsx";
 import { stageOf } from "./PulseSpec.tsx";
 import { keys, withMod } from "./platform.ts";
 
@@ -393,7 +393,7 @@ export function SpecView(props: {
           <div className="parse-error">
             <Icon name="warn" />
             <div>
-              <strong>the ***plain does not parse</strong>
+              <strong>the <PlainName /> does not parse</strong>
               <p>{spec.error}</p>
             </div>
           </div>
@@ -555,7 +555,7 @@ function SpecStatePop(props: { frid: string; x: number; y: number; state: State;
         <strong>{title}</strong>
         <span className="muted">functional spec {frid}</span>
       </div>
-      <div className="spec-pop-detail">{detail}</div>
+      <div className="spec-pop-detail">{withPlain(detail)}</div>
       {working && running && (
         <div className="spec-pop-pulse muted">
           {running.title ?? running.summary}

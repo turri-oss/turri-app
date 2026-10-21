@@ -1,6 +1,6 @@
 import MarkdownIt from "markdown-it";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Icon, Jellyfish, Spinner } from "./ui.tsx";
+import { Icon, Jellyfish, PlainName, Spinner } from "./ui.tsx";
 import { keys } from "./platform.ts";
 
 export type ChatItem =
@@ -120,7 +120,7 @@ export function Chat(props: {
         {props.items.every((item) => item.role === "note") && !props.streaming && (
           <div className="chat-empty">
             <Jellyfish size={110} lifecycle />
-            <p>tell turri what you want to build, or what to change. it writes the ***plain with you, then regenerates the code from it.</p>
+            <p>tell turri what you want to build, or what to change. it writes the <PlainName /> with you, then regenerates the code from it.</p>
             {props.fresh ? (
               <>
                 <button
@@ -386,6 +386,10 @@ markdown.set({
     return `<pre class="plain-code"><code>${plain!.split("\n").map((text, index) => colour(text, lines[index])).join("\n")}</code></pre>`;
   },
 });
+
+// ***plain in what turri writes, written as its name is - in its words, never in its code.
+const PLAIN_NAME = '<span class="plain-name"><img class="plain-mark" src="./plain/plain-mark.svg" alt="***" draggable="false">plain</span>';
+markdown.renderer.rules.text = (tokens, index) => escape(tokens[index]!.content).replaceAll("***plain", PLAIN_NAME);
 
 export function Prose({ text }: { text: string }) {
   const [coloured, setColoured] = useState(0);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Job } from "./types.ts";
-import { Icon, PlainMark } from "./ui.tsx";
+import { Icon, PlainMark, PlainName } from "./ui.tsx";
 
 type Token = { text: string; role: string | null };
 type Line = { kind: "context" | "add" | "del" | "gap"; text: string; line?: number };
@@ -88,7 +88,7 @@ export function hasSpecPart(job: Job): boolean {
 export function PulseSpec({ job, onShowInSpec }: { job: Job; onShowInSpec: (file: string, lines: number[]) => void }) {
   const files = job.diff?.trim() ? filesOf(job.diff, job.diffWhere) : [];
   const building = buildingOf(job);
-  if (files.length === 0 && building === null) return <p className="muted pad">this pulse works on no part of the ***plain it says: read its conversation.</p>;
+  if (files.length === 0 && building === null) return <p className="muted pad">this pulse works on no part of the <PlainName /> it says: read its conversation.</p>;
   return (
     <div className="pulse-spec">
       {building && (
@@ -121,7 +121,7 @@ export function PulseSpec({ job, onShowInSpec }: { job: Job; onShowInSpec: (file
               </span>
               {lines.length > 0 && (
                 <button className="link" onClick={() => onShowInSpec(file.file, lines)}>
-                  show in the ***plain
+                  show in the <PlainName />
                 </button>
               )}
             </div>

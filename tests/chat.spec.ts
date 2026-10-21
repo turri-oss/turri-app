@@ -16,7 +16,9 @@ test.describe("the chat", () => {
     const box = window.getByPlaceholder("talk to turri - or / for a command");
     await box.fill("/stdlib");
     await box.press("Enter");
-    await expect(window.locator(".chat-body")).toContainText("The ***plain standard library");
+    // ***plain written as its name is: its mark, then plain.
+    await expect(window.locator(".chat-body .plain-name", { hasText: "plain" }).first()).toBeVisible();
+    await expect(window.locator(".chat-body")).toContainText("The plain standard library");
     await expect(window.locator(".chat-body")).toContainText("stdlib/backend/python-fastapi");
     // Nothing went to the model: no turn started, nothing spent.
     await expect(window.locator(".chat-body .msg.assistant")).toHaveCount(0);
@@ -28,6 +30,17 @@ test.describe("the chat", () => {
     await box.press("Enter");
     await expect(window.locator(".sheet.auth h2")).toHaveText("sign in to your models");
     await expect(window.locator(".chat-body .msg.assistant")).toHaveCount(0);
+  });
+
+  test("writes ***plain as its name is, its mark then plain - but not in code", async ({ launched: { window, app } }) => {
+    // The window's own words: the empty chat's.
+    await expect(window.locator(".chat-empty .plain-name img.plain-mark")).toHaveAttribute("src", "./plain/plain-mark.svg");
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0]!.webContents.send("engine:chat:notify", { level: "info", text: "the \\*\\*\\*plain says so - `***plain` in code stays as it is." }),
+    );
+    const note = window.locator(".chat-body .msg.note", { hasText: "says so" });
+    await expect(note.locator(".plain-name")).toHaveCount(1);
+    await expect(note.locator("code")).toHaveText("***plain");
   });
 
   test("colours a ```plain block by turri's grammar", async ({ launched: { app, window } }) => {

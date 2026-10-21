@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Failure, Job, PastPulse, PastRun, Status, TranscriptEntry } from "./types.ts";
-import { cost, elapsed, Empty, Icon, Spinner, tokens, useTick } from "./ui.tsx";
+import { cost, elapsed, Empty, Icon, PlainName, Spinner, tokens, useTick, withPlain } from "./ui.tsx";
 import { hasSpecPart, PulseSpec, stageOf, turriSays } from "./PulseSpec.tsx";
 import { Prose } from "./Chat.tsx";
 
@@ -113,7 +113,7 @@ export function WorkView({
               <Icon name="layers" />
               <strong>{module.module}</strong>
               {module.stack && <span className="tag">{module.stack}</span>}
-              {module.why && <span className="muted"> - {turriSays(module.why)}</span>}
+              {module.why && <span className="muted"> - {withPlain(turriSays(module.why))}</span>}
             </div>
             {module.planned.length > 0 && (
               <ol className="planned">
@@ -210,13 +210,13 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
           {stageOf(job) && <div className="stage">{stageOf(job)}</div>}
           {job.now && (
             <div className="now">
-              <span className="pulse-dot" /> {turriSays(job.now.label)} <span className="muted">· {elapsed(job.now.since)}</span>
+              <span className="pulse-dot" /> {withPlain(turriSays(job.now.label))} <span className="muted">· {elapsed(job.now.since)}</span>
             </div>
           )}
-          {job.building && <div className="building">building {turriSays(job.building.label)}</div>}
+          {job.building && <div className="building">building {withPlain(turriSays(job.building.label))}</div>}
           <ul className="activity">
             {job.activity.slice(-5).map((line, index) => (
-              <li key={index}>{turriSays(line)}</li>
+              <li key={index}>{withPlain(turriSays(line))}</li>
             ))}
           </ul>
         </div>
@@ -231,7 +231,7 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
             )}
             {gaps > 0 && (
               <button className="link job-report-toggle gaps-toggle" onClick={() => toggle("gaps")} aria-expanded={reading === "gaps"}>
-                <Icon name="chevron" size={12} /> <span className="gaps-count">{gaps}</span> ***plain gap{gaps === 1 ? "" : "s"}
+                <Icon name="chevron" size={12} /> <span className="gaps-count">{gaps}</span> <PlainName /> gap{gaps === 1 ? "" : "s"}
               </button>
             )}
           </div>
@@ -241,7 +241,7 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
               {job.specGaps.map((gap, index) => (
                 <li key={index}>
                   <div>
-                    <strong>the ***plain does not say:</strong> {gap.question}
+                    <strong>the <PlainName /> does not say:</strong> {gap.question}
                   </div>
                   <div className="muted">Meanwhile, the pulse assumed: {gap.assumption}</div>
                 </li>
@@ -260,7 +260,7 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
         <div className="agents">
           {job.agents.map((agent) => (
             <span key={agent.label} className="agent-chip" title={agent.model}>
-              {turriSays(agent.label)} · {agent.turns} turn{agent.turns === 1 ? "" : "s"}
+              {withPlain(turriSays(agent.label))} · {agent.turns} turn{agent.turns === 1 ? "" : "s"}
               {tokens(agent.usage) && ` · ${tokens(agent.usage)}`}
             </span>
           ))}
@@ -429,7 +429,7 @@ function Transcript({ job, onClose, onShowInSpec }: { job: Job; onClose: () => v
         <div className="segmented transcript-tabs" role="tablist">
           {(["spec", "conversation"] as const).map((name) => (
             <button key={name} role="tab" aria-selected={tab === name} className={tab === name ? "on" : ""} onClick={() => setTab(name)}>
-              {name === "spec" ? "***plain" : name}
+              {name === "spec" ? <PlainName /> : name}
             </button>
           ))}
         </div>
@@ -473,7 +473,7 @@ function Entry({ entry }: { entry: TranscriptEntry }) {
   const [expanded, setExpanded] = useState(false);
   switch (entry.kind) {
     case "stage":
-      return <div className="t-stage">{turriSays(entry.text)}</div>;
+      return <div className="t-stage">{withPlain(turriSays(entry.text))}</div>;
     case "spec":
       return <div className="t-spec">{entry.text}</div>;
     case "diff":

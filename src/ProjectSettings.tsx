@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Switch } from "./SettingsSheet.tsx";
-import { Spinner } from "./ui.tsx";
+import { Spinner, withPlain } from "./ui.tsx";
 
 type Value = string | number | boolean | null;
 
@@ -148,7 +148,7 @@ function SettingRow({ setting, onChange }: { setting: Setting; onChange: (value:
         </span>
       </div>
       <p className="muted small">
-        {setting.about}
+        {withPlain(setting.about)}
         {setting.value === null && setting.kind === "boolean" ? ` - unset, ${setting.unset}` : ""}
         {setting.effect ? `; ${setting.effect}.` : ""}
       </p>
