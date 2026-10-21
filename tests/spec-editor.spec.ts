@@ -6,6 +6,13 @@ import { keys } from "./keys.ts";
 /** A functional spec's mark in the gutter, by its number. */
 const mark = (window: Page, frid: number) => window.locator(`.editor-colours .mark[aria-label^="functional spec ${frid},"]`);
 
+/** The caret at the end of the spec, for typing there: no key does it on every system - ⌘End is not macOS's. */
+const atTheEnd = (window: Page) =>
+  window.locator(".editor textarea").evaluate((area: HTMLTextAreaElement) => {
+    area.focus();
+    area.setSelectionRange(area.value.length, area.value.length);
+  });
+
 test.describe("the spec editor", () => {
   test("shows the spec, coloured by turri's grammar, with its functional spec marked", async ({ launched: { window } }) => {
     await expect(window.locator(".editor-pane .pane-header")).toContainText("0 of 1 built");
@@ -18,8 +25,7 @@ test.describe("the spec editor", () => {
     const area = window.locator(".editor textarea");
     await expect(area).toHaveValue(/Greeter/);
     // A line long enough to wrap: both layers must wrap it at the same place.
-    await area.click();
-    await window.keyboard.press(`${keys.mod}+End`);
+    await atTheEnd(window);
     await window.keyboard.type(`\n- :Greeter: ${"says hello again and again, ".repeat(12)}then stops.`);
 
     const layers = await window.evaluate(() => {
@@ -50,8 +56,7 @@ test.describe("the spec editor", () => {
     await expect(area).toHaveValue(/Greeter/);
     await expect(window.locator(".pane-header-right")).toContainText("saved");
 
-    await area.click();
-    await window.keyboard.press(`${keys.mod}+End`);
+    await atTheEnd(window);
     await window.keyboard.type("\n- :Greeter: says goodbye when interrupted.");
     await expect(window.getByRole("button", { name: /^save/ })).toBeVisible();
     await expect(mark(window, 2)).toBeVisible();
