@@ -44,6 +44,20 @@ test.describe("the chat", () => {
     await expect(block).toHaveText("***definitions***\n\n- :Greeter: is a command-line program.");
   });
 
+  test("colours a block with no language that is ***plain, and leaves other code alone", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    await app.evaluate(({ BrowserWindow }) => {
+      const say = (text: string) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:chat:notify", { level: "info", text });
+      say(
+        '```\n---\nimport:\n  - stdlib/backend/python-fastapi\ndescription: A small HTTP server.\n---\n\n***definitions***\n\n- :Server: is the HTTP service this module builds, named `server`.\n\n***functional specs***\n\n- :Server: answers `GET /` with `200` and the JSON body `{"name": "server"}`.\n```',
+      );
+      say("```\nprint('***not plain***, as no line is only a section')\n```");
+    });
+    await expect(window.locator(".chat-body pre.plain-code .plain-concept").first()).toHaveText(":Server:");
+    await expect(window.locator(".chat-body pre.plain-code .plain-section").first()).toHaveText("***definitions***");
+    await expect(window.locator(".chat-body pre.plain-code")).toHaveCount(1);
+  });
+
   test("colours a diff, and the ***plain in a diff of ***plain", async ({ launched: { app, window } }) => {
     await expect(window.locator(".chat-model")).toBeVisible();
     await app.evaluate(({ BrowserWindow }) => {

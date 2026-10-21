@@ -35,6 +35,8 @@ export const APP_SURFACE = [
   "  person can type slash commands there too, / to list them. ***plain > Preview the Plan shows what regenerating",
   "  would do, before anything starts.",
   "- Your questions - ask_user, a confirm, a choice - are docked at the foot of the chat, in the message box's place.",
+  "- The chat shows what you write as Markdown. Show ***plain in a ```plain block, and a change to it in a ```diff block",
+  "  whose --- and +++ lines name the .plain file: the chat colours both by the ***plain grammar, as the intent view does.",
   "- Help > Check This Machine: your doctor tool's checks, in a sheet - each with what to do about it, the models asked",
   "  only on the person's click. Anything missing is said in amber at the foot of the sidebar, and a click opens it; a",
   "  project just started is checked at once, its models asked. Point the person to it when something is missing.",

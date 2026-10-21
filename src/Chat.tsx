@@ -350,9 +350,15 @@ function diffLines(code: string): DiffLine[] {
 /** A diff of ***plain - its files' names say so, or its fence (```diff plain) - is coloured as the ***plain is. */
 const ofPlain = (code: string, attrs: string) => attrs.split(/\s+/).includes("plain") || /^(---|\+\+\+) \S*\.plain\b/m.test(code);
 
-/** The ***plain a block holds, to colour: a ```plain block's text, or a diff of ***plain's lines without their markers. */
+/** A block with no language that is ***plain all the same: it has a section of its own - ***definitions***, say. */
+const looksPlain = (code: string) => /^\*\*\*[a-z][a-z ]*\*\*\*\s*$/m.test(code);
+
+/**
+ * The ***plain a block holds, to colour: a ```plain block's text - or a block with no language that looks it - or a diff
+ * of ***plain's lines without their markers.
+ */
 function plainIn(code: string, lang: string, attrs: string): string | null {
-  if (lang === "plain") return code.replace(/\n$/, "");
+  if (lang === "plain" || (lang === "" && looksPlain(code))) return code.replace(/\n$/, "");
   if (lang === "diff" && ofPlain(code, attrs)) return diffLines(code).map((line) => line.text).join("\n");
   return null;
 }
