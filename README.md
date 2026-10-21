@@ -16,7 +16,31 @@
 
 ## Quick start
 
-There is no download yet - for now the app runs from source, on macOS or Linux. You need [Node](https://nodejs.org/en/download) 22.19 or newer to build it, and git. On Linux, also a C++ toolchain - the preview's terminal (node-pty) is built for Linux as it installs, where macOS has it ready - and bubblewrap, turri's sandbox there:
+### Install it
+
+Download it from the [latest release](https://github.com/turri-oss/turri-app/releases/latest) - turri comes with it, so there is nothing else to install for the app itself. You need git, which turri works with, and on Linux bubblewrap, turri's sandbox there. Once installed, the app updates itself on Linux; on macOS it does not yet.
+
+**macOS** (Apple silicon) - `turri-<version>-mac-arm64.dmg`: open it and drag turri into Applications. The app is not signed with a Developer ID or notarised yet, so the first time you open it macOS says it cannot check it: choose Done, then System Settings > Privacy & Security > Open Anyway beside turri, and open it again. Or, in a terminal, once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/turri.app
+```
+
+**Debian, Ubuntu** (x64) - `turri-<version>-linux-amd64.deb`:
+
+```bash
+sudo apt install bubblewrap git ./turri-*-linux-amd64.deb
+```
+
+**Other Linux** (x64) - `turri-<version>-linux-x86_64.AppImage`: make it executable and run it, with bubblewrap and git installed. AppImages need FUSE 2 (`libfuse2`).
+
+```bash
+chmod +x turri-*-linux-x86_64.AppImage && ./turri-*-linux-x86_64.AppImage
+```
+
+### Or run it from source
+
+On macOS or Linux. You need [Node](https://nodejs.org/en/download) 22.19 or newer to build it, and git. On Linux, also a C++ toolchain - the preview's terminal (node-pty) is built for Linux as it installs, where macOS has it ready - and bubblewrap, turri's sandbox there:
 
 ```bash
 sudo apt install build-essential python3 bubblewrap   # Debian, Ubuntu; dnf install gcc-c++ make python3 bubblewrap on Fedora
@@ -30,9 +54,11 @@ npm start
 
 turri itself comes with it, from npm, and runs on Electron's own Node: nothing else is installed. If npm held back Electron's or esbuild's install scripts, run `npm install-scripts approve electron esbuild` and `npm rebuild`.
 
-To have it as an app - in Applications, the Dock and Finder's Open With - `npm run dist` packages it into `release/`: a `.dmg` and a `.zip` on macOS, an AppImage and a `.deb` on Linux. It is not signed with a Developer ID yet, so macOS asks before opening it the first time: right-click it, then Open.
+`npm run dist` packages it as the release does, into `release/`: a `.dmg` and a `.zip` on macOS, an AppImage and a `.deb` on Linux.
 
-Then, on the welcome screen, **start a new project** - name its folder, choose its models: Anthropic, OpenAI, Google, Amazon Bedrock or any other pi supports - or **open** a folder that has turri's `config.turri.yaml` in it. Models are reached as in turri: the provider's API key exported in your shell (`ANTHROPIC_API_KEY`, ... - the app reads your login shell's environment as it starts, so it has your keys and PATH even opened from Finder or the Dock), a sign-in from the window - File > Sign In to Model Providers…, with a subscription in your browser or an API key - which is what pi has from a `/login` in turri too, or a cloud account - see turri's [models](https://github.com/turri-oss/turri#models).
+### Your first project
+
+On the welcome screen, **start a new project** - name its folder, choose its models: Anthropic, OpenAI, Google, Amazon Bedrock or any other pi supports - or **open** a folder that has turri's `config.turri.yaml` in it. Models are reached as in turri: the provider's API key exported in your shell (`ANTHROPIC_API_KEY`, ... - the app reads your login shell's environment as it starts, so it has your keys and PATH even opened from Finder or the Dock), a sign-in from the window - File > Sign In to Model Providers…, with a subscription in your browser or an API key - which is what pi has from a `/login` in turri too, or a cloud account - see turri's [models](https://github.com/turri-oss/turri#models).
 
 Then tell turri what to build:
 
@@ -55,7 +81,7 @@ Every detail: [the window](docs/window.md).
 
 ## What is not here yet
 
-- **A download** - the app is packaged (`npm run dist`) and a tag builds a release that installed apps update from, but none is published yet, and the macOS build is not signed and notarised - so it cannot update itself there.
+- **A signed Mac app** - the macOS build is not signed with a Developer ID or notarised, so macOS asks before it first opens, and it cannot update itself there. Nor is there an Intel Mac or arm64 Linux build yet.
 - **Resuming a conversation** - each project opened starts a new one.
 - **turri's terminal panels** - the side panel, `/lineage`'s picker - have no window form yet; the work view takes the side panel's place.
 - **Settings as a form** (but for debug's switch); stacks, spec conflicts and start-overs as dialogs.
