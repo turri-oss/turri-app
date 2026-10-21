@@ -634,6 +634,7 @@ function buildMenu() {
         { label: "New Window", accelerator: "CmdOrCtrl+Shift+N", click: () => void createWorkspace() },
         { label: "Switch Project…", accelerator: "CmdOrCtrl+Shift+P", click: menuAction("switch-project") },
         { type: "separator" },
+        { label: "Project Settings…", click: menuAction("project-settings"), enabled: ready },
         { label: "Sign In to Model Providers…", click: menuAction("sign-in") },
         { type: "separator" },
         { label: "Save ***plain", accelerator: "CmdOrCtrl+S", click: menuAction("save"), enabled: ready },

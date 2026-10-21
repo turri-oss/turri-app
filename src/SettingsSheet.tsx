@@ -13,8 +13,8 @@ const THEMES: Array<{ id: AppSettings["theme"]; label: string }> = [
 /** Electron's zoom levels: each about 20% bigger or smaller than the one before. */
 const percent = (zoom: number) => `${Math.round(100 * 1.2 ** zoom)}%`;
 
-/** A setting that is on or off, as the sidebar's debug switch is. */
-function Switch({ on, onChange, label }: { on: boolean; onChange: (on: boolean) => void; label: string }) {
+/** A setting that is on or off: the app's here, and a project's in its settings sheet. */
+export function Switch({ on, onChange, label }: { on: boolean; onChange: (on: boolean) => void; label: string }) {
   return (
     <button className={`setting-switch ${on ? "on" : ""}`} role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)}>
       {on ? "on" : "off"}

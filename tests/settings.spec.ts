@@ -1,5 +1,5 @@
 import type { ElectronApplication, Page } from "@playwright/test";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "./app.ts";
 
@@ -86,13 +86,33 @@ test.describe("the window's reach", () => {
   });
 });
 
+test.describe("a project's settings", () => {
+  test("are behind the sidebar's gear, and changed through /turri-config", async ({ launched: { window: page, project } }) => {
+    await expect(page.locator(".chat-model")).toBeVisible();
+    await page.getByRole("button", { name: "project settings" }).click();
+    const sheet = page.getByRole("dialog", { name: "project settings" });
+    // As config.turri.yaml has them, the models among turri's own choices.
+    await expect(sheet.getByRole("combobox", { name: "harness-model", exact: true })).toHaveValue("anthropic/claude-sonnet-5-5");
+    await expect(sheet.getByRole("combobox", { name: "conformance-tests" })).toHaveValue("false");
+    await expect(sheet.getByRole("combobox", { name: "conformance-tests" }).locator("option")).toHaveText(["unset - all, where a module has test reqs", "all", "chosen", "module", "false"]);
+    const review = sheet.getByRole("switch", { name: "review" });
+    await expect(review).toHaveAttribute("aria-checked", "false");
+    // Sent as the person would type it - a slash command, no model called - and written into the file, comments kept.
+    await review.click();
+    await expect(page.locator(".chat-body")).toContainText("review: true - written to config.turri.yaml, in effect from the next pulse");
+    await expect.poll(() => readFileSync(join(project, "config.turri.yaml"), "utf8")).toMatch(/^review: true$/m);
+    expect(readFileSync(join(project, "config.turri.yaml"), "utf8")).toContain("# The app's tests open this project");
+    await expect(review).toHaveAttribute("aria-checked", "true");
+  });
+});
+
 test.describe("the window's text", () => {
   // A button's label is not among them: a click presses it - or, disabled, is not heard - as in any app.
   test("can all be selected, as in a document - the sidebar, the headers, the chat", async ({ launched: { window: page } }) => {
     await expect(page.locator(".chat-model")).toBeVisible();
     for (const [where, text] of [
-      [page.locator(".sidebar dt", { hasText: "harness-model" }), "harness-model"],
-      [page.locator(".sidebar-section", { hasText: "settings" }), "settings"],
+      [page.locator(".sidebar-section", { hasText: "files" }), "files"],
+      [page.locator(".project-name span"), "hello"],
       [page.locator(".chat-title"), "turri"],
       [page.locator(".chat-model"), "claude-sonnet-5-5"],
       [page.locator(".editor-pane .pane-header").getByText("hello.plain", { exact: true }), "hello.plain"],

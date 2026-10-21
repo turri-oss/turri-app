@@ -9,6 +9,7 @@ import { DoctorSheet, problems, toSeeTo } from "./DoctorSheet.tsx";
 import { AuthSheet } from "./AuthSheet.tsx";
 import { AboutSheet, type AboutTab } from "./AboutSheet.tsx";
 import { SettingsSheet } from "./SettingsSheet.tsx";
+import { ProjectSettingsSheet } from "./ProjectSettings.tsx";
 import { GettingStartedSheet } from "./GettingStarted.tsx";
 import type { Check } from "../electron/preload.ts";
 import { RegenerateSheet, type Regeneration } from "./RegenerateSheet.tsx";
@@ -60,6 +61,7 @@ export function App() {
   const [signIn, setSignIn] = useState<{ provider: string | null } | null>(null);
   // The app's settings (⌘,), About on one of its tabs - privacy, the third-party notices - and Help > Getting Started.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [about, setAbout] = useState<AboutTab | null>(null);
   const [guide, setGuide] = useState(false);
   // Regenerate, chosen how - open with the functional specs it starts on, if any.
@@ -296,6 +298,7 @@ export function App() {
         else if (action === "doctor") (setDoctorModels(false), setDoctorOpen(true));
         else if (action === "sign-in") setSignIn({ provider: null });
         else if (action === "settings") setSettingsOpen(true);
+        else if (action === "project-settings") setProjectSettingsOpen(true);
         else if (action === "about" || action === "privacy" || action === "notices") setAbout(action);
         else if (action === "getting-started") setGuide(true);
       }),
@@ -349,6 +352,17 @@ export function App() {
     />
   );
   const settingsSheet = settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} onPrivacy={() => (setSettingsOpen(false), setAbout("privacy"))} />;
+  const projectSettingsSheet = projectSettingsOpen && project !== null && (
+    <ProjectSettingsSheet
+      settings={project.settings}
+      onClose={() => setProjectSettingsOpen(false)}
+      onOpenFile={() => {
+        setProjectSettingsOpen(false);
+        setSelected(`${project.dir}/config.turri.yaml`);
+        setView("spec");
+      }}
+    />
+  );
   const aboutSheet = about !== null && <AboutSheet tab={about} onClose={() => setAbout(null)} />;
   if (project === null)
     return (
@@ -371,6 +385,10 @@ export function App() {
           <div className="project-name" title={project.dir}>
             <Jellyfish size={18} swimming={running.length > 0} />
             <span>{project.name}</span>
+            {/* Its settings - config.turri.yaml's - in a sheet, changed through /turri-config as the person would type it. */}
+            <button className="icon-button project-settings-button" onClick={() => setProjectSettingsOpen(true)} title="project settings - its models, conformance tests, review, pulses at once, debug" aria-label="project settings">
+              <Icon name="gear" />
+            </button>
           </div>
           <div className="sidebar-section">files</div>
           <FileTree
@@ -383,30 +401,6 @@ export function App() {
               setView("spec");
             }}
           />
-          <div className="sidebar-section">settings</div>
-          <dl className="settings">
-            {Object.entries(project.settings).map(([key, value]) => (
-              <div key={key}>
-                <dt>{key}</dt>
-                {key === "debug" ? (
-                  // What the person would type: /turri-config writes it, and the sidebar shows it once the file changes.
-                  <dd>
-                    <button
-                      className={`setting-switch ${value === true ? "on" : ""}`}
-                      role="switch"
-                      aria-checked={value === true}
-                      title="keep what turri writes for debugging it - every agent's log and session, each pulse's log, the test runs' outputs"
-                      onClick={() => void window.turri.call("sendChat", { text: `/turri-config debug ${value !== true}` })}
-                    >
-                      {value === true ? "on" : "off"}
-                    </button>
-                  </dd>
-                ) : (
-                  <dd title={String(value)}>{value === null ? "-" : String(value)}</dd>
-                )}
-              </div>
-            ))}
-          </dl>
           <div className="sidebar-footer">
             {running.length > 0 ? (
               <button className="link" onClick={() => setView("work")}>
@@ -463,7 +457,7 @@ export function App() {
           <section className="content">
             {view === "preview" ? (
               // A sheet over the window would be under the pane: while one is open, the pane steps aside.
-              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || signIn !== null || creating || choosing !== null || switching !== null || switcher || settingsOpen || about !== null || guide} pane={pane} onPane={setPane} />
+              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || signIn !== null || creating || choosing !== null || switching !== null || switcher || settingsOpen || projectSettingsOpen || about !== null || guide} pane={pane} onPane={setPane} />
             ) : view === "work" ? (
               <WorkView
                 status={status}
@@ -609,6 +603,7 @@ export function App() {
       {doctorSheet}
       {authSheet}
       {settingsSheet}
+      {projectSettingsSheet}
       {aboutSheet}
     </>
   );

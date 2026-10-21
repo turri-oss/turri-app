@@ -135,6 +135,11 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser, t
         .filter((command) => command.name !== "halt")
         .map((command) => ({ name: `/${command.name}`, description: command.description ?? "" }))
         .concat({ name: "/login", description: "sign in to a model provider - with an API key, or a subscription in the browser" }),
+    /** What a command offers as its argument is typed - /turri-config's settings and their values - as pi's editor has it. */
+    completions: async (name, prefix) => {
+      const command = session.extensionRunner.getRegisteredCommands().find((each) => each.invocationName === name);
+      return (await command?.getArgumentCompletions?.(prefix)) ?? [];
+    },
     abort: () => session.abort(),
     onHarnessModel,
     model: () => (session.model ? `${session.model.provider}/${session.model.id}` : null),

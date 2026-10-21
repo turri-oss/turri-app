@@ -65,7 +65,7 @@ Then tell turri what to build:
 ## A tour
 
 - **turri**, on the right (⌘J) - the conversation. It writes the \*\*\*plain with you and regenerates the code from it; tool calls show as what they do, pulses as one line each, and turri's questions are docked in the chat as buttons. Type `/` for its commands.
-- **files**, on the left - the whole project: each \*\*\*plain with how much of it is built, everything beside it, and the project's settings.
+- **files**, on the left - the whole project: each \*\*\*plain with how much of it is built and everything beside it; the gear by the project's name opens its settings, every one of its config.turri.yaml.
 - **intent** (⌘1) - the `.plain` file, coloured by turri's \*\*\*plain grammar, with each functional spec's state beside it: pink when its code is built, cyan when its conformance tests pass too. Click a mark to regenerate that functional spec or test it; **regenerate** (⌘R) asks how much to rebuild.
 - **work** (⌘2) - every pulse live: its stage, what its agent is doing, what it cost, and the \*\*\*plain it works on; earlier sessions' pulses from turri's ledger below.
 - **preview** (⌘3) - the app you are building, in a browser pane or a terminal in the project's folder. turri tries it there too - opening pages, clicking, running commands - and the window shows you as it does. **release** puts what is built in `dist/` and starts it.
@@ -84,7 +84,7 @@ Every detail: [the window](docs/window.md).
 - **A signed Mac app** - the macOS build is not signed with a Developer ID or notarised, so macOS asks before it first opens, and it cannot update itself there. Nor is there an Intel Mac or arm64 Linux build yet.
 - **Resuming a conversation** - each project opened starts a new one.
 - **turri's terminal panels** - the side panel, `/lineage`'s picker - have no window form yet; the work view takes the side panel's place.
-- **Settings as a form** (but for debug's switch); stacks, \*\*\*plain conflicts and start-overs as dialogs.
+- **Stacks, \*\*\*plain conflicts and start-overs** as dialogs.
 - **Windows** - the app runs on macOS and Linux.
 
 ## Documentation

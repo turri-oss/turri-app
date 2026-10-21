@@ -663,6 +663,46 @@ function commands() {
   return chat.commands();
 }
 
+/** Whether the turri running gives every setting of config.turri.yaml (after 0.1.12): else the window has summary's few. */
+const KNOWS_SETTINGS = typeof turri.configSettings === "function";
+
+/** A setting's value as the window shows it and /turri-config takes it back: a list by commas, the rest as written. */
+const typedValue = (value) => (Array.isArray(value) ? value.join(", ") : typeof value === "object" && value !== null ? JSON.stringify(value) : String(value));
+
+/**
+ * Every setting of the project's config.turri.yaml, as /turri-config knows it - what it does and takes, what it is
+ * unset, when a change takes effect, what wins over it - with what the file has now, null for unset. Null from a turri
+ * that does not say them.
+ */
+function projectSettings() {
+  if (!KNOWS_SETTINGS) return null;
+  const text = turri.readConfigText(projectDir);
+  return turri.configSettings().map((setting) => {
+    const value = turri.currentValue(text, setting.key);
+    return {
+      key: setting.key,
+      about: setting.about,
+      kind: setting.kind,
+      unset: setting.unset,
+      effect: turri.EFFECT_TEXT[setting.effect],
+      options: setting.options ?? [],
+      value: value === undefined || value === null ? null : typedValue(value),
+      over: turri.overriddenBy(projectDir, text, setting),
+    };
+  });
+}
+
+/**
+ * What /turri-config offers for a setting's value, as typing it in the chat would - turri's own choices, never the
+ * window's: `harness-model ` the models reachable here, `harness-model <model>:` how hard it can think, `review ` true or
+ * false. Unset is left out: the window offers it in its own way.
+ */
+async function configChoices({ typed }) {
+  if (chat === undefined) return [];
+  const items = await chat.completions("turri-config", typed);
+  return items.map((item) => item.value.slice(item.value.indexOf(" ") + 1)).filter((value) => value !== "unset");
+}
+
 function chatHistory() {
   return { messages: chat.history(), model: chat.model(), stats: chat.stats() };
 }
@@ -734,7 +774,7 @@ function transcript({ id }) {
 
 // ---------- the wire ----------
 
-const methods = { ...auth, newChat, look, open, vendors, initConfig, summary, listFiles, readFile, writeFile, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, earlierPulses, pastPulseDetail, sendChat, abortChat, chatHistory, commands, answer, doctor };
+const methods = { ...auth, newChat, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, readFile, writeFile, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, earlierPulses, pastPulseDetail, sendChat, abortChat, chatHistory, commands, answer, doctor };
 
 // What the window may ask before a project is open: to open one, to start a new one, whether the machine is ready, or to
 // sign in to the model providers.

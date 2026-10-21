@@ -263,6 +263,13 @@ code {
   font-size: 14px;
   padding: 0 8px 10px;
 }
+.project-name .project-settings-button {
+  margin-left: auto;
+  color: var(--fg-3);
+}
+.project-name .project-settings-button:hover {
+  color: var(--fg);
+}
 
 .sidebar-section {
   font-size: 11px;
@@ -379,32 +386,7 @@ code {
   height: 11px;
 }
 
-.settings {
-  margin: 0;
-  padding: 0 8px;
-}
-.settings div {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 2px 0;
-  font-size: 12px;
-}
-.settings dt {
-  color: var(--fg-2);
-  white-space: nowrap;
-}
-.settings dd {
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 120px;
-  direction: rtl;
-  text-align: right;
-}
-
-/* debug: a switch, as the one setting the window changes - through /turri-config, as the person would. */
+/* A setting that is on or off, in the settings sheets. */
 .setting-switch {
   border: 1px solid var(--line);
   border-radius: var(--radius-small);
@@ -3225,6 +3207,72 @@ a.button {
 .preferences p {
   margin: 6px 0 0;
   line-height: 1.5;
+}
+/* A project's settings: each with what it does below it; a model and how hard it thinks, side by side. */
+.project-settings .project-setting {
+  padding-bottom: 8px;
+}
+.project-settings .project-setting p {
+  margin: 0;
+}
+.model-setting {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.model-setting select:first-child {
+  max-width: 300px;
+}
+.project-settings {
+  width: min(720px, calc(100vw - 48px));
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+}
+.project-settings-list {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+.settings-filter {
+  flex: none;
+  margin: 12px 0 8px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+}
+.setting-key {
+  white-space: nowrap;
+}
+.setting-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.text-setting {
+  width: 240px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--card);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.setting-over {
+  margin: 2px 0 0;
+  color: var(--amber);
+}
+.settings-roles {
+  margin: 12px 0 6px;
 }
 
 /* About: what the app is made of, what it sends where, and the third-party notices. */
