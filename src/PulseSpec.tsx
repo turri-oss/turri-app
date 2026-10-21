@@ -121,7 +121,7 @@ export function PulseSpec({ job, onShowInSpec }: { job: Job; onShowInSpec: (file
               </span>
               {lines.length > 0 && (
                 <button className="link" onClick={() => onShowInSpec(file.file, lines)}>
-                  show in the <PlainName />
+                  open in intent
                 </button>
               )}
             </div>

@@ -429,7 +429,7 @@ function Transcript({ job, onClose, onShowInSpec }: { job: Job; onClose: () => v
         <div className="segmented transcript-tabs" role="tablist">
           {(["spec", "conversation"] as const).map((name) => (
             <button key={name} role="tab" aria-selected={tab === name} className={tab === name ? "on" : ""} onClick={() => setTab(name)}>
-              {name === "spec" ? <PlainName /> : name}
+              {name === "spec" ? "intent" : name}
             </button>
           ))}
         </div>
