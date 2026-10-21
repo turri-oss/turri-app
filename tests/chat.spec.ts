@@ -44,6 +44,21 @@ test.describe("the chat", () => {
     await expect(block).toHaveText("***definitions***\n\n- :Greeter: is a command-line program.");
   });
 
+  test("colours a diff, and the ***plain in a diff of ***plain", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    await app.evaluate(({ BrowserWindow }) => {
+      const say = (text: string) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:chat:notify", { level: "info", text });
+      say("```diff\n--- a/hello.plain\n+++ b/hello.plain\n@@ -1,2 +1,2 @@\n ***definitions***\n-- :Greeter: greets.\n+- :Greeter: greets the person.\n```");
+      say("```diff\n--- a/main.py\n+++ b/main.py\n@@ -1 +1 @@\n-print('hi')\n+print('hello, world')\n```");
+    });
+    const [plain, code] = [window.locator(".chat-body pre.diff").first(), window.locator(".chat-body pre.diff").nth(1)];
+    await expect(plain.locator(".line.add .plain-concept")).toHaveText(":Greeter:");
+    await expect(plain.locator(".line.del")).toHaveText("-- :Greeter: greets.");
+    await expect(plain.locator(".line.hunk")).toHaveText("@@ -1,2 +1,2 @@");
+    await expect(code.locator(".line.add")).toHaveText("+print('hello, world')");
+    await expect(code.locator("[class^='plain-']")).toHaveCount(0);
+  });
+
   test("once hidden, is opened again by the turri button, rightmost in the toolbar", async ({ launched: { window } }) => {
     await window.locator(".chat button[title^='hide the chat']").click();
     const open = window.locator(".toolbar-actions > :last-child");

@@ -1725,9 +1725,34 @@ code {
   padding: 0 4px;
   border-radius: var(--radius);
 }
-.prose pre.plain-code code {
+.prose pre.plain-code code,
+.prose pre.diff code {
   background: none;
   padding: 0;
+}
+/* A diff in the chat, as a pulse's is in work: its lines the width of the block, so their colours are. */
+.prose pre.diff {
+  padding: 8px 0;
+  white-space: pre;
+}
+.prose pre.diff .line {
+  display: block;
+  padding: 0 10px;
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+.prose pre.diff .add {
+  background: var(--diff-add);
+}
+.prose pre.diff .del {
+  background: var(--diff-del);
+}
+.prose pre.diff .hunk {
+  color: var(--plain-section);
+}
+.prose pre.diff .file {
+  color: var(--fg-2);
 }
 .thinking-toggle {
   border: 0;

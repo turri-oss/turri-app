@@ -331,16 +331,53 @@ markdown.renderer.rules.link_open = (tokens, index, options, env, self) => {
 
 type Token = { text: string; role: string | null };
 
+type DiffLine = { kind: "file" | "hunk" | "add" | "del" | "same"; marker: string; text: string };
+
+/** A diff's lines: its file and hunk headers whole, the others their marker and what follows it. */
+function diffLines(code: string): DiffLine[] {
+  let inHunk = false;
+  return code
+    .replace(/\n$/, "")
+    .split("\n")
+    .map((line): DiffLine => {
+      if (line.startsWith("@@")) return (inHunk = true), { kind: "hunk", marker: line, text: "" };
+      if (!inHunk && /^(---|\+\+\+|diff |index )/.test(line)) return { kind: "file", marker: line, text: "" };
+      const kind = line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "same";
+      return { kind, marker: /^[+\- \\]/.test(line) ? line.slice(0, 1) : "", text: /^[+\- \\]/.test(line) ? line.slice(1) : line };
+    });
+}
+
+/** A diff of ***plain - its files' names say so, or its fence (```diff plain) - is coloured as the ***plain is. */
+const ofPlain = (code: string, attrs: string) => attrs.split(/\s+/).includes("plain") || /^(---|\+\+\+) \S*\.plain\b/m.test(code);
+
+/** The ***plain a block holds, to colour: a ```plain block's text, or a diff of ***plain's lines without their markers. */
+function plainIn(code: string, lang: string, attrs: string): string | null {
+  if (lang === "plain") return code.replace(/\n$/, "");
+  if (lang === "diff" && ofPlain(code, attrs)) return diffLines(code).map((line) => line.text).join("\n");
+  return null;
+}
+
 // A ```plain block is coloured as the ***plain is, by turri's grammar: the engine's, asked for each block once, so a
-// block shows plain until its colours are back.
+// block shows plain until its colours are back. A ```diff block is coloured as a pulse's diff is in work - and its
+// ***plain by the grammar too, when it is a diff of ***plain.
 const plainColours = new Map<string, Token[][]>();
+const escape = markdown.utils.escapeHtml;
+const colour = (text: string, tokens: Token[] | undefined) =>
+  tokens !== undefined && tokens.map((token) => token.text).join("") === text
+    ? tokens.map((token) => (token.role ? `<span class="plain-${token.role}">${escape(token.text)}</span>` : escape(token.text))).join("")
+    : escape(text);
 markdown.set({
-  highlight: (code, lang) => {
-    const lines = lang === "plain" ? plainColours.get(code.replace(/\n$/, "")) : undefined;
+  highlight: (code, lang, attrs) => {
+    const plain = plainIn(code, lang, attrs);
+    const lines = plain === null ? undefined : plainColours.get(plain);
+    if (lang === "diff") {
+      const html = diffLines(code)
+        .map((line, index) => `<span class="line ${line.kind}">${escape(line.marker)}${colour(line.text, lines?.[index])}${line.marker + line.text === "" ? "\u200b" : ""}</span>`)
+        .join("");
+      return `<pre class="diff"><code>${html}</code></pre>`;
+    }
     if (lines === undefined) return "";
-    const escape = markdown.utils.escapeHtml;
-    const html = lines.map((tokens) => tokens.map((token) => (token.role ? `<span class="plain-${token.role}">${escape(token.text)}</span>` : escape(token.text))).join("")).join("\n");
-    return `<pre class="plain-code"><code>${html}</code></pre>`;
+    return `<pre class="plain-code"><code>${plain!.split("\n").map((text, index) => colour(text, lines[index])).join("\n")}</code></pre>`;
   },
 });
 
@@ -350,9 +387,12 @@ export function Prose({ text }: { text: string }) {
   useEffect(() => {
     const blocks = markdown
       .parse(text, {})
-      .filter((token) => token.type === "fence" && token.info.trim() === "plain")
-      .map((token) => token.content.replace(/\n$/, ""))
-      .filter((code) => !plainColours.has(code));
+      .filter((token) => token.type === "fence")
+      .map((token) => {
+        const [lang = "", ...attrs] = token.info.trim().split(/\s+/);
+        return plainIn(token.content, lang, attrs.join(" "));
+      })
+      .filter((code): code is string => code !== null && !plainColours.has(code));
     if (blocks.length === 0) return;
     let alive = true;
     // While turri is still writing a block it changes with each word: asked once it settles.
