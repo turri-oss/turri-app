@@ -263,9 +263,6 @@ code {
 }
 /* Linux keeps its window manager's title bar: no room for macOS's traffic lights, only enough to set the project's
    name level with the toolbar beside it. */
-:root[data-platform="linux"] .sidebar > .titlebar-space {
-  height: 16px;
-}
 
 .sidebar {
   background: var(--sidebar);
@@ -277,13 +274,27 @@ code {
   overflow-y: auto;
 }
 
+/* The sidebar's title bar, level with the toolbar: the project's name - on macOS right of the traffic lights, over it -
+   and the files straight below. It moves the window, as a title bar does. */
 .project-name {
   display: flex;
   align-items: center;
   gap: 7px;
   font-weight: 600;
   font-size: 14px;
-  padding: 0 8px 10px;
+  flex: none;
+  height: 52px;
+  padding: 0 8px;
+  -webkit-app-region: drag;
+}
+:root[data-platform="darwin"]:not([data-fullscreen="true"]) .project-name {
+  padding-left: 68px;
+}
+.project-name > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .project-settings-button {
   align-self: center;

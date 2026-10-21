@@ -166,6 +166,14 @@ test.describe("the files' sidebar", () => {
     await expect(page.getByRole("dialog", { name: "project settings" })).toBeVisible();
   });
 
+  test("starts at the window's top: the project's name in its title bar, the files straight below", async ({ launched: { window: page } }) => {
+    await expect(page.locator(".tree-row").first()).toBeVisible();
+    const top = (selector: string) => page.locator(selector).first().evaluate((element) => Math.round(element.getBoundingClientRect().top));
+    expect(await top(".project-name")).toBe(0);
+    expect(await top(".sidebar-section")).toBe(52);
+    expect(await top(".tree-row")).toBeLessThan(100);
+  });
+
   test("is shown or hidden on ⌘B, by View's menu", async ({ launched: { app } }) => {
     const item = await app.evaluate(({ Menu }) => {
       const view = Menu.getApplicationMenu()!.items.find((each) => each.label === "View")!;

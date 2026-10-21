@@ -406,7 +406,6 @@ export function App() {
       <div className={`app ${chatOpen ? "with-chat" : ""} ${sidebarOpen ? "" : "no-sidebar"} ${resizing ? "resizing" : ""}`} style={{ "--chat-width": `${clampChat(chatWidth)}px` } as React.CSSProperties} inert={switching !== null}>
         {sidebarOpen && (
           <aside className="sidebar">
-            <div className="titlebar-space" />
             <div className="project-name" title={project.dir}>
               <Jellyfish size={18} swimming={running.length > 0} />
               <span>{project.name}</span>
