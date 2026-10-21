@@ -1,3 +1,5 @@
+import { chmodSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "./app.ts";
 
 test.describe("the welcome screen", () => {
@@ -15,6 +17,25 @@ test.describe("the welcome screen", () => {
     // What the project opened is listed as the most recent.
     await expect(window.locator(".welcome")).toHaveCount(0);
     expect(project).toMatch(/hello$/);
+  });
+
+  test("says why a project cannot be opened, in words - gone, or not readable", async ({ launched: { window: page }, scratch }) => {
+    const welcome = page.locator(".welcome");
+    await expect(welcome).toBeVisible();
+    // A folder that is not there any more.
+    const gone = join(scratch, "gone");
+    await expect.poll(() => page.evaluate((dir) => window.turri.openProject(dir).then(() => "", (error: Error) => error.message), gone)).toContain("is not there any more: it was moved, renamed or deleted.");
+    // One whose permissions keep its owner out - as macOS's privacy protection does, said its own way there.
+    const shut = join(scratch, "shut");
+    mkdirSync(shut);
+    chmodSync(shut, 0o000);
+    try {
+      const said = await page.evaluate((dir) => window.turri.openProject(dir).then(() => "", (error: Error) => error.message), shut);
+      expect(said).toContain("cannot be read: its permissions do not let you.");
+      expect(said).not.toContain("uv_cwd");
+    } finally {
+      chmodSync(shut, 0o755);
+    }
   });
 
   test("says which turri it runs", async ({ launched: { window } }) => {

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, session, shell, type MenuItemConstructorOptions, type Rectangle } from "electron";
 import { fork, spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { createPreview } from "./preview.ts";
 import { readSettings, writeSettings, type Settings } from "./settings.ts";
@@ -400,6 +401,7 @@ function createWorkspace(): Workspace {
 
   async function openProject(named: string) {
     const next = canonical(named);
+    readable(next);
     await loaded;
     // The project open now stops answering as soon as its engine is stopped: the window says it is opening another.
     opening = next;
@@ -439,6 +441,7 @@ function createWorkspace(): Workspace {
 
   /** A new project's config.turri.yaml, written by turri with the models chosen - then the project, opened on them. */
   async function startProject(dir: string, vendor: string, bedrock?: { maker: string; region: string }, models?: { harness: string; coding: string }) {
+    readable(canonical(dir));
     await anEngine();
     const { message } = (await call("initConfig", { dir, vendor, bedrock, models })) as { message: string };
     // Its config written, the project is made, whether it opens or not: one that does not - no credentials for the models
@@ -498,6 +501,24 @@ function closeAll() {
 const RECENTS_KEPT = 30;
 
 /** A project's folder as one path - absolute, its links followed - however it was named: the same folder is one recent. */
+/**
+ * A project's folder, read before turri is started in it - or why it cannot be, in words, for the window to say. macOS's
+ * privacy protection keeps an app out of Desktop, Documents, Downloads and the like until the person allows it, and a
+ * process started in such a folder cannot even ask where it is: Node's "EPERM: process.cwd failed, uv_cwd".
+ */
+function readable(dir: string) {
+  try {
+    readdirSync(dir);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    const shown = dir === homedir() || dir.startsWith(homedir() + "/") ? `~${dir.slice(homedir().length)}` : dir;
+    if (code === "ENOENT") throw new Error(`${shown} is not there any more: it was moved, renamed or deleted.`);
+    if (code === "EPERM" && MAC) throw new Error(`macOS is not letting turri read ${shown}. please allow permissions or move a project somewhere else`);
+    if (code === "EPERM" || code === "EACCES") throw new Error(`${shown} cannot be read: its permissions do not let you. see who may with ls -ld ${shown}.`);
+    throw error;
+  }
+}
+
 function canonical(dir: string): string {
   const full = resolve(dir);
   try {
