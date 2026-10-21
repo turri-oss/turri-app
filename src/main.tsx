@@ -10,5 +10,7 @@ document.documentElement.dataset.theme = "dark";
 document.documentElement.dataset.platform = window.turri.platform;
 void window.turri.theme().then((theme) => (document.documentElement.dataset.theme = theme));
 window.turri.on("theme", (theme: string) => (document.documentElement.dataset.theme = theme));
+// Full screen: no traffic lights, so nothing to leave room for.
+window.turri.on("fullscreen", (on: boolean) => (document.documentElement.dataset.fullscreen = String(on)));
 
 createRoot(document.getElementById("root")!).render(<App />);

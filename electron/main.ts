@@ -282,7 +282,11 @@ function createWorkspace(): Workspace {
   // takes up its conversation and pulses from the engine as when it was opened. Else it would show its welcome screen,
   // and opening the project again would only bring this window forward.
   let drawn = false;
+  // Full screen, macOS draws no traffic lights over the window: the toolbar has no room to leave for them.
+  window.on("enter-full-screen", () => send("fullscreen", true));
+  window.on("leave-full-screen", () => send("fullscreen", false));
   window.webContents.on("did-finish-load", () => {
+    send("fullscreen", window.isFullScreen());
     if (!drawn) return void (drawn = true);
     if (dir !== undefined && workspace.open) void call("summary").then((summary) => send("project:opened", summary), () => {});
   });

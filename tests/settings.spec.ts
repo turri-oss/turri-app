@@ -149,6 +149,20 @@ test.describe("the files' sidebar", () => {
     await expect(page.getByRole("button", { name: "hide the files" })).toHaveAttribute("aria-pressed", "true");
   });
 
+  test("hidden, leaves the toolbar's buttons at its left - right of the traffic lights, or at the edge full screen", async ({ launched: { app, window: page } }) => {
+    await page.getByRole("button", { name: "hide the files" }).click();
+    const left = () => page.locator(".sidebar-toggle").evaluate((button) => Math.round(button.getBoundingClientRect().left));
+    const tabs = () => page.locator(".toolbar .segmented").evaluate((tabs) => Math.round(tabs.getBoundingClientRect().left));
+    const lights = process.platform === "darwin" ? 78 : 12;
+    await expect.poll(left).toBe(lights);
+    expect(await tabs()).toBeLessThan(lights + 40);
+    // Full screen, as the main process says it: no traffic lights to leave room for.
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send("fullscreen", true));
+    await expect.poll(left).toBe(12);
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send("fullscreen", false));
+    await expect.poll(left).toBe(lights);
+  });
+
   test("is shown or hidden on ⌘B, by View's menu", async ({ launched: { app } }) => {
     const item = await app.evaluate(({ Menu }) => {
       const view = Menu.getApplicationMenu()!.items.find((each) => each.label === "View")!;

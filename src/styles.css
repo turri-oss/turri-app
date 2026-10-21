@@ -222,9 +222,13 @@ code {
 .app.no-sidebar.with-chat {
   grid-template-columns: minmax(0, 1fr) var(--chat-width, 400px);
 }
-/* With nothing under them, the traffic lights are over the toolbar: it starts to their right. */
-:root[data-platform="darwin"] .app.no-sidebar .toolbar {
-  padding-left: 84px;
+/* The files hidden, the toolbar's buttons are at its left: just right of the traffic lights, over it now - or, full
+   screen, where there are none, at its edge. */
+:root[data-platform="darwin"]:not([data-fullscreen="true"]) .app.no-sidebar .toolbar {
+  padding-left: 78px;
+}
+.app.no-sidebar .toolbar {
+  padding-left: 12px;
 }
 .sidebar-toggle {
   color: var(--fg-3);
