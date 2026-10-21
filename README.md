@@ -5,7 +5,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue" alt="MIT licence"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey" alt="macOS and Linux">
-  <a href="https://www.npmjs.com/package/@turri-dev/cli"><img src="https://img.shields.io/badge/turri-0.1.9-ff5fa2" alt="runs turri 0.1.9"></a>
+  <a href="https://www.npmjs.com/package/@turri-dev/cli"><img src="https://img.shields.io/badge/turri-0.1.10-ff5fa2" alt="runs turri 0.1.10"></a>
 </p>
 
 [**turri**](https://github.com/turri-oss/turri) builds regenerative software: what lasts is the system's intent, and the code is derived from it - cheap to throw away and build again. You tell **turri** what the system should do; **turri** writes that down as durable intent, with the tests that say when it is met, and builds the code from it.
