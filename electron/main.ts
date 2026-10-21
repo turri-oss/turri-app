@@ -3,6 +3,7 @@ import { fork, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { createPreview } from "./preview.ts";
+import { loadShellEnvironment } from "./shell-env.ts";
 import { createTerminal } from "./terminal.ts";
 import { turriVersion } from "./turri-version.ts";
 
@@ -14,6 +15,12 @@ import { turriVersion } from "./turri-version.ts";
  */
 
 const ROOT = join(__dirname, "..");
+/** macOS, or Linux: the window's chrome, the menu, the Dock and the file manager differ between them. */
+const MAC = process.platform === "darwin";
+
+// Opened from Finder, the Dock or a desktop launcher, the app has none of the person's shell: its PATH and keys are read
+// from their login shell as it starts, and every engine waits for them.
+const shellReady = loadShellEnvironment();
 const RECENTS_FILE = join(app.getPath("userData"), "recent-projects.json");
 const APPEARANCE_FILE = join(app.getPath("userData"), "appearance.json");
 
@@ -130,8 +137,8 @@ function createWorkspace(): Workspace {
     minHeight: 620,
     title: "turri",
     icon: join(ROOT, "build", "icon.png"),
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 16, y: 18 },
+    // On macOS the window draws to its top edge, under the traffic lights; Linux keeps its window manager's title bar.
+    ...(MAC ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: 18 } } : {}),
     backgroundColor: backgroundFor(),
     show: false,
     webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: false },
@@ -180,7 +187,8 @@ function createWorkspace(): Workspace {
     anEngine,
   };
 
-  function startEngine(): Promise<void> {
+  async function startEngine(): Promise<void> {
+    await shellReady;
     engine?.kill();
     for (const { reject } of pending.values()) reject(new Error("The engine restarted."));
     pending.clear();
@@ -253,7 +261,9 @@ function createWorkspace(): Workspace {
       const done = data.status === "succeeded";
       // Which project's, with several open.
       const subtitle = dir === undefined ? undefined : basename(dir);
-      const notice = new Notification({ title: done ? `${data.module ?? "turri"}: regenerated` : `${data.module ?? "turri"}: ${data.status}`, subtitle, body: data.title ?? "", silent: done });
+      const title = done ? `${data.module ?? "turri"}: regenerated` : `${data.module ?? "turri"}: ${data.status}`;
+      // A subtitle is macOS's alone: elsewhere the project is said in the title.
+      const notice = new Notification({ title: MAC || subtitle === undefined ? title : `${subtitle} - ${title}`, subtitle, body: data.title ?? "", silent: done });
       // A click brings the window the pulse ran in forward.
       notice.on("click", () => !window.isDestroyed() && (window.show(), window.focus()));
       notice.show();
@@ -280,7 +290,7 @@ function createWorkspace(): Workspace {
       writeFileSync(RECENTS_FILE, JSON.stringify([next, ...recents().filter((other) => other !== next)].slice(0, RECENTS_KEPT)));
       app.addRecentDocument(next);
       if (!window.isDestroyed()) {
-        window.setRepresentedFilename(next);
+        if (MAC) window.setRepresentedFilename(next);
         // The Window menu, ⌘` and the Dock name each window by it.
         window.setTitle(name);
       }
@@ -304,7 +314,13 @@ function createWorkspace(): Workspace {
   async function startProject(dir: string, vendor: string, bedrock?: { maker: string; region: string }) {
     await anEngine();
     const { message } = (await call("initConfig", { dir, vendor, bedrock })) as { message: string };
-    return { ...((await openProject(dir)) as object), setup: message };
+    // Its config written, the project is made, whether it opens or not: one that does not - no credentials for the models
+    // chosen, say - is said so, not thrown, for the window to say why and try again.
+    try {
+      return { ...((await openProject(dir)) as object), setup: message };
+    } catch (error) {
+      return { setup: message, failed: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   workspaces.set(window.id, workspace);
@@ -458,7 +474,8 @@ function buildMenu() {
   const menuAction = (action: string) => () => focused()?.send("menu", action);
   const ready = front?.open === true;
   const template: MenuItemConstructorOptions[] = [
-    { role: "appMenu" },
+    // macOS's app menu - About, Hide, Quit; elsewhere Quit is in File.
+    ...(MAC ? [{ role: "appMenu" as const }] : []),
     {
       label: "File",
       submenu: [
@@ -468,15 +485,16 @@ function buildMenu() {
           const dir = await chooseProject(from);
           if (dir !== null) deliver(openWhere(from, dir));
         } },
-        { role: "recentDocuments", submenu: [{ role: "clearRecentDocuments" }] } as MenuItemConstructorOptions,
+        ...(MAC ? [{ role: "recentDocuments", submenu: [{ role: "clearRecentDocuments" }] } as MenuItemConstructorOptions] : []),
         { label: "New Window", accelerator: "CmdOrCtrl+Shift+N", click: () => void createWorkspace() },
         { label: "Switch Project…", accelerator: "CmdOrCtrl+Shift+P", click: menuAction("switch-project") },
         { type: "separator" },
         { label: "Save Spec", accelerator: "CmdOrCtrl+S", click: menuAction("save"), enabled: ready },
         { type: "separator" },
-        { label: "Reveal Project in Finder", click: menuAction("reveal"), enabled: ready },
+        { label: MAC ? "Reveal Project in Finder" : "Show Project in File Manager", click: menuAction("reveal"), enabled: ready },
         { type: "separator" },
         { role: "close" },
+        ...(MAC ? [] : [{ role: "quit" as const }]),
       ],
     },
     { role: "editMenu" },
@@ -510,9 +528,10 @@ function buildMenu() {
         { role: "togglefullscreen" },
       ],
     },
-    // macOS lists the open windows here, each by its project's name, and ⌘` goes from one to the next.
+    // macOS lists the open windows here, each by its project's name, and ⌘` goes from one to the next; Linux has
+    // Minimize and Close.
     { role: "windowMenu" },
-    // Last, at the right: what turri does with the spec in front.
+    // At the right, before Help: what turri does with the spec in front.
     {
       label: "Spec",
       submenu: [
@@ -523,6 +542,7 @@ function buildMenu() {
         { label: "Release to Try", click: menuAction("release"), enabled: ready },
       ],
     },
+    { role: "help", submenu: [{ label: "Check This Machine…", click: menuAction("doctor") }] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -541,6 +561,13 @@ ipcMain.handle("project:vendors", async (event) => {
   const workspace = workspaceOf(event.sender);
   await workspace.anEngine();
   return workspace.call("vendors");
+});
+// Whether this machine - and the window's project, once one is open - is ready for turri: asked of its engine, started for it if
+// need be, so the checks look on the PATH turri runs with.
+ipcMain.handle("doctor:run", async (event, models: boolean, dir?: string) => {
+  const workspace = workspaceOf(event.sender);
+  await workspace.anEngine();
+  return workspace.call("doctor", { models, ...(dir !== undefined ? { dir } : {}) });
 });
 ipcMain.handle("project:start", (event, dir: string, vendor: string, bedrock?: { maker: string; region: string }) => workspaceOf(event.sender).startProject(dir, vendor, bedrock));
 // A new project given up before it started: its folder, made for it and still empty, taken away again.

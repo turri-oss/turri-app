@@ -271,6 +271,11 @@ code {
   -webkit-app-region: drag;
   flex: none;
 }
+/* Linux keeps its window manager's title bar: no room for macOS's traffic lights, only enough to set the project's
+   name level with the toolbar beside it. */
+:root[data-platform="linux"] .sidebar > .titlebar-space {
+  height: 16px;
+}
 
 .sidebar {
   background: var(--sidebar);
@@ -2873,4 +2878,65 @@ code {
   justify-content: center;
   margin-top: 14px;
   text-align: center;
+}
+
+/* Whether this machine is ready for turri: turri doctor's checks, what wants doing first. */
+.doctor .checks {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.doctor .checks li {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  line-height: 1.45;
+}
+.check-mark {
+  flex: none;
+  width: 14px;
+  font-family: var(--mono);
+  font-weight: 700;
+  text-align: center;
+}
+.checks .ok .check-mark {
+  color: var(--green);
+}
+.checks .missing .check-mark {
+  color: var(--red);
+}
+.checks .limited .check-mark {
+  color: var(--amber);
+}
+.checks .info .check-mark,
+.check-detail {
+  color: var(--fg-2);
+}
+.check-fix {
+  margin-top: 4px;
+  font: 11.5px/1.5 var(--mono);
+  color: var(--fg);
+  background: var(--bg-2);
+  border-radius: var(--radius-small);
+  padding: 4px 8px;
+  user-select: text;
+}
+.doctor-summary {
+  margin: 12px 0 0;
+}
+.doctor-summary.wanting {
+  color: var(--amber);
+}
+.machine-wanting {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--amber);
+  font-size: 11px;
+  text-align: left;
+  margin: 6px 0;
+}
+.welcome .machine-wanting {
+  margin: 12px auto 0;
 }

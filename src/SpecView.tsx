@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } f
 import type { Job, Spec } from "./types.ts";
 import { elapsed, Icon, Spinner, useTick } from "./ui.tsx";
 import { stageOf } from "./PulseSpec.tsx";
+import { keys, withMod } from "./platform.ts";
 
 type Token = { text: string; role: string | null };
 type State = "conformed" | "built" | "now" | "todo";
@@ -376,7 +377,7 @@ export function SpecView(props: {
             )}
             {dirty ? (
               <button className="button small" onClick={() => void save()} disabled={saving}>
-                {saving ? <Spinner /> : null} save <kbd>⌘S</kbd>
+                {saving ? <Spinner /> : null} save <kbd>{keys("S")}</kbd>
               </button>
             ) : (
               <span className="muted">saved</span>
@@ -500,7 +501,7 @@ export function SpecView(props: {
                 }
               }}
               onKeyDown={(event) => {
-                if (event.key === "s" && event.metaKey) {
+                if (event.key === "s" && withMod(event)) {
                   event.preventDefault();
                   void save();
                 }

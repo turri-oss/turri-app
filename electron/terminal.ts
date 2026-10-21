@@ -1,5 +1,6 @@
 import { Terminal as Screen } from "@xterm/headless";
 import { spawn, type IPty } from "node-pty";
+import { userInfo } from "node:os";
 import { basename } from "node:path";
 
 /**
@@ -50,7 +51,7 @@ export function createTerminal({ send }: { send: (channel: string, data: unknown
   let replay = "";
   let lastOutput = 0;
   let size = { cols: 100, rows: 30 };
-  const shell = process.env.SHELL || "/bin/zsh";
+  const shell = process.env.SHELL || userInfo().shell || (process.platform === "darwin" ? "/bin/zsh" : "/bin/bash");
 
   const state = (): TerminalState => ({ running: pty !== undefined, program: pty === undefined ? "" : foreground() });
   const tell = () => send("terminal:state", state());

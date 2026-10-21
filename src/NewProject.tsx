@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Project } from "./types.ts";
+import { DoctorChecks, useDoctor } from "./DoctorSheet.tsx";
 import { Spinner } from "./ui.tsx";
 
 type Maker = "anthropic" | "openai";
@@ -23,6 +24,8 @@ export function NewProject({ onOpened, onDone }: { onOpened: (project: Project) 
   const [region, setRegion] = useState("global");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Made, its config written, but not opened: why, and what turri said of its config.
+  const [unready, setUnready] = useState<{ failed: string; setup: string } | null>(null);
 
   useEffect(() => {
     void window.turri.newProject().then(
@@ -50,6 +53,11 @@ export function NewProject({ onOpened, onDone }: { onOpened: (project: Project) 
     setStarting(true);
     try {
       const project = await window.turri.startProject(dir, vendor, vendor === "amazon-bedrock" ? { maker, region } : undefined);
+      if (project.failed !== undefined) {
+        setUnready({ failed: project.failed, setup: project.setup });
+        setStarting(false);
+        return;
+      }
       onDone();
       onOpened(project);
     } catch (failure) {
@@ -69,8 +77,10 @@ export function NewProject({ onOpened, onDone }: { onOpened: (project: Project) 
 
   return (
     <div className="sheet-backdrop">
-      <div className="sheet new-project">
-        {dir === null ? (
+      <div className={`sheet new-project ${unready ? "doctor" : ""}`}>
+        {dir !== null && unready !== null ? (
+          <Unready dir={dir} name={name} {...unready} onOpened={onOpened} onDone={onDone} />
+        ) : dir === null ? (
           <>
             <h2>the project was not made</h2>
             <p className="error-text">{error}</p>
@@ -153,6 +163,50 @@ export function NewProject({ onOpened, onDone }: { onOpened: (project: Project) 
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Made, its config written, but turri would not start on it - no credentials for the models chosen, most often: why,
+ * and turri doctor's checks of the project, its models asked, each with what to do about it. Tried again once seen to;
+ * the folder and its config stay either way.
+ */
+function Unready({ dir, name, failed, setup, onOpened, onDone }: { dir: string; name: string; failed: string; setup: string; onOpened: (project: Project) => void; onDone: () => void }) {
+  const doctor = useDoctor(true, dir);
+  const [error, setError] = useState(failed);
+  const [opening, setOpening] = useState(false);
+  const again = async () => {
+    setOpening(true);
+    try {
+      const project = await window.turri.openProject(dir);
+      onDone();
+      onOpened({ ...project, setup });
+    } catch (failure) {
+      setError(plain(failure as Error));
+      setOpening(false);
+      void doctor.run(true);
+    }
+  };
+  return (
+    <>
+      <h2>{name} is made, but turri cannot start on its models yet</h2>
+      <p className="error-text">{error}</p>
+      <DoctorChecks doctor={doctor} />
+      <div className="sheet-actions">
+        <button className="button" onClick={onDone} disabled={opening}>
+          close
+        </button>
+        <button className="button primary" onClick={() => void again()} disabled={opening || doctor.checking}>
+          {opening ? (
+            <>
+              <Spinner /> starting turri…
+            </>
+          ) : (
+            "try again"
+          )}
+        </button>
+      </div>
+    </>
   );
 }
 

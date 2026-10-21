@@ -38,5 +38,6 @@
     "@turri-dev/cli": "0.1.9",
     "@xterm/headless": "^6.0.0",
     "node-pty": "1.1.0"
-  }
+  },
+  "license": "MIT"
 }

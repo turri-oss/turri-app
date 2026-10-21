@@ -5,6 +5,8 @@ import { Welcome } from "./Welcome.tsx";
 import { SpecView } from "./SpecView.tsx";
 import { WorkView } from "./WorkView.tsx";
 import { PlanSheet, type Plan } from "./PlanSheet.tsx";
+import { DoctorSheet, problems, toSeeTo } from "./DoctorSheet.tsx";
+import type { Check } from "../electron/preload.ts";
 import { RegenerateSheet, type Regeneration } from "./RegenerateSheet.tsx";
 import { NewProject } from "./NewProject.tsx";
 import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
@@ -13,6 +15,7 @@ import { FileView } from "./FileView.tsx";
 import { PreviewView, savedPane, savePane } from "./PreviewView.tsx";
 import { Empty, Icon, Jellyfish, Spinner, TurriVersionLine } from "./ui.tsx";
 import { Chat, type ChatItem, type ChatStats, type Question, type SkillProgress } from "./Chat.tsx";
+import { keys } from "./platform.ts";
 
 const EMPTY_STATUS: Status = { modules: [], jobs: [], planned: [] };
 
@@ -44,6 +47,11 @@ export function App() {
   const [earlier, setEarlier] = useState<PastRun[]>([]);
   const [toast, setToast] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [plan, setPlan] = useState<Plan | "loading" | null>(null);
+  // Whether this machine is ready for turri: the sheet of turri doctor's checks, and what they found as the project opened.
+  // Open, and whether it asks the models from the start: a project just started does, to see that its models answer.
+  const [doctorOpen, setDoctorOpen] = useState(false);
+  const [doctorModels, setDoctorModels] = useState(false);
+  const [machine, setMachine] = useState<Check[] | null>(null);
   // Regenerate, chosen how - open with the functional specs it starts on, if any.
   const [choosing, setChoosing] = useState<string[] | null>(null);
   // Lines of a spec to bring into view and light: a pulse's part of it, shown from the work.
@@ -123,6 +131,11 @@ export function App() {
       setItems(summary.setup ? [...messages, { role: "note", text: summary.setup, level: "info" }] : messages);
       setChatModel(model);
     });
+    // Its models just chosen and its config written: whether this machine is ready for it, and the models answer.
+    if (summary.setup) {
+      setDoctorModels(true);
+      setDoctorOpen(true);
+    }
     void window.turri.call<Array<{ name: string; description: string }>>("commands").then(setCommands);
   }, []);
 
@@ -267,6 +280,7 @@ export function App() {
         else if (action === "switch-project") setSwitcher((open) => !open);
         else if (action === "chat") setChatOpen((open) => !open);
         else if (action === "reveal" && project) void window.turri.reveal(project.dir);
+        else if (action === "doctor") (setDoctorModels(false), setDoctorOpen(true));
       }),
     [regenerate, glimpse, conform, release, project, spec],
   );
@@ -280,6 +294,14 @@ export function App() {
     if (project !== null) savePane(project.dir, pane);
   }, [project?.dir, pane]);
 
+  // What the project needs of this machine - its toolchains, what its testing scripts run - checked as it opens, the
+  // models not asked: anything missing is said at the foot of the sidebar.
+  useEffect(() => {
+    setMachine(null);
+    if (project === null) return;
+    void window.turri.doctor().then(setMachine).catch(() => {});
+  }, [project?.dir]);
+
   const allJobs = useMemo(() => [...jobs.values()].sort((a, b) => b.sequence - a.sequence), [jobs]);
   const runningFor = (module: string) => allJobs.find((job) => job.module === module && job.status === "running");
   const running = allJobs.filter((job) => job.status === "running");
@@ -287,12 +309,24 @@ export function App() {
   // In the same place whether a project is open or not, so it is not made again when one opens under it.
   const newProject = creating && <NewProject onOpened={opened} onDone={() => setCreating(false)} />;
   const projectSwitcher = switcher && <ProjectSwitcher onClose={() => setSwitcher(false)} />;
+  const doctorSheet = doctorOpen && (
+    <DoctorSheet
+      project={project?.name ?? null}
+      askModels={doctorModels}
+      onClose={() => {
+        setDoctorOpen(false);
+        // What was seen to while it was open shows at once at the foot of the sidebar.
+        if (project !== null) void window.turri.doctor().then(setMachine).catch(() => {});
+      }}
+    />
+  );
   if (project === null)
     return (
       <>
-        <Welcome onOpened={opened} onNew={() => setCreating(true)} />
+        <Welcome onOpened={opened} onNew={() => setCreating(true)} onDoctor={() => (setDoctorModels(false), setDoctorOpen(true))} />
         {newProject}
         {projectSwitcher}
+        {doctorSheet}
       </>
     );
 
@@ -348,6 +382,11 @@ export function App() {
             ) : (
               <span className="muted">idle</span>
             )}
+            {problems(machine).length > 0 && (
+              <button className="link machine-wanting" onClick={() => (setDoctorModels(false), setDoctorOpen(true))} title={problems(machine).map((check) => `${check.name}: ${check.detail}`).join("\n")}>
+                <Icon name="warn" size={12} /> {toSeeTo(problems(machine))}
+              </button>
+            )}
             <TurriVersionLine />
           </div>
         </aside>
@@ -363,7 +402,7 @@ export function App() {
             </div>
             <div className="toolbar-actions">
               {!chatOpen && (
-                <button className={`button ${questions.length > 0 ? "asking" : ""}`} onClick={() => setChatOpen(true)} title={questions.length > 0 ? "turri is asking you something" : "talk to turri (⌘J)"}>
+                <button className={`button ${questions.length > 0 ? "asking" : ""}`} onClick={() => setChatOpen(true)} title={questions.length > 0 ? "turri is asking you something" : `talk to turri (${keys("J")})`}>
                   <Icon name="spark" /> turri{questions.length > 0 && " · asks"}
                 </button>
               )}
@@ -379,8 +418,8 @@ export function App() {
                   spec && runningFor(spec.module)
                     ? "turri is regenerating this module"
                     : spec && !spec.functionalSpecs.some((entry) => entry.built)
-                      ? "regenerate all of it - nothing is built yet (⌘R)"
-                      : "regenerate - what changed, chosen functional specs, or from scratch (⌘R)"
+                      ? `regenerate all of it - nothing is built yet (${keys("R")})`
+                      : `regenerate - what changed, chosen functional specs, or from scratch (${keys("R")})`
                 }
               >
                 {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} regenerate…
@@ -391,7 +430,7 @@ export function App() {
           <section className="content">
             {view === "preview" ? (
               // A sheet over the window would be under the pane: while one is open, the pane steps aside.
-              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || creating || choosing !== null || switching !== null || switcher} pane={pane} onPane={setPane} />
+              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || creating || choosing !== null || switching !== null || switcher} pane={pane} onPane={setPane} />
             ) : view === "work" ? (
               <WorkView
                 status={status}
@@ -526,6 +565,7 @@ export function App() {
       )}
       {newProject}
       {projectSwitcher}
+      {doctorSheet}
     </>
   );
 }

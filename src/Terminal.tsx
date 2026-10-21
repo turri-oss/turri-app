@@ -3,6 +3,7 @@ import { Terminal as XTerm, type ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
 import type { TerminalState } from "../electron/terminal.ts";
+import { MAC } from "./platform.ts";
 
 const ANSI = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"] as const;
 
@@ -43,6 +44,18 @@ export function TerminalPane({ onState }: { onState: (state: TerminalState) => v
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.onData((data) => void window.turri.terminal.write(data));
+    // On Linux ctrl+c is the shell's, so the terminal copies and pastes on ctrl+shift+c and ctrl+shift+v, as Linux
+    // terminals do; macOS has ⌘C and ⌘V.
+    if (!MAC)
+      term.attachCustomKeyEventHandler((event) => {
+        if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey || event.altKey) return true;
+        const key = event.key.toLowerCase();
+        if (key === "c" && term.hasSelection()) void navigator.clipboard.writeText(term.getSelection());
+        else if (key === "v") void navigator.clipboard.readText().then((text) => term.paste(text));
+        else return true;
+        event.preventDefault();
+        return false;
+      });
 
     // The theme changed - chosen, or the system's when it follows it - and the terminal's colours with it.
     const recolour = () => (term.options.theme = themeNow());

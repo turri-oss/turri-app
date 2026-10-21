@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Spec } from "./types.ts";
 import { Icon, Spinner } from "./ui.tsx";
+import { REVEAL } from "./platform.ts";
 
 export interface FileEntry {
   name: string;
@@ -89,7 +90,7 @@ export function FileTree(props: { root: string; specs: Spec[]; selected: string 
   const menu = async (entry: FileEntry) => {
     const chosen = await window.turri.popup([
       ...(entry.dir ? [] : [{ id: "open", label: "open with default app" }]),
-      { id: "reveal", label: "reveal in Finder" },
+      { id: "reveal", label: REVEAL },
       { type: "separator" as const },
       { id: "copy", label: "copy path" },
       { id: "copy-rel", label: "copy relative path" },

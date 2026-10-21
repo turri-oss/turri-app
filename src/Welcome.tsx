@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 
 /** More recent projects than this, and the list scrolls and can be searched. */
 const RECENTS_SHOWN = 5;
+import type { Check } from "../electron/preload.ts";
+import { problems, toSeeTo } from "./DoctorSheet.tsx";
 import type { Project } from "./types.ts";
 import { Icon, Jellyfish, Spinner, TurriVersionLine } from "./ui.tsx";
 
-export function Welcome({ onOpened, onNew }: { onOpened: (project: Project | null) => void; onNew: () => void }) {
+export function Welcome({ onOpened, onNew, onDoctor }: { onOpened: (project: Project | null) => void; onNew: () => void; onDoctor: () => void }) {
   const [recents, setRecents] = useState<string[]>([]);
   const [opening, setOpening] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -15,8 +17,12 @@ export function Welcome({ onOpened, onNew }: { onOpened: (project: Project | nul
   const words = query.toLowerCase().split(/\s+/).filter((word) => word !== "");
   const matching = recents.filter((dir) => words.every((word) => dir.toLowerCase().includes(word)));
 
+  // Whether this machine has what turri needs - bash, git, the sandbox, a model provider - said only when it has not.
+  const [machine, setMachine] = useState<Check[] | null>(null);
+
   useEffect(() => {
     void window.turri.recents().then(setRecents);
+    void window.turri.doctor().then(setMachine).catch(() => {});
   }, []);
 
   const open = async (dir?: string) => {
@@ -58,6 +64,11 @@ export function Welcome({ onOpened, onNew }: { onOpened: (project: Project | nul
           </button>
         </div>
         {error && <p className="error-text">{error}</p>}
+        {problems(machine).length > 0 && (
+          <button className="link machine-wanting" onClick={onDoctor}>
+            <Icon name="warn" size={12} /> {toSeeTo(problems(machine))} - see what to do
+          </button>
+        )}
         {recents.length > 0 && (
           <>
             <div className="sidebar-section">recent</div>

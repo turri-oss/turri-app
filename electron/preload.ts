@@ -3,12 +3,25 @@ import type { PreviewState } from "./preview.ts";
 import type { TerminalState } from "./terminal.ts";
 import type { TurriVersion } from "./turri-version.ts";
 
+/** One of turri doctor's checks, as turri's host entry gives it. */
+export interface Check {
+  level: "ok" | "missing" | "limited" | "info";
+  name: string;
+  detail: string;
+  /** More about it, a line each. */
+  more?: string[];
+  /** What to run or do about it. */
+  fix?: string;
+}
+
 /** What the window may ask of the app: the engine's methods, a few native services, and the events it is sent. */
 const api = {
   call: <T>(method: string, params?: unknown) => ipcRenderer.invoke("engine:call", method, params) as Promise<T>,
   chooseProject: () => ipcRenderer.invoke("project:choose"),
   newProject: () => ipcRenderer.invoke("project:new") as Promise<string | null>,
   vendors: () => ipcRenderer.invoke("project:vendors"),
+  /** turri doctor's checks - this machine's, and the open project's or the one named - from the engine; null from a turri without them. */
+  doctor: (models = false, dir?: string) => ipcRenderer.invoke("doctor:run", models, dir) as Promise<Check[] | null>,
   startProject: (dir: string, vendor: string, bedrock?: { maker: string; region: string }) => ipcRenderer.invoke("project:start", dir, vendor, bedrock),
   abandonProject: (dir: string) => ipcRenderer.invoke("project:abandon", dir),
   openProject: (dir: string) => ipcRenderer.invoke("project:open", dir),

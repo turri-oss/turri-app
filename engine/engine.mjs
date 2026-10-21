@@ -591,16 +591,27 @@ async function glimpse({ file }) {
   return { statuses, firsts, drift: dry.drift(file) };
 }
 
+/**
+ * Whether this machine - and the project open, or the one named (`dir`: one just made that would not open) - is ready
+ * for turri: `turri doctor`'s checks, printing nothing. They look in this engine's own environment, the PATH turri runs
+ * with here, which is not always the person's shell's. Asking the project's models costs money, so only when asked.
+ * null from a turri without doctor (0.1.9 and before).
+ */
+async function doctor({ models = false, dir = projectDir }) {
+  if (typeof turri.doctor !== "function") return null;
+  return turri.doctor({ dir, models: models === true && dir !== undefined, env: process.env });
+}
+
 function transcript({ id }) {
   return registry?.get(id)?.transcript ?? [];
 }
 
 // ---------- the wire ----------
 
-const methods = { newChat, look, open, vendors, initConfig, summary, listFiles, readFile, writeFile, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, earlierPulses, pastPulseDetail, sendChat, abortChat, chatHistory, commands, answer };
+const methods = { newChat, look, open, vendors, initConfig, summary, listFiles, readFile, writeFile, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, earlierPulses, pastPulseDetail, sendChat, abortChat, chatHistory, commands, answer, doctor };
 
-// What the window may ask before a project is open: to open one, or to start a new one.
-const BEFORE_A_PROJECT = new Set(["open", "vendors", "initConfig"]);
+// What the window may ask before a project is open: to open one, to start a new one, or whether the machine is ready.
+const BEFORE_A_PROJECT = new Set(["open", "vendors", "initConfig", "doctor"]);
 
 // The app gone - quit, crashed, killed - the engine goes with it: never a chat left running with no window.
 process.on("disconnect", () => {

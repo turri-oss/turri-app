@@ -1,6 +1,7 @@
 import MarkdownIt from "markdown-it";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, Jellyfish, Spinner } from "./ui.tsx";
+import { keys } from "./platform.ts";
 
 export type ChatItem =
   | { role: "user"; text: string }
@@ -104,7 +105,7 @@ export function Chat(props: {
         >
           <Icon name="reload" />
         </button>
-        <button className="icon-button" onClick={props.onClose} title="hide the chat (⌘J)">
+        <button className="icon-button" onClick={props.onClose} title={`hide the chat (${keys("J")})`}>
           <Icon name="x" />
         </button>
       </div>
@@ -277,6 +278,8 @@ function describeTool(name: string, args: any): string {
       return `ran ${String(args?.command ?? "a command").split("\n")[0]}`;
     case "ask_user":
       return `asked you: ${args?.question ?? ""}`;
+    case "doctor":
+      return args?.models === true ? "checked this machine, and asked the models" : "checked this machine";
     case "browser_navigate":
       return `opened ${args?.url ?? "the app"} in the preview`;
     case "browser_screenshot":

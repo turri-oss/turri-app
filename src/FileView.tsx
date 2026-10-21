@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Empty, Icon, Spinner } from "./ui.tsx";
+import { keys, MAC, withMod } from "./platform.ts";
 
 type Token = { text: string; role: string | null };
 type Read = { file: string; text: string | null; reason?: "large" | "binary"; size: number };
@@ -107,7 +108,7 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
           </span>
         ) : dirty ? (
           <button className="button small" onClick={() => void save()} disabled={saving}>
-            {saving ? <Spinner /> : null} save <kbd>⌘S</kbd>
+            {saving ? <Spinner /> : null} save <kbd>{keys("S")}</kbd>
           </button>
         ) : (
           <span className="muted">saved</span>
@@ -135,7 +136,7 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
       <div className="editor-pane">
         {header}
         <Empty icon="file" title={read.reason === "large" ? `too large to show here (${kilobytes(read.size)})` : "not a text file"}>
-          open it in the app your Mac opens it with, or reveal it in Finder.
+          {MAC ? "open it in the app your Mac opens it with, or reveal it in Finder." : "open it in the app your computer opens it with, or show it in the file manager."}
         </Empty>
       </div>
     );
@@ -175,7 +176,7 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
             readOnly={readOnly}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "s" && event.metaKey) {
+              if (event.key === "s" && withMod(event)) {
                 event.preventDefault();
                 void save();
               }

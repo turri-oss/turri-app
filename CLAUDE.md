@@ -1,12 +1,13 @@
 # CLAUDE.md
 
-turri-app is a proof of concept: [turri](https://github.com/turri-oss/turri) as a native Electron app for people who do not live in a terminal. It runs turri's own conversation and work loop and shows them in native UI - never turri in a terminal in a window. The one terminal there is, the preview's, is for trying the app turri builds. The README says what the window offers.
+turri-app is a proof of concept: [turri](https://github.com/turri-oss/turri) as a native Electron app for people who do not live in a terminal. It runs turri's own conversation and work loop and shows them in native UI - never turri in a terminal in a window. The one terminal there is, the preview's, is for trying the app turri builds. `docs/window.md` says what the window offers, the README its short tour.
 
 ## Shape
 
 ```
 electron/main.ts     the windows, each a workspace (its project, engine, preview, terminal), native menus, notifications, dock, appearance and zoom - and the bridge to each engine
 electron/turri-version.ts  which turri runs - npm's pinned version, or a clone at a commit - and whether it is behind
+electron/shell-env.ts the person's login shell's environment - PATH, API keys - read as the app starts when it was not started from a terminal; every engine waits for it
 electron/preview.ts  the preview: a WebContentsView over the Preview view's space, and the browser tools' actions in it
 electron/terminal.ts the preview's terminal: a shell on a pty, a headless xterm of its screen, and the terminal tools' actions
 electron/preload.ts  window.turri: the engine's methods, a few native services, the events the window is sent
@@ -26,6 +27,8 @@ src/                 the window: React, no UI kit, one stylesheet (styles.css)
 - **turri is told it is in the app.** turri's prompt speaks of its terminal - the side panel on ctrl+h, /pulses - unless its host gives a surface (`TurriHost.surface`, turri's docs/hosting.md): then it leaves the terminal out and puts the host's words in its place. `APP_SURFACE` in `engine/app.mjs` is the window in those words; `TurriHost.systemPrompt` adds, each turn, which view and file the person has open (the window says it with `look`). When the window changes - a view, a button, a mark - say it in `APP_SURFACE` too. A turri without `surface` (0.1.7 and before) ignores both.
 - **The preview is a page of its own**, in a browser session of its own - in memory, new for each project opened - a `WebContentsView` the main process lays over the rectangle `PreviewView` reports - in the window's pixels, its CSS ones times the zoom. Nothing of the window draws over it: while a sheet is open it is taken away (`covered`), and so are its empty and failed states, which the window draws in its place. turri's browser tools (`engine/browser.mjs`) are the app's, not turri's: each is a request from the engine to the main process (`{ browser, id, params }`, answered `{ reply }`), done in that same pane, which the window shows while they run. They go to localhost only. Clicks and typing run in the page as the person's gesture, so the pages they open are in its history; what runs in the page is a function sent as its source, and says what went wrong rather than throwing. Only the newest screenshot is sent to the model as an image, and none once a model has refused one (the `context` event): the refused turn is marked for pi to retry, and goes on without it.
 - **The preview's terminal is the other way to try it**, beside the browser - a switch in the Preview bar (`Pane`), each project's choice remembered. The main process runs a login shell in the project's folder on a pty (node-pty, its macOS prebuild: `scripts/pty.mjs` makes its `spawn-helper` executable after each install) and keeps its screen in a headless xterm; the window draws it with xterm.js from `terminal:data`, replaying what it has said when drawn again. turri's terminal tools (`engine/terminal.mjs`: run, type, read) are requests like the browser's (`{ terminal, id, params }`) and bring the window to the terminal; a command is done once the shell is back at its prompt (the pty's foreground process), or once it has gone quiet with a program still running - waiting for input, or serving. Which of the two turri tries something in is its own choice, by what it is - `APP_SURFACE` says how, and the release prompt asks it to.
+
+- **macOS and Linux.** What differs is said in one place on each side: `MAC` in `electron/main.ts` (the window draws under the traffic lights on macOS and keeps the window manager's title bar on Linux; the app menu, Open Recent, the Dock and Finder are macOS's) and `src/platform.ts` in the window (`keys("S")` is ⌘S or Ctrl+S, `withMod(event)` the key a shortcut is pressed with, `REVEAL` the file manager's name), with `data-platform` on `:root` for the stylesheet. Never write ⌘ or Finder into the window as it is. On Linux, Ctrl+C in the preview's terminal is the shell's: it copies on Ctrl+Shift+C.
 
 ## The window
 
@@ -55,4 +58,4 @@ Regenerate, Preview plan and every chat message call the project's models and sp
 - **The interface's own words are lowercase** - turri's brand: buttons, labels, headings, tooltips, placeholders, notices, sentences and all, and no CSS that shows them in capitals. What it shows as it is keeps its case: the spec, code, file names and paths, turri's messages, acronyms (API), other products' names (Finder, Mac) and keys (⌘R).
 - Prose in docs, comments and user-facing strings uses British spelling and a spaced hyphen ` - `, not an em dash.
 - Commit messages follow Conventional Commits, as in turri: `feat(ui): ...`, `fix(editor): ...`, the description lowercase and saying what the app now does.
-- When what the window offers or how it is set up changes, update the README in the same commit.
+- When what the window offers or how it is set up changes, update `docs/window.md` or `docs/development.md` - and the README's tour, if it says it - in the same commit.
