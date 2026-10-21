@@ -38,6 +38,15 @@ test.describe("the welcome screen", () => {
     }
   });
 
+  test("has its logo below the traffic lights - and at the top full screen, where there are none", async ({ launched: { app, window: page } }) => {
+    const bar = page.locator(".welcome-bar");
+    await expect(bar).toBeVisible();
+    const height = () => bar.evaluate((element) => Math.round(element.getBoundingClientRect().height));
+    await expect.poll(height).toBe(process.platform === "darwin" ? 92 : 64);
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send("fullscreen", true));
+    await expect.poll(height).toBe(64);
+  });
+
   test("says which turri it runs", async ({ launched: { window } }) => {
     await expect(window.locator(".welcome-card")).toContainText(/turri \d+\.\d+\.\d+|turri local/);
   });

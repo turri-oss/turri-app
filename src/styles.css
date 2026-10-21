@@ -2116,16 +2116,22 @@ code {
   /* turri's brand: the interface's own words are lowercase, labels too. */
   text-transform: none;
 }
-/* The welcome's title bar: the logo mark and the name, below the window's buttons and in line with them on the left. */
+/* The welcome's title bar: the logo mark and the name - on macOS below the traffic lights and in line with them on the
+   left, and at the top where there are none: full screen, and on Linux, whose title bar is the window manager's. */
 .welcome-bar {
   position: relative;
   z-index: 1;
   flex: none;
-  height: 92px;
+  height: 64px;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 10px;
-  padding: 0 0 6px 18px;
+  padding: 0 0 0 18px;
+}
+:root[data-platform="darwin"]:not([data-fullscreen="true"]) .welcome-bar {
+  height: 92px;
+  align-items: flex-end;
+  padding-bottom: 6px;
 }
 .logo {
   font-family: var(--sans);
