@@ -10,7 +10,7 @@
 
 **turri** builds regenerative software: what lasts is the system's intent, and the code is derived from it - cheap to throw away and build again. You tell **turri** what the system should do; **turri** writes that down as durable intent, with the tests that say when it is met, and builds the code from it. From then on the durable intent is the source of truth: as it changes, the code is regenerated from it rather than patched in place, and never left to drift from it.
 
-**turri-app** is turri as a desktop app for macOS and Linux. It runs turri's own conversation and work loop - the same chat, tools, slash commands, skills and pulses as `turri` on the command line - and shows them in native UI: the spec beside the chat, every pulse live, and the app being built, tried in a browser or a terminal of its own.
+**turri-app** is turri as a desktop app for macOS and Linux. It runs turri's own conversation and work loop - the same chat, tools, slash commands, skills and pulses as `turri` on the command line - and shows them in native UI: the spec beside the chat, every pulse live, and the app being built, tried in a browser or a terminal of its own. turri itself, the command line, is at [turri-oss/turri](https://github.com/turri-oss/turri).
 
 <p align="center"><img src="docs/images/turri-app.png" alt="turri-app with the guestbook project open: the project's files and settings on the left, backend.plain in the middle with each functional spec's state, and the chat with turri on the right"></p>
 
