@@ -64,8 +64,6 @@ test.describe("about", () => {
     await expect(row).toContainText("MIT");
     await row.click();
     await expect(sheet.locator(".notice-text pre")).toContainText("Permission is hereby granted");
-    await sheet.getByRole("searchbox").fill("zed mono");
-    await expect(sheet.locator(".notice-row", { hasText: "Zed Mono" })).toContainText("OFL-1.1");
   });
 });
 

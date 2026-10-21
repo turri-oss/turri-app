@@ -21,7 +21,7 @@ export async function buildElectron(options = {}) {
 }
 
 /**
- * The third-party notices beside them: the packages' and fonts' (the About sheet reads them), and Chromium's own,
+ * The third-party notices beside them: the packages' (the About sheet reads them), and Chromium's own,
  * which every build of the app must carry and the About sheet opens.
  */
 export function buildNotices() {

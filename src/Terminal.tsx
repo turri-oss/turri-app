@@ -72,8 +72,6 @@ export function TerminalPane({ onState }: { onState: (state: TerminalState) => v
     const sizeWatch = new ResizeObserver(resize);
 
     void (async () => {
-      // Measured in Zed Mono, not the fallback it would be drawn in while the font loads.
-      await document.fonts.load('12px "Zed Mono"').catch(() => {});
       if (gone) return;
       term.open(element);
       // What the shell says from here on. What it said before the answer to open came is in what open replays:

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Notice } from "../electron/preload.ts";
 import { Jellyfish, Spinner } from "./ui.tsx";
 
@@ -37,9 +37,6 @@ function About() {
           </div>
         ))}
       </dl>
-      <p className="muted small">
-        the interface's typeface, Neue Montreal, is not part of the app: it is used where it is installed, and the system's sans everywhere else.
-      </p>
     </div>
   );
 }
@@ -86,14 +83,14 @@ function Privacy() {
   );
 }
 
-/** Every package and font the app carries, each with its licence - its text a click away - and Chromium's, opened. */
+/** Every package the app carries, each with its licence - its text a click away - and Chromium's, opened. */
 function Notices() {
-  const [notices, setNotices] = useState<{ fonts: Notice[]; packages: Notice[] } | null>(null);
+  const [notices, setNotices] = useState<{ packages: Notice[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   useEffect(() => void window.turri.about.notices().then(setNotices, (failure: Error) => setError(failure.message)), []);
-  const all = useMemo(() => (notices === null ? [] : [...notices.fonts, ...notices.packages]), [notices]);
+  const all = notices?.packages ?? [];
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = all.filter((each) => words.every((word) => `${each.name} ${each.license}`.toLowerCase().includes(word)));
   if (error !== null) return <p className="error-text">the notices could not be read: {error}</p>;
@@ -101,7 +98,7 @@ function Notices() {
   return (
     <div className="notices">
       <p className="small">
-        turri desktop is made with {notices.packages.length} open source packages and the Zed Mono typeface (SIL Open Font License 1.1). Chromium's own licences are{" "}
+        turri desktop is made with {notices.packages.length} open source packages. Chromium's own licences are{" "}
         <button className="link" onClick={() => void window.turri.about.chromium()}>
           in a page of their own
         </button>

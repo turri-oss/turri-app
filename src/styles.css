@@ -1,38 +1,7 @@
-
-/* Zed Mono - Zed's build of Iosevka, SIL Open Font License 1.1 (fonts/zed-mono/LICENSE.md) - for code and the spec. */
-@font-face {
-  font-family: "Zed Mono";
-  src: url("./fonts/zed-mono/zed-mono-regular.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: "Zed Mono";
-  src: url("./fonts/zed-mono/zed-mono-medium.woff2") format("woff2");
-  font-weight: 500;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: "Zed Mono";
-  src: url("./fonts/zed-mono/zed-mono-bold.woff2") format("woff2");
-  font-weight: 700;
-  font-style: normal;
-  font-display: block;
-}
-@font-face {
-  font-family: "Zed Mono";
-  src: url("./fonts/zed-mono/zed-mono-italic.woff2") format("woff2");
-  font-weight: 400;
-  font-style: italic;
-  font-display: block;
-}
-
 /*
- * Neue Montreal (Pangram Pangram) - for the interface. Not bundled: it is a commercial font and the app has no licence
- * for it yet, so it is used where it is installed, under either of its family names, and the system's sans otherwise.
- * Once there are licensed files, they go in fonts/neue-montreal/ with an @font-face here, as Zed Mono's above.
+ * The system's own fonts, nothing bundled: San Francisco on macOS for the interface and the ***plain, and for code and
+ * the terminal, which have to be monospaced, the system's monospace - Menlo, as Chromium cannot reach SF Mono (only
+ * Safari can, through ui-monospace), or SF Mono where it is installed. On Linux, the system's sans and monospace.
  */
 
 /* turri's own colours: turri-dark (the default) and turri-light, as its pi themes and its ***plain palette have them. */
@@ -83,10 +52,10 @@
   --ansi-white: #85a3b2;
   --ansi-bright-black: #3e5a6b;
   --ansi-bright-white: #f4f7f9;
-  --mono: "Zed Mono", ui-monospace, monospace;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
   --radius: 6px;
   --radius-small: 4px;
-  --sans: "PP Neue Montreal", "Neue Montreal", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --sans: system-ui, -apple-system, "Helvetica Neue", sans-serif;
   --body: var(--sans);
 }
 
@@ -776,7 +745,7 @@ code {
 .editor-colours {
   margin: 0;
   padding: 16px 18px 40vh;
-  font: 12.5px/1.6 var(--mono);
+  font: 13px/1.6 var(--sans);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   border: 0;
@@ -1725,6 +1694,10 @@ code {
   padding: 0 4px;
   border-radius: var(--radius);
 }
+.prose pre.plain-code,
+.prose pre.plain-code code {
+  font: 12.5px/1.55 var(--sans);
+}
 .prose pre.plain-code code,
 .prose pre.diff code {
   background: none;
@@ -2138,7 +2111,7 @@ code {
   }
 }
 
-/* The interface in Neue Montreal - the buttons and the wordmark on the landing too - code and the spec in Zed Mono. */
+/* The interface and the ***plain in San Francisco - the buttons and the wordmark on the landing too - code in monospace. */
 .sidebar-section,
 .pane-header {
   font-size: 11px;
@@ -2166,8 +2139,6 @@ code {
   color: var(--fg);
 }
 code,
-.editor textarea,
-.editor-colours,
 kbd {
   font-family: var(--mono);
 }
@@ -2582,7 +2553,7 @@ code {
   font-weight: 400;
 }
 .pulse-spec-lines {
-  font: 12px/1.6 var(--mono);
+  font: 12.5px/1.6 var(--sans);
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);

@@ -1,6 +1,6 @@
 // The third-party notices the About sheet lists: every package the app carries - what is installed beside it
 // (package.json's dependencies, and theirs) and what Vite bundles into the window - with its licence and the text of
-// its licence files, and the fonts it ships. Written to dist-electron/notices.json as the app is built.
+// its licence files. Written to dist-electron/notices.json as the app is built.
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
@@ -50,16 +50,7 @@ export function collectNotices() {
   const packages = [...seen.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
   // One entry for a package installed at one version in several places.
   const unique = packages.filter((each, at) => at === 0 || each.name !== packages[at - 1].name || each.version !== packages[at - 1].version);
-  const fonts = [
-    {
-      name: "Zed Mono",
-      version: "",
-      license: "OFL-1.1",
-      homepage: "https://github.com/zed-industries/zed-fonts",
-      text: readFileSync(join(ROOT, "src", "fonts", "zed-mono", readdirSync(join(ROOT, "src", "fonts", "zed-mono")).find((file) => LICENCE_FILE.test(file) || /ofl/i.test(file))), "utf8").trim(),
-    },
-  ];
-  return { fonts, packages: unique };
+  return { packages: unique };
 }
 
 export function writeNotices() {

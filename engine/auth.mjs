@@ -51,7 +51,7 @@ export function turriCallbackPage(html) {
       padding: 24px;
       background: var(--bg);
       color: var(--fg);
-      font: 15px/1.6 "PP Neue Montreal", "Neue Montreal", ui-sans-serif, system-ui, -apple-system, sans-serif;
+      font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif;
       text-align: center;
     }
     main { max-width: 480px; display: flex; flex-direction: column; align-items: center; }

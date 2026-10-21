@@ -130,7 +130,7 @@ const api = {
   /** The About sheet's: the versions the app is made of, its third-party notices, and Chromium's, opened. */
   about: {
     info: () => ipcRenderer.invoke("about:info") as Promise<{ app: string; turri: TurriVersion; electron: string; chromium: string; node: string; os: string }>,
-    notices: () => ipcRenderer.invoke("about:notices") as Promise<{ fonts: Notice[]; packages: Notice[] }>,
+    notices: () => ipcRenderer.invoke("about:notices") as Promise<{ packages: Notice[] }>,
     chromium: () => ipcRenderer.invoke("about:chromium"),
   },
   /** macOS's command line developer tools - git with them - installed by Apple's installer, which this opens. */
