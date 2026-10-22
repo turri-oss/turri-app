@@ -30,9 +30,27 @@ const EMPTY_STATUS: Status = { modules: [], jobs: [], planned: [] };
 const CHAT_WIDTH = 400;
 const CHAT_MIN = 300;
 const CHAT_KEY = "turri-app.chat-width";
-const SIDEBAR_AND_SPEC_MIN = 260 + 480;
-function clampChat(width: number) {
-  return Math.round(Math.max(CHAT_MIN, Math.min(width, window.innerWidth - SIDEBAR_AND_SPEC_MIN)));
+/** The files' width: dragged by their edge as the chat's is, kept between launches. */
+const FILES_WIDTH = 260;
+const FILES_MIN = 180;
+const FILES_KEY = "turri-app.files-width";
+/** The room the ***plain keeps between the files and the chat, however wide either is dragged. */
+const SPEC_MIN = 480;
+/** The chat's width, beside files `files` wide - 0 when they are hidden. */
+function clampChat(width: number, files: number) {
+  return Math.round(Math.max(CHAT_MIN, Math.min(width, window.innerWidth - files - SPEC_MIN)));
+}
+/** The files' width, beside a chat `chat` wide - 0 when it is hidden. */
+function clampFiles(width: number, chat: number) {
+  return Math.round(Math.max(FILES_MIN, Math.min(width, window.innerWidth - chat - SPEC_MIN)));
+}
+function savedFilesWidth() {
+  try {
+    const saved = Number(localStorage.getItem(FILES_KEY));
+    return saved > 0 ? saved : FILES_WIDTH;
+  } catch {
+    return FILES_WIDTH;
+  }
 }
 const SIDEBAR_KEY = "turri-app.sidebar";
 /** Whether the files' sidebar is shown: hidden with ⌘B, and kept hidden next time. */
@@ -80,7 +98,14 @@ export function App() {
   // Regenerate, chosen how - open with the functional specs it starts on, if any.
   const [choosing, setChoosing] = useState<string[] | null>(null);
   // Lines of a spec to bring into view and light: a pulse's part of it, shown from the work.
-  const [reveal, setReveal] = useState<{ file: string; lines: number[]; at: number } | null>(null);
+  const [reveal, setReveal] = useState<{ file: string; lines: number[]; texts?: string[]; at: number } | null>(null);
+  // Lit once, where it was asked for: gone as the person looks elsewhere - another view, file or template - so coming back
+  // lights nothing again.
+  useEffect(() => {
+    if (reveal === null) return;
+    const there = view === "stdlib" ? template === reveal.file : view === "spec" && selected === reveal.file;
+    if (!there) setReveal(null);
+  }, [view, selected, template, reveal]);
   // A pulse to open in the work view: one the chat says ended, clicked there.
   const [focusPulse, setFocusPulse] = useState<{ id: string; at: number } | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -94,6 +119,14 @@ export function App() {
   /** Another project, being opened: the one shown waits under a spinner, as its engine has already stopped. */
   const [switching, setSwitching] = useState<{ dir: string; name: string } | null>(null);
   const [chatWidth, setChatWidth] = useState(savedChatWidth);
+  const [filesWidth, setFilesWidth] = useState(savedFilesWidth);
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILES_KEY, String(filesWidth));
+    } catch {
+      /* not kept: it is 260 again next time */
+    }
+  }, [filesWidth]);
   const [sidebarOpen, setSidebarOpen] = useState(savedSidebar);
   useEffect(() => {
     try {
@@ -103,7 +136,7 @@ export function App() {
     }
   }, [sidebarOpen]);
   const [resizing, setResizing] = useState(false);
-  // The window resized: the chat's width is held to it again.
+  // The window resized: the files' and the chat's widths are held to it again.
   const [, setWindowWidth] = useState(window.innerWidth);
   useEffect(() => {
     const resized = () => setWindowWidth(window.innerWidth);
@@ -478,9 +511,40 @@ export function App() {
       </>
     );
 
+  // As wide as dragged, held to the window: the files first, then the chat beside them - the ***plain keeps its room.
+  const filesShown = clampFiles(filesWidth, chatOpen ? CHAT_MIN : 0);
+  const chatShown = clampChat(chatWidth, sidebarOpen ? filesShown : 0);
+
   return (
     <>
-      <div className={`app ${chatOpen ? "with-chat" : ""} ${sidebarOpen ? "" : "no-sidebar"} ${resizing ? "resizing" : ""}`} style={{ "--chat-width": `${clampChat(chatWidth)}px` } as React.CSSProperties} inert={switching !== null}>
+      <div
+        className={`app ${chatOpen ? "with-chat" : ""} ${sidebarOpen ? "" : "no-sidebar"} ${resizing ? "resizing" : ""}`}
+        style={{ "--chat-width": `${chatShown}px`, "--files-width": `${filesShown}px` } as React.CSSProperties}
+        inert={switching !== null}
+      >
+        {sidebarOpen && (
+          // The files' right edge: drag it to make them wider or thinner, double-click it for the width they start at.
+          <div
+            className="files-resize"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="resize the files"
+            title="drag to resize the files - double-click to reset"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setResizing(true);
+            }}
+            onPointerMove={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) setFilesWidth(clampFiles(event.clientX, chatOpen ? chatShown : 0));
+            }}
+            onPointerUp={(event) => {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+              setResizing(false);
+            }}
+            onDoubleClick={() => setFilesWidth(FILES_WIDTH)}
+          />
+        )}
         {sidebarOpen && (
           <aside className="sidebar">
             <div className="project-name" title={project.dir}>
@@ -586,7 +650,8 @@ export function App() {
                   if (shown === undefined) return say(`${rel} is not one of the project's ***plain files now.`, "error");
                   setSelected(shown.file);
                   setView("spec");
-                  setReveal({ file: shown.file, lines, at: Date.now() });
+                  // Where the pulse's lines are now: the ***plain may have changed since it ran.
+                  setReveal({ file: shown.file, lines: lines.map((each) => each.line), texts: lines.map((each) => each.text), at: Date.now() });
                 }}
               />
             ) : file !== null ? (
@@ -640,7 +705,7 @@ export function App() {
               setResizing(true);
             }}
             onPointerMove={(event) => {
-              if (event.currentTarget.hasPointerCapture(event.pointerId)) setChatWidth(clampChat(window.innerWidth - event.clientX));
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) setChatWidth(clampChat(window.innerWidth - event.clientX, sidebarOpen ? filesShown : 0));
             }}
             onPointerUp={(event) => {
               event.currentTarget.releasePointerCapture(event.pointerId);

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
 import type { Job, Spec } from "./types.ts";
 import { elapsed, Icon, PlainMark, PlainName, Spinner, useTick, withPlain } from "./ui.tsx";
-import { stageOf } from "./PulseSpec.tsx";
+import { relocate, stageOf } from "./PulseSpec.tsx";
 import { followAt, PlainLinks, useModHeld, usePlainLinks, type Followed, type OpenLink } from "./PlainLinks.tsx";
 import { keys, withMod } from "./platform.ts";
 
@@ -77,26 +77,38 @@ const STATE_LABEL: Record<State, string> = { conformed: "built and conformance t
 
 /**
  * The lines of this file the running work renders now, from 0: a code pulse's are what its spec change adds here - its
- * diff's added lines, placed in the files - and the functional specs it carries unchanged, as context: a functional spec
- * regenerated again is in its diff so, its text the same. A conformance run's are the functional spec it builds. A placed
- * line whose text is not what the file has there now is left out: the file moved on.
+ * diff's added lines, placed in the files as they were when it started - and the functional specs it carries unchanged,
+ * as context: a functional spec regenerated again is in its diff so, its text the same. They are found where they are
+ * now, as the ***plain is edited while it runs - a functional spec added above them moves them - and one whose text is
+ * not in the file any more is left out. A conformance run's are the functional spec it builds: the one with its text,
+ * or else its number.
  */
 function renderingLines(job: Job | undefined, spec: Spec, text: string, specLines: Map<number, SpecLine>): Set<number> {
   const found = new Set<number>();
   if (job === undefined) return found;
-  const lines = text.split("\n");
+  const lines = text.split("\n").map((line) => line.trimEnd());
   if (job.diff !== undefined && job.diffWhere !== undefined) {
     const diffLines = job.diff.split("\n");
+    const placed: Array<{ line: number; text: string }> = [];
     for (const [index, where] of Object.entries(job.diffWhere)) {
       const line = diffLines[Number(index)];
       if (where.file !== spec.rel || line === undefined) continue;
-      const again = line.startsWith(" ") && specLines.has(where.line - 1);
+      // Carried unchanged: a line of a functional spec, as context - by its text, as the file may have moved since.
+      const again = line.startsWith(" ") && [...specLines.keys()].some((at) => lines[at] === line.slice(1).trimEnd());
       if (!line.startsWith("+") && !again) continue;
-      if (lines[where.line - 1]?.trimEnd() === line.slice(1).trimEnd()) found.add(where.line - 1);
+      placed.push({ line: where.line, text: line.slice(1).trimEnd() });
     }
+    placed.sort((a, b) => a.line - b.line);
+    const now = relocate(lines, placed.map((each) => each.line), placed.map((each) => each.text));
+    now.forEach((line, at) => lines[line - 1] === placed[at]!.text && found.add(line - 1));
   }
   const building = /^(\S+) functionality (\d+) of/.exec(job.building?.label ?? "");
-  if (building && building[1] === spec.module) for (const [index, mark] of specLines) if (mark.frid === building[2]) found.add(index);
+  if (building && building[1] === spec.module) {
+    // By its text where the ***plain has it, as a functional spec added before it numbers it anew; else by its number.
+    const first = job.building?.text?.split("\n")[0]?.trimEnd();
+    const frid = [...specLines].find(([index, mark]) => mark.first && first !== undefined && first !== "" && lines[index] === first)?.[1].frid ?? building[2];
+    for (const [index, mark] of specLines) if (mark.frid === frid) found.add(index);
+  }
   return found;
 }
 
@@ -107,8 +119,11 @@ function renderingLines(job: Job | undefined, spec: Spec, text: string, specLine
 export function SpecView(props: {
   spec: Spec;
   running?: Job;
-  /** Lines to bring into view and light for a moment, from 1: a pulse's part of the spec, shown from the work. */
-  reveal?: { lines: number[]; at: number };
+  /**
+   * Lines to bring into view and light for a moment, from 1: a pulse's part of the spec, shown from the work - with their
+   * text, to find them by where the ***plain has changed since the pulse ran - or a concept's definition.
+   */
+  reveal?: { lines: number[]; texts?: string[]; at: number };
   onSaved: (spec: Spec) => void;
   onDirty: (dirty: boolean) => void;
   saveRef: MutableRefObject<(() => Promise<void>) | null>;
@@ -346,7 +361,8 @@ export function SpecView(props: {
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   useEffect(() => {
     if (props.reveal === undefined || text === null || props.reveal.lines.length === 0) return;
-    const lines = new Set(props.reveal.lines.map((line) => line - 1));
+    const numbers = props.reveal.texts !== undefined ? relocate(text.split("\n"), props.reveal.lines, props.reveal.texts) : props.reveal.lines;
+    const lines = new Set(numbers.map((line) => line - 1));
     setRevealed(lines);
     requestAnimationFrame(() => showLine(Math.min(...lines)));
     const timer = setTimeout(() => setRevealed(new Set()), 4000);

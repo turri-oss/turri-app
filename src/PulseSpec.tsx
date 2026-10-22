@@ -39,6 +39,27 @@ function filesOf(diff: string, where: Job["diffWhere"]): File[] {
   return files;
 }
 
+/**
+ * A pulse's lines - each its number when the pulse ran and its text - where they are in the ***plain now, from 1: an
+ * edit since, or another pulse's, moves them. Each run of them - lines that follow one another, a blank between - moves
+ * as one, by the offset that finds most of its lines' text there, the smallest of those; a run whose text is not there
+ * at all keeps its numbers.
+ */
+export function relocate(all: string[], lines: number[], texts: string[]): number[] {
+  const runs: number[][] = [];
+  lines.forEach((line, at) => (at > 0 && line > lines[at - 1]! && line - lines[at - 1]! <= 2 ? runs.at(-1)!.push(at) : runs.push([at])));
+  return runs.flatMap((run) => {
+    const offsets = new Set<number>();
+    for (const at of run) all.forEach((text, index) => text === texts[at] && offsets.add(index - (lines[at]! - 1)));
+    let best = { offset: 0, found: 0 };
+    for (const offset of offsets) {
+      const found = run.filter((at) => all[lines[at]! - 1 + offset] === texts[at]).length;
+      if (found > best.found || (found === best.found && Math.abs(offset) < Math.abs(best.offset))) best = { offset, found };
+    }
+    return run.map((at) => lines[at]! + best.offset);
+  });
+}
+
 /** The functional spec a conformance run builds, as its label says it: `frontend functionality 2 of 5`. */
 function buildingOf(job: Job): { frid: string; text: string } | null {
   const named = /functionality (\S+) of/.exec(job.building?.label ?? "");
@@ -85,7 +106,7 @@ export function hasSpecPart(job: Job): boolean {
  * lights them while it runs - or, for a conformance run, the functional spec it builds. Each file's part opens in the
  * spec, its lines lit there.
  */
-export function PulseSpec({ job, onShowInSpec }: { job: Job; onShowInSpec: (file: string, lines: number[]) => void }) {
+export function PulseSpec({ job, onShowInSpec }: { job: Job; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void }) {
   const files = job.diff?.trim() ? filesOf(job.diff, job.diffWhere) : [];
   const building = buildingOf(job);
   if (files.length === 0 && building === null) return <p className="muted pad">this pulse works on no part of the <PlainName /> it says: read its conversation.</p>;
@@ -106,7 +127,7 @@ export function PulseSpec({ job, onShowInSpec }: { job: Job; onShowInSpec: (file
         // spec as it is, unchanged: that is what the pulse builds, again.
         const again = !shown.lines.some((line) => line.kind === "add" || line.kind === "del");
         const file = again ? { ...shown, lines: shown.lines.map((line) => (line.kind === "context" && !/^\*\*\*.*\*\*\*$/.test(line.text.trim()) && line.text.trim() !== "" ? { ...line, kind: "add" as const } : line)) } : shown;
-        const lines = file.lines.flatMap((line) => (line.kind === "add" && line.line !== undefined ? [line.line] : []));
+        const lines = file.lines.flatMap((line) => (line.kind === "add" && line.line !== undefined ? [{ line: line.line, text: line.text }] : []));
         const added = file.lines.filter((line) => line.kind === "add").length;
         const taken = file.lines.filter((line) => line.kind === "del").length;
         return (
@@ -142,9 +163,26 @@ function Coloured({ lines }: { lines: Line[] }) {
     void window.turri.call<Token[][]>("highlightSpec", { text }).then((next) => alive && setTokens(next));
     return () => void (alive = false);
   }, [text]);
+  // The lines the diff leaves out between two it has: the blank line between two items - turri's diff is of the ***plain's
+  // items, not its text - a blank row, and more a gap.
+  const skipped = (index: number) => {
+    const before = lines.slice(0, index).findLast((line) => line.kind !== "gap");
+    const line = lines[index]!;
+    return before?.line !== undefined && line.line !== undefined && lines[index - 1]?.kind !== "gap" ? line.line - before.line - 1 : 0;
+  };
   return (
     <div className="pulse-spec-lines">
-      {lines.map((line, index) =>
+      {lines.map((line, index) => [
+        skipped(index) === 1 ? (
+          <div key={`${index}-blank`} className="context">
+            <span className="pulse-spec-number">{line.line! - 1}</span>
+            <span className="pulse-spec-text">{"\u200b"}</span>
+          </div>
+        ) : skipped(index) > 1 ? (
+          <div key={`${index}-gap`} className="gap">
+            ⋯
+          </div>
+        ) : null,
         line.kind === "gap" ? (
           <div key={index} className="gap">
             ⋯
@@ -161,7 +199,7 @@ function Coloured({ lines }: { lines: Line[] }) {
             </span>
           </div>
         ),
-      )}
+      ])}
     </div>
   );
 }

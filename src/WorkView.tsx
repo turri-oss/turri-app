@@ -76,7 +76,7 @@ export function WorkView({
   status: Status;
   jobs: Job[];
   earlier: PastRun[];
-  onShowInSpec: (file: string, lines: number[]) => void;
+  onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void;
   /** A pulse to open and bring into view - one the chat says ended. */
   focus?: { id: string; at: number };
 }) {
@@ -400,7 +400,7 @@ function PastPulseDetail({ pulse, onClose }: { pulse: PastPulse; onClose: () => 
  * A pulse, opened: the ***plain it works on - what it renders, coloured as the spec is - and its agents' conversation,
  * as chat bubbles, polled while it runs.
  */
-function Transcript({ job, onClose, onShowInSpec }: { job: Job; onClose: () => void; onShowInSpec: (file: string, lines: number[]) => void }) {
+function Transcript({ job, onClose, onShowInSpec }: { job: Job; onClose: () => void; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void }) {
   const [tab, setTab] = useState<"spec" | "conversation">(hasSpecPart(job) ? "spec" : "conversation");
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [showThinking, setShowThinking] = useState(false);

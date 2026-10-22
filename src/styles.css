@@ -209,11 +209,11 @@ code {
 .app {
   position: relative;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: var(--files-width, 260px) minmax(0, 1fr);
   height: 100%;
 }
 .app.with-chat {
-  grid-template-columns: 260px minmax(0, 1fr) var(--chat-width, 400px);
+  grid-template-columns: var(--files-width, 260px) minmax(0, 1fr) var(--chat-width, 400px);
 }
 /* The files hidden (⌘B): their column gone, the rest the wider. */
 .app.no-sidebar {
@@ -247,8 +247,20 @@ code {
   z-index: 5;
   cursor: col-resize;
 }
+/* The files' right edge, the same. */
+.files-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--files-width, 260px) - 3px);
+  width: 6px;
+  z-index: 5;
+  cursor: col-resize;
+}
 .chat-resize:hover,
-.app.resizing .chat-resize {
+.files-resize:hover,
+.chat-resize:active,
+.files-resize:active {
   background: var(--accent);
 }
 .app.resizing {
