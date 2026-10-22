@@ -19,7 +19,7 @@ test.describe("the chat", () => {
       ({ BrowserWindow }, message) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:chat:message", message),
       { role: "assistant", text: "The :Greeter: greets whoever runs it." },
     );
-    await window.getByRole("tab", { name: "work" }).click();
+    await window.getByRole("tab", { name: "regen" }).click();
     await window.locator(".prose .plain-concept", { hasText: ":Greeter:" }).click();
     await expect(window.locator(".toolbar").getByRole("tab", { name: "***plain", selected: true })).toBeVisible();
     await expect(window.locator(".editor-pane .pane-header")).toContainText("hello.plain");

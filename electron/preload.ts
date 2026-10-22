@@ -96,6 +96,8 @@ const api = {
   switchProject: (id: number) => ipcRenderer.invoke("projects:switch", id),
   reveal: (path: string) => ipcRenderer.invoke("shell:reveal", path),
   openPath: (path: string) => ipcRenderer.invoke("shell:open", path),
+  /** Whether the ***plain open has changed since it was built: Regenerate What Changed is offered only then. */
+  changed: (changed: boolean) => ipcRenderer.invoke("menu:changed", changed),
   popup: (items: Array<{ id: string; label: string; enabled?: boolean } | { type: "separator" }>) => ipcRenderer.invoke("menu:popup", items) as Promise<string | null>,
   on: (channel: string, listener: (data: any) => void) => {
     const handler = (_event: IpcRendererEvent, data: unknown) => listener(data);

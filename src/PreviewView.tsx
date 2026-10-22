@@ -20,23 +20,6 @@ function savedUrl(dir: string): string {
   }
 }
 
-/** Which of the two each project's preview had open last: the browser, or the terminal. */
-const paneKeyFor = (dir: string) => `turri-app.preview-pane:${dir}`;
-export function savedPane(dir: string): Pane {
-  try {
-    return localStorage.getItem(paneKeyFor(dir)) === "terminal" ? "terminal" : "browser";
-  } catch {
-    return "browser";
-  }
-}
-export function savePane(dir: string, pane: Pane) {
-  try {
-    localStorage.setItem(paneKeyFor(dir), pane);
-  } catch {
-    /* not kept: the preview opens on the browser next time */
-  }
-}
-
 /** What is typed in the address bar, as an address: `8000` and `localhost:8000` are http://localhost:8000. */
 function addressOf(typed: string): string {
   const text = typed.trim();
@@ -45,14 +28,15 @@ function addressOf(typed: string): string {
 }
 
 /**
- * The app turri builds, tried in a browser pane or a terminal - a switch in the bar. The browser: an address bar, and
+ * The app turri builds, tried in a browser pane or a terminal - whichever is in use: neither at first, each once turri
+ * uses it (or the person opens it), and a switch in the bar once both are. The browser: an address bar, and
  * below it the pane itself - a page of its own the main process lays over the space left here for it
  * (electron/preview.ts). Nothing of the window can draw over it, so it is taken away while something should: a sheet
  * open over the window, nothing loaded to show, or the terminal in its place. The terminal: a shell in the project's
  * folder (electron/terminal.ts), for a CLI. turri drives both with its browser and terminal tools, and the window comes
  * to the one it uses - edged in blue while it does, and the bar saying so.
  */
-export function PreviewView({ dir, covered, pane, onPane, testing }: { dir: string; covered: boolean; pane: Pane; onPane: (pane: Pane) => void; testing: boolean }) {
+export function PreviewView({ dir, covered, pane, panes, onPane, testing }: { dir: string; covered: boolean; pane: Pane | null; panes: Pane[]; onPane: (pane: Pane) => void; testing: boolean }) {
   const [state, setState] = useState<PreviewState>(BLANK);
   const [shell, setShell] = useState<TerminalState>({ running: false, program: "" });
   const [typed, setTyped] = useState("");
@@ -127,15 +111,34 @@ export function PreviewView({ dir, covered, pane, onPane, testing }: { dir: stri
     </span>
   );
 
-  const switcher = (
+  // Both in use: a switch between them. One alone needs none.
+  const switcher = panes.length > 1 && (
     <div className="segmented" role="tablist">
-      {(["browser", "terminal"] as Pane[]).map((name) => (
+      {panes.map((name) => (
         <button key={name} role="tab" aria-selected={pane === name} className={pane === name ? "on" : ""} onClick={() => onPane(name)}>
           {name}
         </button>
       ))}
     </div>
   );
+
+  // Neither in use yet: what the preview is for, and either to open.
+  if (pane === null)
+    return (
+      <div className="preview">
+        <Empty icon="globe" title="nothing to try yet">
+          once turri has built something, it opens it here to try it - in a browser or a terminal, whichever suits it - and you watch. or open one yourself.
+          <span className="preview-retry">
+            <button className="button" onClick={() => onPane("browser")}>
+              <Icon name="globe" /> open a browser
+            </button>
+            <button className="button" onClick={() => onPane("terminal")}>
+              <Icon name="code" /> open a terminal
+            </button>
+          </span>
+        </Empty>
+      </div>
+    );
 
   if (pane === "terminal") {
     return (

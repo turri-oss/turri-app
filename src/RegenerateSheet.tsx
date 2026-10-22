@@ -4,19 +4,18 @@ import { Icon, withPlain } from "./ui.tsx";
 
 /** How to regenerate a module: each one of /regenerate's ways, said as turri takes it. */
 export type Regeneration =
-  | { how: "continue"; left: string[]; guidance: string }
-  | { how: "changed"; guidance: string }
-  | { how: "again"; frids: string[]; guidance: string }
-  | { how: "scratch"; chain: boolean; guidance: string };
+  | { how: "continue"; left: string[] }
+  | { how: "changed" }
+  | { how: "again"; frids: string[] }
+  | { how: "scratch"; chain: boolean };
 
 type How = "continue" | "changed" | "again" | "scratch" | "chain";
 
 /**
  * Regenerate, chosen how: on where a module partly built stopped - its functional specs not built yet, and the first
  * choice while there are any - what changed in the spec (the button's own), chosen functional specs again though they did
- * not change, the whole module from scratch, or it and every module it requires from scratch - and, for any of them,
- * how to cut the work, in the person's words. It says what the person would type: from scratch, turri asks in the chat
- * before it deletes anything. A module with nothing built has one way of its own - all of it, each functional spec built
+ * not change, the whole module from scratch, or it and every module it requires from scratch. It says what the person
+ * would type: from scratch, turri asks in the chat before it deletes anything. A module with nothing built has one way of its own - all of it, each functional spec built
  * on the ones before it, so none alone and nothing to start over - and, on a chain, its chain from scratch.
  */
 export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec: Spec; initial?: string[]; onClose: () => void; onRegenerate: (regeneration: Regeneration) => void }) {
@@ -24,9 +23,10 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
   const left = spec.functionalSpecs.filter((entry) => !entry.built).map((entry) => entry.frid);
   const partly = left.length > 0 && left.length < spec.functionalSpecs.length;
   const none = !spec.functionalSpecs.some((entry) => entry.built);
-  const [how, setHow] = useState<How>(initial?.length && !none ? "again" : partly ? "continue" : "changed");
+  // Built from the ***plain as it is now: nothing changed, so nothing for "what changed" to do - it is not offered.
+  const unchanged = !none && spec.drifted === false;
+  const [how, setHow] = useState<How>(initial?.length && !none ? "again" : partly ? "continue" : unchanged ? "again" : "changed");
   const [frids, setFrids] = useState<Set<string>>(new Set(initial ?? []));
-  const [guidance, setGuidance] = useState("");
   const chained = spec.requires.length > 0;
   // Only what is built is regenerated again: what is not is built by continuing, or by what changed.
   const builtSpecs = spec.functionalSpecs.filter((entry) => entry.built);
@@ -60,11 +60,7 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
           },
         ]
       : []),
-    {
-      id: "changed",
-      title: "what changed",
-      detail: spec.drifted === false ? "the code is built from the ***plain as it is now: there is nothing to bring up to it." : "the code brought up to the ***plain as it is now - only what changed is built.",
-    },
+    ...(unchanged ? [] : [{ id: "changed" as const, title: "what changed", detail: "the code brought up to the ***plain as it is now - only what changed is built." }]),
     { id: "again", title: "chosen functional specs again", detail: "built ones, built again though they did not change - the code for them rewritten from the spec." },
     { id: "scratch", title: `all of ${spec.module} from scratch`, detail: "its code and conformance tests deleted - committed first, so its history keeps them - and every functional spec built again." },
     ...(chained
@@ -76,8 +72,7 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
   const ready = how !== "again" || ordered.length > 0;
   const go = () => {
     if (!ready) return;
-    const said = guidance.trim();
-    onRegenerate(how === "continue" ? { how, left, guidance: said } : how === "changed" ? { how, guidance: said } : how === "again" ? { how, frids: ordered, guidance: said } : { how: "scratch", chain: how === "chain", guidance: said });
+    onRegenerate(how === "continue" ? { how, left } : how === "changed" ? { how } : how === "again" ? { how, frids: ordered } : { how: "scratch", chain: how === "chain" });
   };
   const deletes = how === "scratch" || how === "chain";
 
@@ -118,19 +113,6 @@ export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec
             </div>
           </div>
         )}
-
-        <label className="regenerate-guidance">
-          <span>how to cut the work <span className="muted">- optional</span></span>
-          <textarea
-            value={guidance}
-            onChange={(event) => setGuidance(event.target.value)}
-            placeholder="one functional spec per pulse, say - or the storage first, then the API"
-            rows={2}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) go();
-            }}
-          />
-        </label>
 
         <div className="sheet-actions">
           {deletes && <span className="muted small regenerate-warning">turri asks you in the chat before it deletes anything.</span>}

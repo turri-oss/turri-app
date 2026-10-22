@@ -44,6 +44,19 @@ const KEYS: Record<string, string> = {
 };
 export const TERMINAL_KEYS = Object.keys(KEYS);
 
+/**
+ * Shells killed and not yet heard to exit. node-pty tells of a shell's exit through a callback into JavaScript: one that
+ * comes while the app is quitting - Node's environment being torn down - throws in native code, and the app aborts, as
+ * macOS then says. So quitting waits for them (shellsEnded).
+ */
+const ending = new Set<Promise<void>>();
+
+/** Every shell killed, heard to exit: a hung one killed outright after a second, and given up on after another. */
+export async function shellsEnded(): Promise<void> {
+  const timeout = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+  await Promise.race([Promise.all(ending), timeout(2000)]);
+}
+
 export function createTerminal({ send }: { send: (channel: string, data: unknown) => void }) {
   let dir: string | undefined;
   let pty: IPty | undefined;
@@ -110,7 +123,26 @@ export function createTerminal({ send }: { send: (channel: string, data: unknown
   function dispose() {
     const ended = pty;
     pty = undefined;
-    ended?.kill();
+    if (ended !== undefined) {
+      const exited = new Promise<void>((resolve) => {
+        // One that does not end on the hangup is killed outright.
+        const hard = setTimeout(() => {
+          try {
+            ended.kill("SIGKILL");
+          } catch {
+            resolve();
+          }
+        }, 1000);
+        hard.unref();
+        ended.onExit(() => {
+          clearTimeout(hard);
+          resolve();
+        });
+      });
+      ending.add(exited);
+      void exited.then(() => ending.delete(exited));
+      ended.kill();
+    }
     screen?.dispose();
     screen = undefined;
     replay = "";

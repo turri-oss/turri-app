@@ -87,9 +87,14 @@ test.describe("the window's reach", () => {
 });
 
 test.describe("a project's settings", () => {
-  test("are behind the sidebar's gear, and changed through /turri-config", async ({ launched: { window: page, project } }) => {
+  test("are in the menu bar, File > Project Settings…, and changed through /turri-config", async ({ launched: { app, window: page, project } }) => {
     await expect(page.locator(".chat-model")).toBeVisible();
-    await page.getByRole("button", { name: "project settings" }).click();
+    // Not in the window's toolbar: in the menu bar, and chosen there - sent as the menu sends it, as a hidden window is
+    // never the one in front, which the menu acts on (and enables it for).
+    await expect(page.getByRole("button", { name: "project settings" })).toHaveCount(0);
+    const item = () => app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.items.find((menu) => menu.label === "File")?.submenu?.items.some((entry) => entry.label === "Project Settings…"));
+    expect(await item()).toBe(true);
+    await choose(app, page, "project-settings");
     const sheet = page.getByRole("dialog", { name: "project settings" });
     // As config.turri.yaml has them, the models among turri's own choices.
     await expect(sheet.getByRole("combobox", { name: "harness-model", exact: true })).toHaveValue("anthropic/claude-sonnet-5-5");
@@ -182,10 +187,6 @@ test.describe("the files' sidebar", () => {
     await expect.poll(left(".toolbar > :first-child")).toBe(12);
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send("fullscreen", false));
     await expect.poll(left(".toolbar > :first-child")).toBe(darwin ? 78 : 12);
-    // The files hidden too, the project's settings are still in the toolbar.
-    await page.getByRole("button", { name: "hide the files" }).click();
-    await page.getByRole("button", { name: "project settings" }).click();
-    await expect(page.getByRole("dialog", { name: "project settings" })).toBeVisible();
   });
 
   test("starts at the window's top: the project's name in its title bar, the files straight below", async ({ launched: { window: page } }) => {
@@ -221,5 +222,37 @@ test.describe("the window's text", () => {
       await where.click({ clickCount: 3 });
       expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toContain(text);
     }
+  });
+});
+
+test.describe("a project just started", () => {
+  test.use({ open: false });
+
+  test("opens on the conversation - the chat two thirds of the window, the files hidden - until its first ***plain", async ({ launched: { app, window: page }, scratch }) => {
+    const dir = join(scratch, "fresh");
+    // The system's save sheet answered with a folder, and the doctor's checks finding nothing - so no model is asked.
+    await app.evaluate(({ dialog, ipcMain }, dir) => {
+      dialog.showSaveDialog = (async () => ({ canceled: false, filePath: dir })) as typeof dialog.showSaveDialog;
+      ipcMain.removeHandler("doctor:run");
+      ipcMain.handle("doctor:run", () => []);
+    }, dir);
+    await choose(app, page, "new-project");
+    await page.locator(".new-project .option").filter({ hasText: "Anthropic" }).first().click();
+    await page.getByRole("button", { name: "create" }).click();
+
+    await expect(page.locator(".main .empty h3")).toHaveText("no plain yet");
+    await expect(page.locator(".sidebar")).toHaveCount(0);
+    const width = (selector: string) => () => page.locator(selector).evaluate((element) => Math.round(element.getBoundingClientRect().width));
+    const wide = await page.evaluate(() => window.innerWidth);
+    await expect.poll(width(".chat")).toBe(Math.round((wide * 2) / 3));
+    // Not kept as the person's own: the next project opens as they left it.
+    expect(await page.evaluate(() => localStorage.getItem("turri-app.sidebar"))).not.toBe("hidden");
+
+    // The first ***plain written: the files, and the chat as wide as it was.
+    writeFileSync(join(dir, "fresh.plain"), "***definitions***\n\n- :App: is the app.\n\n***functional specs***\n\n- :App: says hello.\n");
+    await expect(page.locator(".sidebar")).toBeVisible();
+    await expect.poll(width(".chat")).toBeLessThan(Math.round((wide * 2) / 3));
+    // And it is open, where "no ***plain yet" was.
+    await expect(page.locator(".editor-pane .pane-header")).toContainText("fresh.plain");
   });
 });

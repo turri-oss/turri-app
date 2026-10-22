@@ -89,6 +89,8 @@ export function Chat(props: {
   /** A concept said in the chat, clicked: opened where the ***plain defines it. */
   onShowConcept: (concept: string) => void;
   newSessionBlocked: string | null;
+  /** Whether any of the project's ***plain has changed since it was built: only then is regenerating what changed offered. */
+  changed: boolean;
 }) {
   const [draft, setDraft] = useState("");
   conceptNames = props.concepts.map((concept) => concept.name).sort((a, b) => b.length - a.length);
@@ -159,9 +161,8 @@ export function Chat(props: {
         <span className="chat-title">
           <Jellyfish size={22} swimming={props.busy} /> turri
         </span>
-        {props.model && <span className="chat-model" title={props.model}>{props.model.split("/").at(-1)}</span>}
         <button
-          className="icon-button"
+          className="icon-button chat-new-session"
           onClick={() => void newSession(props)}
           disabled={props.newSessionBlocked !== null}
           title={props.newSessionBlocked ?? "new session - start the conversation over, forgetting this one"}
@@ -207,7 +208,7 @@ export function Chat(props: {
                 </button>
               </>
             ) : (
-              ["what does this project do?", "add a way to delete a message", "regenerate what changed"].map((hint) => (
+              ["what does this project do?", "add a way to delete a message", ...(props.changed ? ["regenerate what changed"] : [])].map((hint) => (
                 <button key={hint} className="hint" onClick={() => props.onSend(hint)}>
                   {hint}
                 </button>
@@ -298,7 +299,11 @@ export function Chat(props: {
           }}
         />
         <div className="composer-bar">
-          {props.stats && <ChatMeter stats={props.stats} />}
+          {/* How full, what it cost, and the model it is with - together at the foot's left. */}
+          <span className="composer-meta">
+            {props.stats && <ChatMeter stats={props.stats} />}
+            {props.model && <span className="chat-model" title={props.model}>{props.model.split("/").at(-1)}</span>}
+          </span>
           <span className="muted small composer-status">{statusLine}</span>
           {props.busy ? (
             <button className="button small" onClick={props.onAbort}>
@@ -338,7 +343,7 @@ function Message({
     const kind = /\bconformance\b/.test(item.summary) ? "conformance" : "regenerate";
     return (
       <div className={`msg job-note ${kind} ${item.status}`}>
-        <button className="job-note-head" onClick={() => onShowPulse?.(item.id)} title="open it in the work view">
+        <button className="job-note-head" onClick={() => onShowPulse?.(item.id)} title="open it in the regen view">
           {item.status === "succeeded" ? <Icon name={kind === "conformance" ? "checks" : "check"} size={14} /> : item.status === "stopped" ? <Icon name="stop" size={14} /> : <Icon name="warn" size={14} />}
           <strong>{item.summary}</strong>
           <span className="muted">
@@ -728,7 +733,7 @@ function ChatMeter({ stats }: { stats: ChatStats }) {
     percent === null
       ? "context: not known yet - it is measured at the next reply"
       : `context: ${stats.tokens !== null ? thousands(stats.tokens) : "?"} of ${stats.contextWindow !== null ? thousands(stats.contextWindow) : "?"} tokens (${Math.round(percent)}%)`;
-  const title = `${context}\nthis conversation has cost $${stats.cost.toFixed(2)} so far - its own model's calls; the pulses' cost is in the work view.`;
+  const title = `${context}\nthis conversation has cost $${stats.cost.toFixed(2)} so far - its own model's calls; the pulses' cost is in the regen view.`;
   const r = 6;
   const around = 2 * Math.PI * r;
   return (

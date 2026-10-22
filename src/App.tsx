@@ -17,7 +17,7 @@ import { NewProject } from "./NewProject.tsx";
 import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
 import { FileTree } from "./FileTree.tsx";
 import { FileView } from "./FileView.tsx";
-import { PreviewView, savedPane, savePane } from "./PreviewView.tsx";
+import { PreviewView } from "./PreviewView.tsx";
 import { StdlibView } from "./StdlibView.tsx";
 import { ConceptUses, type Followed, type Link, type Place, type Use } from "./PlainLinks.tsx";
 import { Empty, Icon, Jellyfish, PlainName, Spinner, TurriVersionLine, withPlain } from "./ui.tsx";
@@ -74,7 +74,14 @@ export function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<View>("spec");
-  const [pane, setPane] = useState<Pane>("browser");
+  // The preview's browser and terminal in use - neither as a project opens, each once turri uses it or the person opens
+  // it - and the one shown.
+  const [pane, setPane] = useState<Pane | null>(null);
+  const [panes, setPanes] = useState<Pane[]>([]);
+  const openPane = useCallback((name: Pane) => {
+    setPanes((all) => (all.includes(name) ? all : [...all, name]));
+    setPane(name);
+  }, []);
   /** turri at work in the preview, with its browser or terminal tools: the pane edged in blue, and said in its bar. */
   const [testing, setTesting] = useState(false);
   /** The standard library's template open in the stdlib view: kept as the person goes to another view and back. */
@@ -88,9 +95,11 @@ export function App() {
   const [stopped, setStopped] = useState<"stopped" | "starting" | null>(null);
   const [plan, setPlan] = useState<Plan | "loading" | null>(null);
   // Whether this machine is ready for turri: the sheet of turri doctor's checks, and what they found as the project opened.
-  // Open, and whether it asks the models from the start: a project just started does, to see that its models answer.
+  // Open, and whether it asks the models from the start: a project just started does, to see that its models answer -
+  // checked out of sight, and opened on what it found only when something wants seeing to.
   const [doctorOpen, setDoctorOpen] = useState(false);
   const [doctorModels, setDoctorModels] = useState(false);
+  const [doctorFound, setDoctorFound] = useState<Check[] | undefined>(undefined);
   const [machine, setMachine] = useState<Check[] | null>(null);
   // Signing in to the model providers: the sheet, open on a provider when one was named - /login anthropic.
   const [signIn, setSignIn] = useState<{ provider: string | null } | null>(null);
@@ -131,14 +140,24 @@ export function App() {
       /* not kept: it is 260 again next time */
     }
   }, [filesWidth]);
-  const [sidebarOpen, setSidebarOpen] = useState(savedSidebar);
+  const [sidebarChoice, setSidebarChoice] = useState(savedSidebar);
   useEffect(() => {
     try {
-      localStorage.setItem(SIDEBAR_KEY, sidebarOpen ? "shown" : "hidden");
+      localStorage.setItem(SIDEBAR_KEY, sidebarChoice ? "shown" : "hidden");
     } catch {
       /* not kept: it is shown again next time */
     }
-  }, [sidebarOpen]);
+  }, [sidebarChoice]);
+  // A project just started opens on the conversation: the chat two thirds of the window, the files hidden - neither
+  // kept as the person's own. Each is theirs again once they change it - the chat's edge dragged, the files shown - and
+  // both once the project has its first ***plain.
+  const [freshChat, setFreshChat] = useState(false);
+  const [freshFiles, setFreshFiles] = useState(false);
+  const sidebarOpen = sidebarChoice && !freshFiles;
+  const toggleSidebar = useCallback(() => {
+    if (freshFiles) (setFreshFiles(false), setSidebarChoice(true));
+    else setSidebarChoice((open) => !open);
+  }, [freshFiles]);
   const [resizing, setResizing] = useState(false);
   // The window resized: the files' and the chat's widths are held to it again.
   const [, setWindowWidth] = useState(window.innerWidth);
@@ -179,6 +198,10 @@ export function App() {
 
   // What is selected in the tree: one of the project's specs, or any other file of it.
   const spec = project?.specs.find((entry) => entry.file === selected) ?? null;
+  // Whether the ***plain open has changed since its code was built - or is not built yet: only then is there anything
+  // for Regenerate What Changed to do. The menu bar is told, to offer it only then.
+  const changed = spec !== null && spec.ok && spec.drifted !== false;
+  useEffect(() => void window.turri.changed(changed), [changed]);
   const file = spec === null && project !== null && selected !== null ? selected : null;
 
   const say = useCallback((text: string, tone: "info" | "error" = "info") => {
@@ -198,13 +221,16 @@ export function App() {
     setGuide(false);
     setProject(summary);
     setSelected(summary.specs[0]?.file ?? null);
+    setFreshChat(Boolean(summary.setup));
+    setFreshFiles(Boolean(summary.setup));
     setTemplate(null);
     setStatus(EMPTY_STATUS);
     setJobs(new Map());
     setEarlier([]);
     void window.turri.call<PastRun[]>("earlierPulses").then(setEarlier);
     setView("spec");
-    setPane(savedPane(summary.dir));
+    setPane(null);
+    setPanes([]);
     setStreaming(null);
     setQuestions([]);
     setProgress(null);
@@ -214,11 +240,19 @@ export function App() {
       setItems(summary.setup ? [...messages, { role: "note", text: summary.setup, level: "info" }] : messages);
       setChatModel(model);
     });
-    // Its models just chosen and its config written: whether this machine is ready for it, and the models answer.
-    if (summary.setup) {
-      setDoctorModels(true);
-      setDoctorOpen(true);
-    }
+    // Its models just chosen and its config written: whether this machine is ready for it, and the models answer - said
+    // only when something wants seeing to, as a project that is ready needs nothing of you.
+    if (summary.setup)
+      void window.turri.doctor(true).then(
+        (checks) => {
+          if (checks === null || problems(checks).length === 0) return;
+          setDoctorFound(checks);
+          setDoctorModels(true);
+          setDoctorOpen(true);
+        },
+        // The checks would not run: the sheet runs them again, and says why, the models not asked again.
+        () => (setDoctorFound(undefined), setDoctorModels(false), setDoctorOpen(true)),
+      );
     void window.turri.call<Array<{ name: string; description: string }>>("commands").then(setCommands);
   }, []);
 
@@ -278,8 +312,8 @@ export function App() {
       window.turri.on("engine:chat:model", ({ model }: { model: string }) => setChatModel(model)),
       window.turri.on("engine:chat:stats", (stats: ChatStats) => setChatStats(stats)),
       // turri works in the preview with its browser tools: the window shows it, so the person sees what it does.
-      window.turri.on("preview:reveal", () => (setView("preview"), setPane("browser"))),
-      window.turri.on("terminal:reveal", () => (setView("preview"), setPane("terminal"))),
+      window.turri.on("preview:reveal", () => (setView("preview"), openPane("browser"))),
+      window.turri.on("terminal:reveal", () => (setView("preview"), openPane("terminal"))),
       window.turri.on("preview:testing", (now: boolean) => setTesting(now)),
       // /login typed in the chat: pi's terminal would sign in there, the window does it in its sheet.
       window.turri.on("engine:auth:open", ({ provider }: { provider: string | null }) => setSignIn({ provider })),
@@ -304,10 +338,7 @@ export function App() {
           scratch: how?.how === "scratch",
           chain: how?.how === "scratch" && how.chain,
           // Continued: what changed, as turri brings a module up to its spec - with the planner told where it stopped.
-          guidance:
-            how?.how === "continue"
-              ? `carry on where it stopped: build the functional specs not built yet - ${how.left.join(", ")}${how.guidance ? `. ${how.guidance}` : ""}`
-              : how?.guidance,
+          guidance: how?.how === "continue" ? `carry on where it stopped: build the functional specs not built yet - ${how.left.join(", ")}` : undefined,
         });
       } catch (error) {
         say(String((error as Error).message ?? error), "error");
@@ -352,14 +383,15 @@ export function App() {
       window.turri.on("menu", (action: string) => {
         if (action.startsWith("view:")) setView(action.slice(5) as View);
         else if (action === "regenerate-how" && spec?.ok) setChoosing([]);
-        else if (action === "regenerate") void regenerate();
+        // Regenerate What Changed: only with something changed - the menu offers it only then.
+        else if (action === "regenerate" && changed) void regenerate();
         else if (action === "glimpse") void glimpse();
         else if (action === "conform") void conform();
         else if (action === "save") void saveRef.current?.();
         else if (action === "new-project") setCreating(true);
         else if (action === "switch-project") setSwitcher((open) => !open);
         else if (action === "chat") setChatOpen((open) => !open);
-        else if (action === "sidebar") setSidebarOpen((open) => !open);
+        else if (action === "sidebar") toggleSidebar();
         // ⌘R, as in a browser: in the preview the page being tried - the terminal is not reloaded - else the window,
         // which is given its project back.
         else if (action === "reload") {
@@ -374,7 +406,7 @@ export function App() {
         else if (action === "about" || action === "privacy" || action === "notices") setAbout(action);
         else if (action === "getting-started") setGuide(true);
       }),
-    [regenerate, glimpse, conform, project, spec, view, pane],
+    [regenerate, glimpse, conform, project, spec, changed, view, pane, toggleSidebar],
   );
 
   // What the person is looking at, for turri to know: the view, and the file open in it - or the preview's browser or terminal.
@@ -382,9 +414,16 @@ export function App() {
     if (project === null) return;
     void window.turri.call("look", { view, file: view === "spec" ? selected : view === "stdlib" ? template : null, pane: view === "preview" ? pane : null }).catch(() => {});
   }, [project?.dir, view, selected, pane, template]);
+
+  // The project's first ***plain written: the chat and the files as the person keeps them.
   useEffect(() => {
-    if (project !== null) savePane(project.dir, pane);
-  }, [project?.dir, pane]);
+    if (project !== null && project.specs.length > 0) (setFreshChat(false), setFreshFiles(false));
+  }, [project?.specs.length]);
+  // A ***plain there, and nothing open - a project that had none when it opened: the first opens, in place of "no
+  // ***plain yet".
+  useEffect(() => {
+    if (project !== null && selected === null && project.specs.length > 0) setSelected(project.specs[0]!.file);
+  }, [project?.specs.length, selected]);
 
   // What the project needs of this machine - its toolchains, what its testing scripts run - checked as it opens, the
   // models not asked: anything missing is said at the foot of the sidebar.
@@ -467,8 +506,10 @@ export function App() {
     <DoctorSheet
       project={project?.name ?? null}
       askModels={doctorModels}
+      initial={doctorFound}
       onClose={() => {
         setDoctorOpen(false);
+        setDoctorFound(undefined);
         // What was seen to while it was open shows at once at the foot of the sidebar.
         if (project !== null) void window.turri.doctor().then(setMachine).catch(() => {});
       }}
@@ -513,7 +554,7 @@ export function App() {
 
   // As wide as dragged, held to the window: the files first, then the chat beside them - the ***plain keeps its room.
   const filesShown = clampFiles(filesWidth, chatOpen ? CHAT_MIN : 0);
-  const chatShown = clampChat(chatWidth, sidebarOpen ? filesShown : 0);
+  const chatShown = freshChat ? Math.max(CHAT_MIN, Math.round((window.innerWidth * 2) / 3)) : clampChat(chatWidth, sidebarOpen ? filesShown : 0);
 
   return (
     <>
@@ -537,13 +578,13 @@ export function App() {
               setResizing(true);
             }}
             onPointerMove={(event) => {
-              if (event.currentTarget.hasPointerCapture(event.pointerId)) setChatWidth(clampChat(event.clientX, sidebarOpen ? filesShown : 0));
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) (setFreshChat(false), setChatWidth(clampChat(event.clientX, sidebarOpen ? filesShown : 0)));
             }}
             onPointerUp={(event) => {
               event.currentTarget.releasePointerCapture(event.pointerId);
               setResizing(false);
             }}
-            onDoubleClick={() => setChatWidth(CHAT_WIDTH)}
+            onDoubleClick={() => (setFreshChat(false), setChatWidth(CHAT_WIDTH))}
           />
         )}
         {chatOpen && (
@@ -556,6 +597,7 @@ export function App() {
             statuses={statuses}
             model={chatModel}
             fresh={project.specs.length === 0}
+            changed={project.specs.some((entry) => entry.ok && entry.drifted !== false)}
             commands={commands}
             concepts={concepts}
             onSend={(text) => void window.turri.call("sendChat", { text })}
@@ -606,16 +648,11 @@ export function App() {
             <div className="segmented" role="tablist">
               {(["spec", "work", "preview"] as View[]).map((name) => (
                 <button key={name} role="tab" aria-selected={view === name} className={view === name ? "on" : ""} onClick={() => setView(name)}>
-                  {name === "spec" ? <PlainName /> : name === "work" ? `work${running.length ? ` · ${running.length}` : ""}` : name}
+                  {name === "spec" ? <PlainName /> : name === "work" ? "regen" : name}
                 </button>
               ))}
             </div>
             <div className="toolbar-actions">
-              {/* The project's settings - config.turri.yaml's - in a sheet, changed through /turri-config as the person would type
-                  it: in the toolbar, there with the files hidden too. */}
-              <button className="icon-button project-settings-button" onClick={() => setProjectSettingsOpen(true)} title="project settings - its models, conformance tests, review, pulses at once, debug" aria-label="project settings">
-                <Icon name="gear" />
-              </button>
               {/* Only turri halts a pulse: while one regenerates this module, Regenerate waits for it. */}
               <button
                 className="button primary"
@@ -626,12 +663,14 @@ export function App() {
                     ? "turri is regenerating this module"
                     : spec && !spec.functionalSpecs.some((entry) => entry.built)
                       ? "regenerate all of it - nothing is built yet"
-                      : "regenerate - what changed, chosen functional specs, or from scratch"
+                      : changed
+                        ? "regenerate - what changed, chosen functional specs, or from scratch"
+                        : "regenerate - chosen functional specs again, or from scratch: nothing has changed since it was built"
                 }
               >
                 {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} regenerate…
               </button>
-              <button className="icon-button sidebar-toggle" onClick={() => setSidebarOpen((open) => !open)} title={`${sidebarOpen ? "hide" : "show"} the files (${keys("B")})`} aria-label={sidebarOpen ? "hide the files" : "show the files"} aria-pressed={sidebarOpen}>
+              <button className="icon-button sidebar-toggle" onClick={toggleSidebar} title={`${sidebarOpen ? "hide" : "show"} the files (${keys("B")})`} aria-label={sidebarOpen ? "hide the files" : "show the files"} aria-pressed={sidebarOpen}>
                 <Icon name="sidebar" />
               </button>
             </div>
@@ -640,7 +679,7 @@ export function App() {
           <section className="content">
             {view === "preview" ? (
               // A sheet over the window would be under the pane: while one is open, the pane steps aside.
-              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || signIn !== null || creating || choosing !== null || switching !== null || switcher || settingsOpen || projectSettingsOpen || about !== null || guide} pane={pane} onPane={setPane} testing={testing} />
+              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || signIn !== null || creating || choosing !== null || switching !== null || switcher || settingsOpen || projectSettingsOpen || about !== null || guide} pane={pane} panes={panes} onPane={openPane} testing={testing} />
             ) : view === "stdlib" ? (
               <StdlibView
                 key={project.dir}
@@ -685,7 +724,7 @@ export function App() {
                 onSaved={(next: Spec) => setProject((now) => now && { ...now, specs: now.specs.map((entry) => (entry.file === next.file ? next : entry)) })}
                 onDirty={setDirty}
                 saveRef={saveRef}
-                onRegenerate={(frids) => void regenerate(frids?.length ? { how: "again", frids, guidance: "" } : undefined)}
+                onRegenerate={(frids) => void regenerate(frids?.length ? { how: "again", frids } : undefined)}
                 onConform={(frids) => void conform(frids)}
                 onOpen={openLink}
                 onFollow={(followed, point) => void follow(spec.file, followed, point)}

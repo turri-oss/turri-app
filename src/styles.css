@@ -319,13 +319,6 @@ code {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.project-settings-button {
-  align-self: center;
-  color: var(--fg-2);
-}
-.project-settings-button:hover {
-  color: var(--fg);
-}
 
 .sidebar-section {
   font-size: 11px;
@@ -1455,13 +1448,29 @@ code {
   align-items: center;
   font-weight: 600;
 }
-.chat-model {
+/* The new session's button and the chat's ×, at the header's right. */
+.chat-new-session {
   margin-left: auto;
+}
+/* The meter, its cost and the model, at the foot's left - each after a line, as the cost is. */
+.composer-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.chat-model {
+  padding-left: 6px;
+  border-left: 1px solid var(--line);
   font-size: 11px;
-  color: var(--fg-3);
+  color: var(--fg-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.composer-meta > .chat-model:first-child {
+  padding-left: 0;
+  border-left: none;
 }
 .chat-body {
   flex: 1;
@@ -1477,15 +1486,17 @@ code {
   text-align: center;
   padding: 0 10px;
 }
+/* How to begin, each as wide as its words, one under another and centred under the chat's words. */
 .hint {
   display: block;
-  width: 100%;
-  margin-top: 6px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 6px auto 0;
   border: 1px solid var(--line);
   background: var(--card);
   border-radius: var(--radius);
-  padding: 7px 10px;
-  text-align: left;
+  padding: 7px 14px;
+  text-align: center;
 }
 .hint:hover {
   border-color: var(--accent);
@@ -2358,6 +2369,9 @@ code {
 .preview-retry .button {
   display: inline-flex;
 }
+.preview-retry .button + .button {
+  margin-left: 8px;
+}
 .tool-image {
   display: block;
   max-width: 100%;
@@ -2398,26 +2412,6 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.regenerate-guidance {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 16px;
-  font-size: 13px;
-}
-.regenerate-guidance textarea {
-  resize: vertical;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--card);
-  color: var(--fg);
-  font: inherit;
-  outline: none;
-}
-.regenerate-guidance textarea:focus {
-  border-color: var(--accent);
 }
 .regenerate-warning {
   margin-right: auto;

@@ -6,7 +6,7 @@ import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { createPreview } from "./preview.ts";
 import { readSettings, writeSettings, type Settings } from "./settings.ts";
 import { loadShellEnvironment } from "./shell-env.ts";
-import { createTerminal } from "./terminal.ts";
+import { createTerminal, shellsEnded } from "./terminal.ts";
 import { turriVersion } from "./turri-version.ts";
 import { createUpdates, type UpdateState } from "./updates.ts";
 
@@ -123,6 +123,8 @@ interface Workspace {
   send(channel: string, data: unknown): void;
   /** Its pulses running now. */
   running: number;
+  /** Whether the ***plain open in it has changed since its code was built: Regenerate What Changed has something to do. */
+  changed: boolean;
   /** The project open in it, once one is. */
   readonly dir: string | undefined;
   /** The project being opened in it, while it is. */
@@ -311,6 +313,7 @@ function createWorkspace(): Workspace {
     terminal,
     send,
     running: 0,
+    changed: false,
     get dir() {
       return dir;
     },
@@ -700,7 +703,7 @@ function buildMenu() {
       label: "View",
       submenu: [
         { label: "***plain", accelerator: "CmdOrCtrl+1", click: menuAction("view:spec") },
-        { label: "work", accelerator: "CmdOrCtrl+2", click: menuAction("view:work") },
+        { label: "regen", accelerator: "CmdOrCtrl+2", click: menuAction("view:work") },
         { label: "preview", accelerator: "CmdOrCtrl+3", click: menuAction("view:preview") },
         { type: "separator" },
         { label: "Show or Hide the Files", accelerator: "CmdOrCtrl+B", click: menuAction("sidebar") },
@@ -737,7 +740,7 @@ function buildMenu() {
       label: "***plain",
       submenu: [
         { label: "Regenerate…", click: menuAction("regenerate-how"), enabled: ready },
-        { label: "Regenerate What Changed", accelerator: "CmdOrCtrl+Shift+R", click: menuAction("regenerate"), enabled: ready },
+        { label: "Regenerate What Changed", accelerator: "CmdOrCtrl+Shift+R", click: menuAction("regenerate"), enabled: ready && front?.changed === true },
         { label: "Preview the Plan", click: menuAction("glimpse"), enabled: ready },
         { label: "Write Conformance Tests", click: menuAction("conform"), enabled: ready },
         { type: "separator" },
@@ -875,6 +878,13 @@ nativeTheme.on("updated", () => {
   for (const { window } of workspaces.values()) window.setBackgroundColor(backgroundFor());
 });
 // A native context menu: the window lists what it offers, and is told which was chosen.
+// The window says whether its ***plain has changed since it was built, for Regenerate What Changed.
+ipcMain.handle("menu:changed", (event, changed: boolean) => {
+  const workspace = workspaceOf(event.sender);
+  if (workspace.changed === (changed === true)) return;
+  workspace.changed = changed === true;
+  buildMenu();
+});
 ipcMain.handle("menu:popup", (event, items: Array<{ id: string; label: string; enabled?: boolean } | { type: "separator" }>) => {
   return new Promise<string | null>((resolve) => {
     let chosen: string | null = null;
@@ -927,5 +937,16 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-// Quitting - ⌘Q, the menu, app.quit() - closes no window first, so each window's engine and terminal are stopped here.
-app.on("will-quit", closeAll);
+// Quitting - ⌘Q, the menu, app.quit() - closes no window first, so each window's engine and terminal are stopped here -
+// and the app quits once their shells are heard to exit: one heard while it quits aborts it (terminal.ts, shellsEnded).
+let shellsDone = false;
+app.on("will-quit", (event) => {
+  for (const { terminal } of workspaces.values()) terminal.dispose();
+  closeAll();
+  if (shellsDone) return;
+  event.preventDefault();
+  void shellsEnded().then(() => {
+    shellsDone = true;
+    app.quit();
+  });
+});

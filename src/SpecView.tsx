@@ -250,16 +250,13 @@ export function SpecView(props: {
     const left = spec.functionalSpecs.filter((entry) => !entry.built).map((entry) => entry.frid);
     const chosen = await window.turri.popup([
       built
-        ? { id: "again", label: `regenerate functional spec ${frid} again` }
-        : { id: "build", label: left.length > 1 ? `regenerate functional specs ${left.join(", ")} - not built yet` : `regenerate functional spec ${frid}` },
-      built ? { id: "conform", label: `write conformance tests for ${frid}` } : { id: "conform", label: `write conformance tests for ${frid} - once it is built`, enabled: false },
-      { type: "separator" },
-      { id: "copy", label: "copy text" },
+        ? { id: "again", label: `regenerate ${frid}` }
+        : { id: "build", label: left.length > 1 ? `regenerate functional specs ${left.join(", ")} - not built yet` : `regenerate ${frid}` },
+      built ? { id: "conform", label: `validate ${frid}` } : { id: "conform", label: `validate ${frid} - once it is built`, enabled: false },
     ]);
     if (chosen === "again") props.onRegenerate([frid]);
     else if (chosen === "build") props.onRegenerate();
     else if (chosen === "conform") props.onConform([frid]);
-    else if (chosen === "copy") void navigator.clipboard.writeText(spec.functionalSpecs.find((entry) => entry.frid === frid)?.text ?? "");
   };
 
   const total = spec.functionalSpecs.length;

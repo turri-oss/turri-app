@@ -17,12 +17,12 @@ export const toSeeTo = (wanting: Check[]) => `${wanting.length} thing${wanting.l
 /**
  * turri doctor's checks, run by the window's engine on the PATH it runs turri with - of the project open, or of the one
  * named (`dir`) - and run again on asking. The models are asked from the start only when `askModels` says so, as each
- * answer costs money.
+ * answer costs money. Checks already run (`initial`) are shown as they are, not run again.
  */
-export function useDoctor(askModels: boolean, dir?: string) {
-  const [checks, setChecks] = useState<Check[] | null | undefined>(undefined);
-  const [models, setModels] = useState(false);
-  const [checking, setChecking] = useState(true);
+export function useDoctor(askModels: boolean, dir?: string, initial?: Check[]) {
+  const [checks, setChecks] = useState<Check[] | null | undefined>(initial);
+  const [models, setModels] = useState(initial !== undefined && askModels);
+  const [checking, setChecking] = useState(initial === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const run = async (withModels: boolean) => {
@@ -37,7 +37,9 @@ export function useDoctor(askModels: boolean, dir?: string) {
       setChecking(false);
     }
   };
-  useEffect(() => void run(askModels), []);
+  useEffect(() => {
+    if (initial === undefined) void run(askModels);
+  }, []);
   return { checks, models, checking, error, run, askModels };
 }
 
@@ -119,10 +121,11 @@ export function DoctorChecks({ doctor, onSignIn }: { doctor: ReturnType<typeof u
 /**
  * Whether this machine - and the project open, if one is - is ready for turri: `turri doctor`'s checks, each with what
  * to do about it. The models are asked only on a click, as each answer costs money - or from the start (`askModels`)
- * when a project has just been started on the ones chosen.
+ * when a project has just been started on the ones chosen, which opens the sheet only on what wants seeing to, its
+ * checks already run (`initial`).
  */
-export function DoctorSheet({ project, askModels = false, onClose }: { project: string | null; askModels?: boolean; onClose: () => void }) {
-  const doctor = useDoctor(askModels);
+export function DoctorSheet({ project, askModels = false, initial, onClose }: { project: string | null; askModels?: boolean; initial?: Check[]; onClose: () => void }) {
+  const doctor = useDoctor(askModels, undefined, initial);
   const { checks, models, checking, run } = doctor;
   // Signing in to a model provider, over the checks - which are run again once it closes, the models not asked again.
   const [signingIn, setSigningIn] = useState(false);
@@ -148,7 +151,7 @@ export function DoctorSheet({ project, askModels = false, onClose }: { project: 
             {checking ? <Spinner /> : <Icon name="reload" />} check again
           </button>
           <button className="button primary" onClick={onClose}>
-            close
+            okay
           </button>
         </div>
       </div>
