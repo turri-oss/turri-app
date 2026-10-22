@@ -200,7 +200,8 @@ test.describe("the chat", () => {
     // The window may close before the press is done with: that is what is wanted.
     await box.press("Control+c").catch(() => {});
     await closed;
-    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(0);
+    // On Linux the app quits with its last window, and is no longer there to ask: none left either way.
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length).catch(() => 0)).toBe(0);
   });
 
   test("puts a question away once turri says it is over - declined, or its turn stopped", async ({ launched: { app, window } }) => {
@@ -240,6 +241,12 @@ test.describe("a turn at work", () => {
         if (where === "the ***plain") document.querySelector<HTMLTextAreaElement>(".editor-pane textarea")?.focus();
       }, focus);
       await window.keyboard.press("Control+c");
+      // On Linux ctrl+c in an editor outside the chat copies, as everywhere there: the turn goes on, stopped by the button.
+      if (process.platform === "linux" && focus === "the ***plain") {
+        await window.waitForTimeout(1000);
+        await expect(stop, "copying in the ***plain, not stopping").toHaveCount(1);
+        await stop.click();
+      }
       await expect(stop, `stopped with the focus on ${focus}`).toHaveCount(0);
     }
     expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
