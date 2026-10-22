@@ -1448,9 +1448,127 @@ code {
   align-items: center;
   font-weight: 600;
 }
-/* The new session's button and the chat's ×, at the header's right. */
-.chat-new-session {
-  margin-left: auto;
+/* The chats, as folder tabs in the header after turri's name, + after them: the strip as wide as its tabs or
+   the room there is, its tabs at its foot. The one shown is raised - its outline open at the bottom, over the header's line, its feet curving
+   out into it - and of a piece with the chat below; the others are their titles alone. */
+.chat-tabs-room {
+  flex: 1;
+}
+.chat-tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  align-self: stretch;
+  gap: 2px;
+  /* Down over the header's line: the tab shown covers it. */
+  margin-bottom: -1px;
+  /* Room on either side for the feet of the tab shown, which reach past it: the strip clips what is beyond it - and
+     scrolling one into view keeps that room too. */
+  padding: 0 10px;
+  scroll-padding-inline: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.chat-tabs::-webkit-scrollbar {
+  display: none;
+}
+.chat-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  /* As a browser's: each as wide as the others, all narrower as more are open - down to a width that still shows a
+     word of the title and the ×; past that, the tabs scroll. */
+  flex: 0 1 150px;
+  min-width: 76px;
+  /* Its title on the line with turri's name, at the header's middle - the tab reaching down from there to its foot. */
+  align-items: flex-start;
+  height: 42px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius-small) var(--radius-small) 0 0;
+  color: var(--fg-2);
+  -webkit-app-region: no-drag;
+  transition: color 120ms ease;
+}
+.chat-tab:hover {
+  color: var(--fg);
+}
+.chat-tab.on {
+  z-index: 1;
+  border-color: var(--line);
+  background: var(--sidebar);
+  color: var(--fg);
+}
+/* Its feet: the outline curving out into the header's line on either side - one curve, drawn over the foot of the tab's
+   own edge and the line, so the edge runs into it with nothing between them. Opaque, on the chat's own colour: the line
+   is translucent, and drawn over itself it would show darker where they meet. */
+.chat-tab.on::before,
+.chat-tab.on::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+}
+.chat-tab.on::before {
+  left: -9px;
+  background: radial-gradient(circle at 0 0, transparent 7.6px, var(--line) 8px, var(--line) 8.9px, transparent 9.3px), var(--sidebar);
+}
+.chat-tab.on::after {
+  right: -9px;
+  background: radial-gradient(circle at 100% 0, transparent 7.6px, var(--line) 8px, var(--line) 8.9px, transparent 9.3px), var(--sidebar);
+}
+.chat-tab-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 2px 0 10px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: default;
+}
+.chat-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-tab-mark.asks {
+  color: var(--accent);
+  font-weight: 700;
+}
+.chat-tab-mark.unread {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* Its ×, on every tab while there are two: the tab shown's as bright as its title, the others' dimmer. */
+.chat-tab-close {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px 0 2px;
+  background: none;
+  border: 0;
+  color: var(--fg-3);
+}
+.chat-tab.on .chat-tab-close,
+.chat-tab-close:hover {
+  color: var(--fg-2);
+}
+/* + after the last tab, on the line with their titles - the chat's × beyond it, at the right. */
+.chat-new {
+  flex: none;
+  align-self: flex-end;
+  margin: 0 auto 15px 0;
 }
 /* The meter, its cost and the model, at the foot's left - each after a line, as the cost is. */
 .composer-meta {

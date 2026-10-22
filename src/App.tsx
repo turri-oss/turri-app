@@ -21,7 +21,8 @@ import { PreviewView } from "./PreviewView.tsx";
 import { StdlibView } from "./StdlibView.tsx";
 import { ConceptUses, type Followed, type Link, type Place, type Use } from "./PlainLinks.tsx";
 import { Empty, Icon, Jellyfish, PlainName, Spinner, TurriVersionLine, withPlain } from "./ui.tsx";
-import { Chat, type ChatItem, type ChatStats, type Question, type SkillProgress } from "./Chat.tsx";
+import { Chat } from "./Chat.tsx";
+import { useChats } from "./chats.ts";
 import { keys } from "./platform.ts";
 
 const EMPTY_STATUS: Status = { modules: [], jobs: [], planned: [] };
@@ -173,17 +174,14 @@ export function App() {
       /* not kept: it is 400 again next time */
     }
   }, [chatWidth]);
-  const [items, setItems] = useState<ChatItem[]>([]);
-  const [streaming, setStreaming] = useState<ChatItem | null>(null);
-  const [chatBusy, setChatBusy] = useState(false);
-  const [working, setWorking] = useState<string | null>(null);
-  const [toolsRunning, setToolsRunning] = useState<Map<string, boolean>>(new Map());
-  const [statuses, setStatuses] = useState<Record<string, string>>({});
-  const [questions, setQuestions] = useState<Question[]>([]);
-  // The skill running in the chat - brood, spawn - and where it is in its phases.
-  const [progress, setProgress] = useState<SkillProgress | null>(null);
-  const [chatModel, setChatModel] = useState<string | null>(null);
-  const [chatStats, setChatStats] = useState<ChatStats | null>(null);
+  const say = useCallback((text: string, tone: "info" | "error" = "info") => {
+    setToast({ text, tone });
+    setTimeout(() => setToast((now) => (now?.text === text ? null : now)), tone === "error" ? 9000 : 4500);
+  }, []);
+  // turri's chats - tabs of the chat, each its own conversation on the project's one work loop - and the one shown. A
+  // question asked in any of them brings the chat out.
+  const chats = useChats({ onAsk: useCallback(() => setChatOpen(true), []), onError: useCallback((text: string) => say(text, "error"), [say]) });
+  const shownChat = chats.shown;
   const [commands, setCommands] = useState<Array<{ name: string; description: string }>>([]);
   /** The concepts the project's ***plain can name, for the chat to offer as one is typed: read again as a .plain changes. */
   const [concepts, setConcepts] = useState<Concept[]>([]);
@@ -203,11 +201,6 @@ export function App() {
   const changed = spec !== null && spec.ok && spec.drifted !== false;
   useEffect(() => void window.turri.changed(changed), [changed]);
   const file = spec === null && project !== null && selected !== null ? selected : null;
-
-  const say = useCallback((text: string, tone: "info" | "error" = "info") => {
-    setToast({ text, tone });
-    setTimeout(() => setToast((now) => (now?.text === text ? null : now)), tone === "error" ? 9000 : 4500);
-  }, []);
 
   const refreshProject = useCallback(async () => {
     const summary = await window.turri.call<Omit<Project, never>>("summary");
@@ -231,15 +224,8 @@ export function App() {
     setView("spec");
     setPane(null);
     setPanes([]);
-    setStreaming(null);
-    setQuestions([]);
-    setProgress(null);
-    void window.turri.call<{ messages: ChatItem[]; model: string | null; stats: ChatStats }>("chatHistory").then(({ messages, model, stats }) => {
-      setChatStats(stats);
-      // A project just started opens on what turri said of its config: its models, and how to sign in to them.
-      setItems(summary.setup ? [...messages, { role: "note", text: summary.setup, level: "info" }] : messages);
-      setChatModel(model);
-    });
+    // A project just started opens on what turri said of its config: its models, and how to sign in to them.
+    void chats.reset(summary.setup ? [{ role: "note", text: summary.setup, level: "info" }] : []);
     // Its models just chosen and its config written: whether this machine is ready for it, and the models answer - said
     // only when something wants seeing to, as a project that is ready needs nothing of you.
     if (summary.setup)
@@ -254,7 +240,7 @@ export function App() {
         () => (setDoctorFound(undefined), setDoctorModels(false), setDoctorOpen(true)),
       );
     void window.turri.call<Array<{ name: string; description: string }>>("commands").then(setCommands);
-  }, []);
+  }, [chats.reset]);
 
   // What the engine says as the work goes on.
   useEffect(() => {
@@ -293,34 +279,14 @@ export function App() {
           return { ...now, specs: now.specs.map((entry) => (entry.file === next.file ? next : entry)) };
         }),
       ),
-      window.turri.on("engine:chat:message", (item: ChatItem) => setItems((all) => [...all, item])),
-      window.turri.on("engine:chat:streaming", (item: ChatItem | null) => setStreaming(item)),
-      window.turri.on("engine:chat:busy", ({ busy }: { busy: boolean }) => {
-        setChatBusy(busy);
-        if (!busy) setWorking(null);
-      }),
-      window.turri.on("engine:chat:working", ({ text }: { text: string | null }) => setWorking(text)),
-      window.turri.on("engine:chat:tool", ({ id, running }: { id: string; running: boolean }) => setToolsRunning((all) => new Map(all).set(id, running))),
-      window.turri.on("engine:chat:status", ({ key, text }: { key: string; text: string | null }) => setStatuses((all) => ({ ...all, [key]: text ?? "" }))),
-      window.turri.on("engine:chat:notify", ({ level, text }: { level: string; text: string }) => {
-        setItems((all) => [...all, { role: "note", text, level }]);
-        if (level === "error") say(text.split("\n")[0]!, "error");
-      }),
-      window.turri.on("engine:chat:progress", (next: SkillProgress | null) => setProgress(next)),
       // The config changed - /turri-config, say: its settings in the sidebar, and the model the chat runs on now.
       window.turri.on("engine:config", () => void refreshProject()),
-      window.turri.on("engine:chat:model", ({ model }: { model: string }) => setChatModel(model)),
-      window.turri.on("engine:chat:stats", (stats: ChatStats) => setChatStats(stats)),
       // turri works in the preview with its browser tools: the window shows it, so the person sees what it does.
       window.turri.on("preview:reveal", () => (setView("preview"), openPane("browser"))),
       window.turri.on("terminal:reveal", () => (setView("preview"), openPane("terminal"))),
       window.turri.on("preview:testing", (now: boolean) => setTesting(now)),
       // /login typed in the chat: pi's terminal would sign in there, the window does it in its sheet.
       window.turri.on("engine:auth:open", ({ provider }: { provider: string | null }) => setSignIn({ provider })),
-      window.turri.on("engine:chat:ask", (question: Question) => {
-        setQuestions((all) => [...all, question]);
-        setChatOpen(true);
-      }),
     ];
     return () => off.forEach((stop) => stop());
   }, [opened, refreshProject, say]);
@@ -365,6 +331,30 @@ export function App() {
     [spec, say],
   );
 
+  /** A chat with turri beside the others, shown - ⌘T, as a browser opens a tab. */
+  const newChat = useCallback(() => {
+    if (project === null) return;
+    setChatOpen(true);
+    if (!project.offers.chats) return say("this turri has one chat: a newer one opens more, side by side.");
+    window.turri.call("openChat").catch((error) => say(engineSaid(error), "error"));
+  }, [project, say]);
+  /** A chat closed - ⌘W, as a browser closes a tab: its conversation is gone, its pulses run on. */
+  const closeChat = useCallback((id: string) => void window.turri.call("closeChat", { chat: id }).catch((error) => say(engineSaid(error), "error")), [say]);
+  const showChat = useCallback((id: string) => void window.turri.call("focusChat", { chat: id }).catch(() => {}), []);
+  // ctrl+tab and ctrl+shift+tab, as in a browser: the chat after the one shown, and the one before - round from the ends.
+  useEffect(() => {
+    const step = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !event.ctrlKey || event.metaKey || event.altKey || chats.list.length < 2) return;
+      event.preventDefault();
+      const at = chats.list.findIndex((chat) => chat.id === chats.shownId);
+      const next = chats.list[(at + (event.shiftKey ? chats.list.length - 1 : 1)) % chats.list.length]!;
+      setChatOpen(true);
+      showChat(next.id);
+    };
+    window.addEventListener("keydown", step, true);
+    return () => window.removeEventListener("keydown", step, true);
+  }, [chats.list, chats.shownId, showChat]);
+
   const glimpse = useCallback(async () => {
     if (spec === null) return;
     if (dirty) await saveRef.current?.();
@@ -391,6 +381,8 @@ export function App() {
         else if (action === "new-project") setCreating(true);
         else if (action === "switch-project") setSwitcher((open) => !open);
         else if (action === "chat") setChatOpen((open) => !open);
+        else if (action === "new-chat") newChat();
+        else if (action === "close-chat" && chats.shownId !== null) closeChat(chats.shownId);
         else if (action === "sidebar") toggleSidebar();
         // ⌘R, as in a browser: in the preview the page being tried - the terminal is not reloaded - else the window,
         // which is given its project back.
@@ -406,7 +398,7 @@ export function App() {
         else if (action === "about" || action === "privacy" || action === "notices") setAbout(action);
         else if (action === "getting-started") setGuide(true);
       }),
-    [regenerate, glimpse, conform, project, spec, changed, view, pane, toggleSidebar],
+    [regenerate, glimpse, conform, project, spec, changed, view, pane, toggleSidebar, newChat, closeChat, chats.shownId],
   );
 
   // What the person is looking at, for turri to know: the view, and the file open in it - or the preview's browser or terminal.
@@ -589,51 +581,45 @@ export function App() {
         )}
         {chatOpen && (
           <Chat
-            items={items}
-            streaming={streaming}
-            busy={chatBusy}
-            working={working}
-            running={toolsRunning}
-            statuses={statuses}
-            model={chatModel}
+            chatId={chats.shownId}
+            chats={chats.list}
+            asking={chats.asking}
+            canOpen={project.offers.chats}
+            onNewChat={newChat}
+            onShowChat={showChat}
+            onCloseChat={closeChat}
+            items={shownChat.items}
+            streaming={shownChat.streaming}
+            busy={shownChat.busy}
+            working={shownChat.working}
+            running={shownChat.tools}
+            statuses={shownChat.statuses}
+            model={shownChat.model}
             fresh={project.specs.length === 0}
             changed={project.specs.some((entry) => entry.ok && entry.drifted !== false)}
             commands={commands}
             concepts={concepts}
-            onSend={(text) => void window.turri.call("sendChat", { text })}
-            onAbort={() => void window.turri.call("abortChat")}
+            onSend={(text) => void window.turri.call("sendChat", { chat: chats.shownId, text })}
+            onAbort={() => void window.turri.call("abortChat", { chat: chats.shownId })}
+            onInterrupt={(draft) => window.turri.call<string>("interruptChat", { chat: chats.shownId, draft })}
+            onDecline={(id) =>
+              void window.turri.call<string>("declineQuestion", { id }).then((did) => {
+                if (did === "unsupported") say("this turri cannot decline a question - a newer one can: answer it, or skip it.");
+              })
+            }
             onClose={() => setChatOpen(false)}
-            question={questions[0]}
-            progress={progress}
-            stats={chatStats}
-            newSessionBlocked={running.length > 0 ? `${running.length} pulse${running.length === 1 ? " is" : "s are"} running: start a new session once ${running.length === 1 ? "it has" : "they have"} finished` : null}
+            question={shownChat.questions[0]}
+            progress={shownChat.progress}
+            stats={shownChat.stats}
             onShowConcept={(concept) => void showConcept(concept)}
             onShowPulse={(id) => {
               if (!jobs.has(id) && !earlier.some((run) => run.pulses.some((pulse) => pulse.id === id))) return say("that pulse ran in an earlier session, and the ledger has nothing of it now.");
               setView("work");
               setFocusPulse({ id, at: Date.now() });
             }}
-            onNewSession={() =>
-              void window.turri
-                .call<{ messages: ChatItem[]; model: string | null; stats: ChatStats }>("newChat")
-                .then(({ messages, model, stats }) => {
-                  setItems(messages);
-                  setChatModel(model);
-                  setChatStats(stats);
-                  setStreaming(null);
-                  setQuestions([]);
-                  setProgress(null);
-                  setWorking(null);
-                  setStatuses({});
-                  setToolsRunning(new Map());
-                  setChatBusy(false);
-                  say("A new session: turri starts with nothing of the last conversation.");
-                })
-                .catch((error) => say(String((error as Error).message ?? error).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""), "error"))
-            }
             onAnswer={(value) => {
-              void window.turri.call("answer", { id: questions[0]!.id, value });
-              setQuestions((all) => all.slice(1));
+              void window.turri.call("answer", { id: shownChat.questions[0]!.id, value });
+              chats.answered(chats.shownId!);
             }}
           />
         )}
@@ -641,8 +627,8 @@ export function App() {
         <main className={`main ${project?.offers.resources ? "follows-resources" : ""}`}>
           <header className="toolbar">
             {!chatOpen && (
-              <button className={`button open-chat ${questions.length > 0 ? "asking" : ""}`} onClick={() => setChatOpen(true)} title={questions.length > 0 ? "turri is asking you something" : `talk to turri (${keys("J")})`}>
-                <Jellyfish size={16} swimming={false} /> turri{questions.length > 0 && " · asks"}
+              <button className={`button open-chat ${chats.asking.size > 0 ? "asking" : ""}`} onClick={() => setChatOpen(true)} title={chats.asking.size > 0 ? "turri is asking you something" : `talk to turri (${keys("J")})`}>
+                <Jellyfish size={16} swimming={false} /> turri{chats.asking.size > 0 && " · asks"}
               </button>
             )}
             <div className="segmented" role="tablist">
@@ -865,4 +851,9 @@ export function App() {
       {aboutSheet}
     </>
   );
+}
+
+/** What the engine said went wrong, without Electron's wrapping of it. */
+function engineSaid(error: unknown) {
+  return String((error as Error).message ?? error).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
 }

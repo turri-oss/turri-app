@@ -125,6 +125,10 @@ interface Workspace {
   running: number;
   /** Whether the ***plain open in it has changed since its code was built: Regenerate What Changed has something to do. */
   changed: boolean;
+  /** Its chats open now: ⌘W closes the one shown while there are two or more, the window once there is one. */
+  chats: number;
+  /** Whether its turri opens more chats than one: ⌘T is offered only then. */
+  manyChats: boolean;
   /** The project open in it, once one is. */
   readonly dir: string | undefined;
   /** The project being opened in it, while it is. */
@@ -157,7 +161,8 @@ function workspaceOf(sender: Electron.WebContents): Workspace {
 
 function focused(): Workspace | undefined {
   const window = BrowserWindow.getFocusedWindow();
-  return (window && workspaces.get(window.id)) ?? lastFocused;
+  // None focused yet - a window never shown, as the tests' are: the only one there is.
+  return (window && workspaces.get(window.id)) ?? lastFocused ?? (workspaces.size === 1 ? [...workspaces.values()][0] : undefined);
 }
 
 /** Pulses running in every window: the Dock's badge counts them all. */
@@ -314,6 +319,8 @@ function createWorkspace(): Workspace {
     send,
     running: 0,
     changed: false,
+    chats: 0,
+    manyChats: false,
     get dir() {
       return dir;
     },
@@ -381,6 +388,7 @@ function createWorkspace(): Workspace {
         engine = undefined;
         engineHasProject = false;
         workspace.running = 0;
+        workspace.chats = 0;
         showRunning();
         send("engine:exit", { code });
         buildMenu();
@@ -403,6 +411,13 @@ function createWorkspace(): Workspace {
     if (event === "auth:event" && data.event.type === "auth_url" && /^https?:\/\//.test(data.event.url)) void shell.openExternal(data.event.url);
     // New code under the preview: it is loaded again.
     if (event === "finished" && data.status === "succeeded") preview.reloadSoon();
+    // turri's session ended - ctrl+c in a chat doing nothing, as it leaves turri in a terminal: its window closes.
+    if (event === "ended" && !window.isDestroyed()) window.close();
+    // How many chats there are, for ⌘W to close one or the window.
+    if (event === "chats" && (data as unknown[]).length !== workspace.chats) {
+      workspace.chats = (data as unknown[]).length;
+      buildMenu();
+    }
     if (event === "status") {
       workspace.running = (data.jobs as Array<{ status: string }>).filter((job) => job.status === "running").length;
       showRunning();
@@ -437,6 +452,7 @@ function createWorkspace(): Workspace {
       preview.dispose();
       terminal.setDir(next);
       const summary = await call("open", { dir: next });
+      workspace.manyChats = (summary as { offers: { chats?: boolean } }).offers.chats === true;
       dir = next;
       name = (summary as { name: string }).name;
       writeFileSync(RECENTS_FILE, JSON.stringify([next, ...recents().filter((other) => other !== next)].slice(0, RECENTS_KEPT)));
@@ -650,6 +666,17 @@ function buildMenu() {
   const front = focused();
   const menuAction = (action: string) => () => focused()?.send("menu", action);
   const ready = front?.open === true;
+  // ⌘W, as in a browser: the chat shown, while there is another - else the window.
+  const closesChat = ready && (front?.chats ?? 0) > 1;
+  const closeItem: MenuItemConstructorOptions = {
+    label: closesChat ? "Close Chat" : "Close Window",
+    accelerator: "CmdOrCtrl+W",
+    click: () => {
+      const now = focused();
+      if (now?.open === true && now.chats > 1) now.send("menu", "close-chat");
+      else BrowserWindow.getFocusedWindow()?.close();
+    },
+  };
   const template: MenuItemConstructorOptions[] = [
     // macOS's app menu - About, updates, Hide, Quit; elsewhere Quit is in File.
     ...(MAC
@@ -684,6 +711,8 @@ function buildMenu() {
         } },
         ...(MAC ? [{ role: "recentDocuments", submenu: [{ role: "clearRecentDocuments" }] } as MenuItemConstructorOptions] : []),
         { label: "New Window", accelerator: "CmdOrCtrl+Shift+N", click: () => void createWorkspace() },
+        // ⌘T, as in a browser: a new chat with turri beside the others - a tab of the chat.
+        { label: "New Chat", accelerator: "CmdOrCtrl+T", click: menuAction("new-chat"), enabled: ready && front?.manyChats === true },
         { label: "Switch Project…", accelerator: "CmdOrCtrl+Shift+P", click: menuAction("switch-project") },
         { type: "separator" },
         { label: "Project Settings…", click: menuAction("project-settings"), enabled: ready },
@@ -694,7 +723,7 @@ function buildMenu() {
         { label: MAC ? "Reveal Project in Finder" : "Show Project in File Manager", click: menuAction("reveal"), enabled: ready },
         { type: "separator" },
         ...(MAC ? [] : [{ label: "Settings…", accelerator: "CmdOrCtrl+,", click: menuAction("settings") }, { type: "separator" as const }]),
-        { role: "close" },
+        closeItem,
         ...(MAC ? [] : [{ role: "quit" as const }]),
       ],
     },
@@ -749,8 +778,8 @@ function buildMenu() {
       ],
     },
     // At the right, before Help, as in every Mac app: macOS lists the open windows here, each by its project's name,
-    // and ⌘` goes from one to the next; Linux has Minimize and Close.
-    { role: "windowMenu" },
+    // and ⌘` goes from one to the next; Linux has Minimize and Close - File's, as ⌘W closes a chat first.
+    MAC ? { role: "windowMenu" } : { label: "Window", submenu: [{ role: "minimize" }, { label: "Close Window", click: () => BrowserWindow.getFocusedWindow()?.close() }] },
     {
       role: "help",
       submenu: [
@@ -938,15 +967,12 @@ app.on("window-all-closed", () => {
 });
 
 // Quitting - ⌘Q, the menu, app.quit() - closes no window first, so each window's engine and terminal are stopped here -
-// and the app quits once their shells are heard to exit: one heard while it quits aborts it (terminal.ts, shellsEnded).
-let shellsDone = false;
+// and the app ends once their shells are heard to exit: one heard while it quits aborts it (terminal.ts, shellsEnded).
+// It ends with exit, not quit again: Electron does not start a quit over once will-quit was held back, and the app
+// would stay running with nothing left in it.
 app.on("will-quit", (event) => {
   for (const { terminal } of workspaces.values()) terminal.dispose();
   closeAll();
-  if (shellsDone) return;
   event.preventDefault();
-  void shellsEnded().then(() => {
-    shellsDone = true;
-    app.quit();
-  });
+  void shellsEnded().then(() => app.exit(0));
 });

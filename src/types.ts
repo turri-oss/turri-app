@@ -37,7 +37,8 @@ export interface Project {
   settings: Record<string, string | number | boolean | null>;
   specs: Spec[];
   /** What of ***plain the turri it runs gives the window: the stdlib view, what a ***plain links, its concepts, its linked resources. */
-  offers: { stdlib: boolean; links: boolean; concepts: boolean; resources: boolean };
+  /** What the turri running gives the window - several chats among it. */
+  offers: { stdlib: boolean; links: boolean; concepts: boolean; resources: boolean; chats: boolean };
   /** A project just started: what turri said of the config it wrote for it - its models, and how to sign in. */
   setup?: string;
 }

@@ -1,8 +1,9 @@
 import MarkdownIt from "markdown-it";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, Jellyfish, PlainName, Spinner, withPlain } from "./ui.tsx";
-import { keys } from "./platform.ts";
+import { keys, MAC } from "./platform.ts";
 import type { Concept } from "./types.ts";
+import type { ChatInfo } from "./chats.ts";
 
 /** The concepts the project's ***plain can name, as turri reads them - longest first - to colour where they are said. */
 let conceptNames: string[] = [];
@@ -59,8 +60,22 @@ export type Question = {
 };
 
 
-/** Talking to turri: the same conversation `turri` holds in the terminal - its tools, commands and questions - in the window. */
+/**
+ * Talking to turri: the same conversations `turri` holds in the terminal - their tools, commands and questions - in the
+ * window. Several can be open, each a tab: the one shown is drawn here.
+ */
 export function Chat(props: {
+  /** The chat shown. */
+  chatId: string | null;
+  /** Every chat, in its order: tabs once there are two. */
+  chats: ChatInfo[];
+  /** The chats with a question waiting. */
+  asking: Set<string>;
+  /** Whether the turri running opens more chats than one. */
+  canOpen: boolean;
+  onNewChat: () => void;
+  onShowChat: (id: string) => void;
+  onCloseChat: (id: string) => void;
   items: ChatItem[];
   streaming: ChatItem | null;
   busy: boolean;
@@ -76,23 +91,30 @@ export function Chat(props: {
   concepts: Concept[];
   onSend: (text: string) => void;
   onAbort: () => void;
+  /** ctrl+c: what the chat does stopped - or, doing nothing, its draft cleared (`cleared`), or turri's session ended. */
+  onInterrupt: (draft: boolean) => Promise<string>;
+  /** ctrl+c at a question: declined - turri's own - or dismissed, the turn going on. */
+  onDecline: (id: number) => void;
   onClose: () => void;
   /** What turri asks now - ask_user, a choice, a confirm - answered where the message box is, until it is answered. */
   question?: Question;
   onAnswer: (value: unknown) => void;
   progress: SkillProgress | null;
   stats: ChatStats | null;
-  /** Start the conversation over - unless pulses run, when it says why not. */
-  onNewSession: () => void;
   /** A pulse the chat says ended, opened in the work view. */
   onShowPulse: (id: string) => void;
   /** A concept said in the chat, clicked: opened where the ***plain defines it. */
   onShowConcept: (concept: string) => void;
-  newSessionBlocked: string | null;
   /** Whether any of the project's ***plain has changed since it was built: only then is regenerating what changed offered. */
   changed: boolean;
 }) {
-  const [draft, setDraft] = useState("");
+  // What is typed in each chat and not sent yet: kept as another chat is shown, and there again when it is back.
+  const [draft, setDraftNow] = useState("");
+  const drafts = useRef(new Map<string | null, string>());
+  const setDraft = (text: string) => {
+    drafts.current.set(props.chatId, text);
+    setDraftNow(text);
+  };
   conceptNames = props.concepts.map((concept) => concept.name).sort((a, b) => b.length - a.length);
   // Where the caret is in the message box, for the concept being typed there; the concept chosen in what is offered;
   // and where one started that escape put away.
@@ -108,7 +130,33 @@ export function Chat(props: {
     if (stick.current) end.current?.scrollIntoView({ block: "end" });
   }, [props.items, props.streaming, props.question?.id]);
 
-  useEffect(() => input.current?.focus(), []);
+  // ctrl+c, as in turri's terminal, wherever the focus is while the chat is open - but in the preview's terminal, whose
+  // shell it is: a question asked declined - each one, however many in a row, the turn going on; with none, what the
+  // chat shown is doing stopped; doing nothing, its draft cleared, and with none turri left - the window closes. On
+  // Linux, where ctrl+c copies, what is selected is copied, and an editor outside the chat keeps it.
+  const latest = useRef({ props, draft, setDraft });
+  latest.current = { props, draft, setDraft };
+  useEffect(() => {
+    const pressed = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== "c") return;
+      const at = event.target instanceof Element ? event.target : null;
+      if (at?.closest(".xterm")) return;
+      if (!MAC && (window.getSelection()?.toString() || (at?.closest("textarea, input, [contenteditable]") && !at.closest(".chat")))) return;
+      event.preventDefault();
+      const { props: now, draft: typed, setDraft: clear } = latest.current;
+      if (now.question !== undefined) return now.onDecline(now.question.id);
+      void now.onInterrupt(typed.trim() !== "").then((did) => did === "cleared" && clear(""), () => {});
+    };
+    window.addEventListener("keydown", pressed, true);
+    return () => window.removeEventListener("keydown", pressed, true);
+  }, []);
+
+  // Another chat shown: its own draft, its end in view, and the message box ready for it.
+  useEffect(() => {
+    setDraftNow(drafts.current.get(props.chatId) ?? "");
+    stick.current = true;
+    input.current?.focus();
+  }, [props.chatId]);
 
   // Results by the call they answer, shown under it.
   const results = new Map<string, Extract<ChatItem, { role: "toolResult" }>>();
@@ -161,15 +209,7 @@ export function Chat(props: {
         <span className="chat-title">
           <Jellyfish size={22} swimming={props.busy} /> turri
         </span>
-        <button
-          className="icon-button chat-new-session"
-          onClick={() => void newSession(props)}
-          disabled={props.newSessionBlocked !== null}
-          title={props.newSessionBlocked ?? "new session - start the conversation over, forgetting this one"}
-          aria-label="new session"
-        >
-          <Icon name="reload" />
-        </button>
+        {props.canOpen ? <ChatTabs {...props} /> : <span className="chat-tabs-room" />}
         <button className="icon-button" onClick={props.onClose} title={`hide the chat (${keys("J")})`}>
           <Icon name="x" />
         </button>
@@ -714,14 +754,46 @@ function QuestionCard({ question, waiting, onAnswer }: { question: Question; wai
   );
 }
 
-/** A new session is asked for: a native menu says what it does, and choosing it is the yes. */
-async function newSession(props: { onNewSession: () => void }) {
-  const chosen = await window.turri.popup([
-    { id: "new", label: "start a new session - forget this conversation" },
-    { type: "separator" },
-    { id: "keep", label: "keep this one" },
-  ]);
-  if (chosen === "new") props.onNewSession();
+/**
+ * The chats, as folder tabs in the chat's header beside turri's name: the one shown raised and open onto the chat below,
+ * the others plain, each by its title with what it is doing - a spinner while it works, ? while it asks, a dot when it
+ * said something since it was last shown. A click shows one, its × - or ⌘W on the one shown - closes it; + after
+ * the last opens another (⌘T), and ctrl+tab and ctrl+shift+tab go to the next and the one before.
+ */
+function ChatTabs({ chats, chatId, asking, onShowChat, onCloseChat, onNewChat }: { chats: ChatInfo[]; chatId: string | null; asking: Set<string>; onShowChat: (id: string) => void; onCloseChat: (id: string) => void; onNewChat: () => void }) {
+  const strip = useRef<HTMLDivElement>(null);
+  // The one shown kept in view, however many there are.
+  // In braces: scrollIntoView gives a promise, which React would take for the effect's clean-up.
+  useEffect(() => {
+    void strip.current?.querySelector(".chat-tab.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [chatId, chats.length]);
+  return (
+    <>
+      <div className="chat-tabs" role="tablist" aria-label="chats" ref={strip}>
+        {chats.map((chat) => {
+          const shown = chat.id === chatId;
+          const mark = asking.has(chat.id) ? "question" : chat.status === "working" ? "working" : chat.status === "unread" && !shown ? "unread" : null;
+          return (
+            <div key={chat.id} className={`chat-tab ${shown ? "on" : ""}`} title={chat.title}>
+              <button role="tab" aria-selected={shown} className="chat-tab-name" onClick={() => onShowChat(chat.id)}>
+                {mark === "working" ? <Spinner /> : mark === "question" ? <span className="chat-tab-mark asks">?</span> : mark === "unread" ? <span className="chat-tab-mark unread" aria-label="something new" /> : null}
+                <span className="chat-tab-title">{chat.title}</span>
+              </button>
+              {chats.length > 1 && (
+                <button className="chat-tab-close" onClick={() => onCloseChat(chat.id)} title={shown ? `close this chat (${keys("W")}) - its conversation is gone, its pulses run on` : "close this chat - its conversation is gone, its pulses run on"} aria-label={`close ${chat.title}`}>
+                  <Icon name="x" size={11} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {/* After the last tab - outside the strip, so it is there however far the tabs scroll. */}
+      <button className="icon-button chat-new" onClick={onNewChat} title={`new chat (${keys("T")}) - another conversation, beside this one`} aria-label="new chat">
+        <Icon name="plus" size={14} />
+      </button>
+    </>
+  );
 }
 
 /** The context the conversation fills - a ring, and its percent - and what its model has cost so far. */

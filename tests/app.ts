@@ -1,5 +1,6 @@
 import { _electron as electron, test as base, type ElectronApplication, type Page } from "@playwright/test";
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -18,6 +19,8 @@ interface Launched {
   /** The fixture project's copy: its folder, and its spec. */
   project: string;
   spec: string;
+  /** What the chat's model was sent, each request's body as it came - with a stub model (`stubModel`). */
+  requests: string[];
 }
 
 interface Options {
@@ -25,11 +28,18 @@ interface Options {
   open: boolean;
   /** Recent projects the welcome screen lists: the fixture's copy, when true. */
   recent: boolean;
+  /**
+   * The chat on a model of the test's own, on this machine - no model called: `silent` takes each request and never
+   * answers, a turn that runs until it is stopped; `asks` answers each with an ask_user call, a question numbered by the
+   * request, so each answer to one - or a decline - brings the next.
+   */
+  stubModel: false | "silent" | "asks";
 }
 
 export const test = base.extend<Options & { launched: Launched; scratch: string }>({
   open: [true, { option: true }],
   recent: [false, { option: true }],
+  stubModel: [false, { option: true }],
 
   scratch: async ({}, use) => {
     // Real paths: macOS's tmpdir is a link, and the app names a project by where it really is.
@@ -38,12 +48,13 @@ export const test = base.extend<Options & { launched: Launched; scratch: string 
     rmSync(scratch, { recursive: true, force: true });
   },
 
-  launched: async ({ scratch, open, recent }, use) => {
+  launched: async ({ scratch, open, recent, stubModel }, use) => {
     const project = join(scratch, "hello");
     cpSync(FIXTURE, project, { recursive: true });
     const userData = join(scratch, "user-data");
     mkdirSync(userData);
     if (recent) writeFileSync(join(userData, "recent-projects.json"), JSON.stringify([project]));
+    const stub = stubModel ? await modelStub(scratch, project, stubModel) : undefined;
 
     // Not the person's shell's environment (TERM set: shell-env.ts keeps the one given), nor a Vite server's window.
     const { VITE_DEV_SERVER_URL, TURRI_APP_SCREENSHOT, TURRI_APP_VIEW, TURRI_APP_OPEN, TURRI_APP_HIDDEN, ...env } = process.env;
@@ -62,17 +73,73 @@ export const test = base.extend<Options & { launched: Launched; scratch: string 
       },
     });
     const window = await app.firstWindow();
-    await use({ app, window, project, spec: join(project, "hello.plain") });
+    await use({ app, window, project, spec: join(project, "hello.plain"), requests: stub?.requests ?? [] });
     await app.close();
+    stub?.close();
   },
 });
+
+/** A model provider of the test's own, in pi's models.json - the project's harness-model (see `stubModel`). */
+async function modelStub(scratch: string, project: string, mode: "silent" | "asks") {
+  const requests: string[] = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => (body += chunk));
+    request.on("end", () => {
+      requests.push(body);
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      if (mode === "silent") return void response.write(": thinking\n\n");
+      // An OpenAI-style stream of one tool call: ask_user, question n.
+      const n = requests.length;
+      const call = { index: 0, id: `call_${n}`, type: "function", function: { name: "ask_user", arguments: JSON.stringify({ question: `question ${n}?`, options: ["yes", "no"] }) } };
+      const chunk = (choice: object) => `data: ${JSON.stringify({ id: `stub-${n}`, object: "chat.completion.chunk", created: 0, model: "stub", choices: [{ index: 0, ...choice }] })}\n\n`;
+      response.end(chunk({ delta: { role: "assistant", tool_calls: [call] }, finish_reason: null }) + chunk({ delta: {}, finish_reason: "tool_calls" }) + "data: [DONE]\n\n");
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as { port: number };
+  mkdirSync(join(scratch, "pi"), { recursive: true });
+  const provider = { baseUrl: `http://127.0.0.1:${port}/v1`, api: "openai-completions", apiKey: "test", models: [{ id: "silent" }] };
+  writeFileSync(join(scratch, "pi", "models.json"), JSON.stringify({ providers: { stub: provider } }));
+  const config = join(project, "config.turri.yaml");
+  writeFileSync(config, readFileSync(config, "utf8").replace(/^harness-model: .*$/m, "harness-model: stub/silent"));
+  return { requests, close: () => server.close() };
+}
 
 export { expect } from "@playwright/test";
 
 /** What of ***plain the turri running gives the window - its standard library, the graph, concepts - once the project is open. */
-export async function offers(window: Page): Promise<{ stdlib: boolean; links: boolean; concepts: boolean; resources: boolean }> {
+export async function offers(window: Page): Promise<{ stdlib: boolean; links: boolean; concepts: boolean; resources: boolean; chats: boolean }> {
   await window.locator(".tree-row").first().waitFor();
   return window.evaluate(() =>
-    (window as unknown as { turri: { call: (method: string) => Promise<{ offers: { stdlib: boolean; links: boolean; concepts: boolean; resources: boolean } }> } }).turri.call("summary").then((summary) => summary.offers),
+    (window as unknown as { turri: { call: (method: string) => Promise<{ offers: { stdlib: boolean; links: boolean; concepts: boolean; resources: boolean; chats: boolean } }> } }).turri
+      .call("summary")
+      .then((summary) => summary.offers),
   );
+}
+
+/** An event of the chat shown, sent to the window as the engine sends it - what a model would say, without one. */
+export async function tellChat(app: ElectronApplication, window: Page, event: string, data: unknown) {
+  // The chat's model is read with its history: by then the engine has the chat. (Not when a question's card covers it.)
+  if ((await window.locator(".question-card").count()) === 0) await window.locator(".chat-model").waitFor();
+  const chats = await window.evaluate(() => (window as unknown as { turri: { call: (method: string) => Promise<Array<{ id: string; shown: boolean }>> } }).turri.call("chats"));
+  const chat = (chats.find((each) => each.shown) ?? chats[0])!.id;
+  await app.evaluate(({ BrowserWindow }, sent) => BrowserWindow.getAllWindows()[0]!.webContents.send(`engine:${sent.event}`, { chat: sent.chat, data: sent.data }), { event, chat, data });
+}
+
+/** A menu bar item clicked, by its label - as its key would. */
+export async function clickMenu(app: ElectronApplication, label: string) {
+  await app.evaluate(({ Menu, BrowserWindow }, wanted) => {
+    const find = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
+      for (const item of items) {
+        if (item.label === wanted) return item;
+        const inside = item.submenu ? find(item.submenu.items) : undefined;
+        if (inside) return inside;
+      }
+      return undefined;
+    };
+    const item = find(Menu.getApplicationMenu()!.items);
+    if (item === undefined) throw new Error(`No menu item ${wanted}`);
+    item.click(undefined, BrowserWindow.getAllWindows()[0]);
+  }, label);
 }

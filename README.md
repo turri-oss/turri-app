@@ -64,7 +64,7 @@ Then tell turri what to build:
 
 ## A tour
 
-- **turri**, on the left (⌘J) - the conversation. It writes the \*\*\*plain with you and regenerates the code from it; tool calls show as what they do, pulses as one line each, and turri's questions are docked in the chat as buttons. Type `/` for its commands.
+- **turri**, on the left (⌘J) - the conversation. It writes the \*\*\*plain with you and regenerates the code from it; tool calls show as what they do, pulses as one line each, and turri's questions are docked in the chat as buttons. Type `/` for its commands. ⌘T opens another chat beside it, as a tab, ctrl+tab goes between them, and ⌘W closes one - each its own conversation, on the project's one work loop.
 - **files**, on the right - the project's \*\*\*plain: each with how much of it is built, the templates it imports and the resources it links, nothing else. File > Project Settings… in the menu bar opens the project's settings, every one of its config.turri.yaml.
 - **\*\*\*plain** (⌘1) - the `.plain` file, coloured by turri's \*\*\*plain grammar, with each functional spec's state beside it: pink when its code is built, cyan when its conformance tests pass too. Click a mark to regenerate that functional spec or test it; **regenerate** asks how much to rebuild.
 - **regen** (⌘2) - every pulse live: its stage, what its agent is doing, what it cost, and the \*\*\*plain it works on; earlier sessions' pulses from turri's ledger below.

@@ -1,9 +1,10 @@
-// The turri engine: a Node process - Electron's own, run as Node - that hosts turri's chat for one project: pi's agent
-// session with turri's extension, from the @turri-dev/cli package's host entry. It talks to the Electron main process
-// over IPC. The chat's job registry and work loop are the project's one: the window's buttons go through the chat's
-// slash commands, and what its jobs do is sent to the window as they do it. The app never shells out to `turri`.
+// The turri engine: a Node process - Electron's own, run as Node - that hosts turri's session for one project: its chats,
+// each pi's agent session with turri in it, from the @turri-dev/cli package's host entry. It talks to the Electron main
+// process over IPC. The session's job registry and work loop are the project's one: the window's buttons go through the
+// chat shown's slash commands, and what its jobs do is sent to the window as they do it. The app never shells out to
+// `turri`.
 import turri, { turriFrom } from "./turri.mjs";
-import { startChat } from "./chat.mjs";
+import { busy, MANY_CHATS, startSession } from "./chat.mjs";
 import { createAuth } from "./auth.mjs";
 import { existsSync, readdirSync, readFileSync, statSync, watch, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -18,12 +19,19 @@ function emit(event, data) {
 }
 
 let projectDir;
-/** The chat's job registry and work loop, once its extension has made them - the loop only once work is first asked for. */
-let registry;
-let loop;
-/** A loop of the engine's own that starts nothing: what is left to regenerate, read without the chat's. */
+/** turri's session: its chats, and their one job registry and work loop. */
+let session;
+const registryNow = () => session?.jobs();
+const loopNow = () => session?.loop();
+/** A loop of the engine's own that starts nothing: what is left to regenerate, read without the session's. */
 let looker;
-let chat;
+/** A chat by its id - the one shown, when none is named. */
+function chatOf(id) {
+  const chat = id === undefined ? session.shown() : session.chat(id);
+  if (chat === undefined) throw new Error("That chat is closed.");
+  return chat;
+}
+/** turri's questions waiting for the person, by their id: each with its chat, to put it again in a window drawn again. */
 const questions = new Map();
 let nextQuestion = 0;
 /** turri's browser and terminal tools' requests of the preview, waiting for the main process to answer. */
@@ -32,15 +40,10 @@ let nextPaneCall = 0;
 /** What the person has open in the window - its view, and the file in it - for turri to know (engine/app.mjs). */
 let looking = { view: "spec", file: null, pane: null };
 
-/** What turri's chat tells its host - the window - of its jobs and its work loop (TurriHost in turri). */
+/** What turri's session tells its host - the window - of its jobs and its work loop (TurriHost in turri). */
 const ENDED = new Set(["succeeded", "failed", "stopped"]);
 const announced = new Set();
 const host = {
-  onJobs: (made) => (registry = made),
-  onWorkLoop: (made) => {
-    loop = made;
-    emit("status", statusNow());
-  },
   onJobChange: (job) => {
     const ended = ENDED.has(job.status);
     jobChanged(job, ended);
@@ -51,28 +54,23 @@ const host = {
     readEarlier();
   },
   onPlanChange: () => emit("status", statusNow()),
-  // ask_user's questions, put in the window: a choice of options, or words to type.
-  dialogs: {
-    select: (title, options, context) => ask({ kind: "select", title, options, message: context }),
-    input: (title, context) => ask({ kind: "input", title, message: context }),
-  },
 };
 
 // ---------- signing in to the model providers ----------
 
 /** pi's model runtime of the engine's own, for signing in - and its catalogue - before a project's chat has one. */
 let ownRuntime;
-const modelRuntime = async () => chat?.session.modelRuntime ?? (await (ownRuntime ??= turri.pi.ModelRuntime.create()));
+const modelRuntime = async () => session?.shown()?.session.modelRuntime ?? (await (ownRuntime ??= turri.pi.ModelRuntime.create()));
 /**
- * Sign-ins go through the open chat's runtime, so the conversation has a credential as soon as it is stored - and a
- * chat that could not start on harness-model for want of one is put on it. With no chat, through the engine's own.
+ * Sign-ins go through the chat shown's runtime, so the conversation has a credential as soon as it is stored - and the
+ * chats that could not start on harness-model for want of one are put on it. With no chat, through the engine's own.
  */
 const auth = createAuth({
   emit,
   runtime: modelRuntime,
   projectDir: () => projectDir,
   signedIn: async () => {
-    await chat?.onHarnessModel();
+    for (const { id } of session?.chats() ?? []) await session.chat(id)?.onHarnessModel();
   },
 });
 
@@ -89,10 +87,10 @@ async function open({ dir }) {
   });
   stopHearing();
   stopHearing = turri.onLedgerEvent?.(heard) ?? (() => {});
-  await chatAnew();
+  await startChats();
   watchSpecs();
   readEarlier();
-  return { ...summary(), orphans, chatModel: chat.model() };
+  return { ...summary(), orphans };
 }
 
 // ---------- the ledger: what turri did, as facts ----------
@@ -126,7 +124,7 @@ function heard(entry, project) {
   const said = failures.get(key) ?? [];
   if (said.some((one) => one.mark === failure.mark)) return;
   failures.set(key, [...said, failure]);
-  const job = entry.job !== undefined ? registry?.get(entry.job) : undefined;
+  const job = entry.job !== undefined ? registryNow()?.get(entry.job) : undefined;
   const name = job !== undefined ? pulseName(job) : undefined;
   emit("incident", { job: entry.job, text: name !== undefined ? `${name}: ${failure.text}` : failure.text });
   if (job !== undefined) jobChanged(job, true);
@@ -143,7 +141,7 @@ function pulseName(job) {
  */
 function readEarlier() {
   if (turri.runViews === undefined) return;
-  const live = new Set((registry?.list() ?? []).map((job) => job.id));
+  const live = new Set((registryNow()?.list() ?? []).map((job) => job.id));
   let runs;
   let failed;
   try {
@@ -590,13 +588,48 @@ async function olderInitConfig({ dir, vendor, bedrock, models }) {
   return swap(message).replace(/with .+ on Amazon Bedrock \([^)]*\) models/, `with models on Amazon Bedrock (${bedrock?.region ?? "global"})`);
 }
 
-/** A question for the person, put in the window; answered through `answer`. */
-function ask(question) {
+/**
+ * A chat's question for the person, put in the window; answered through `answer`. `turri`: one of turri's own - ask_user,
+ * a skill's interview, a review gate's - which ctrl+c declines; the rest are pi's dialogs, which ctrl+c dismisses. Its
+ * `signal` says it is over unanswered - declined, its turn stopped, pi done with it: put away in the window.
+ */
+function ask(chat, question, { turri: ofTurri = false, signal } = {}) {
   const id = ++nextQuestion;
   return new Promise((resolve) => {
-    questions.set(id, resolve);
-    emit("chat:ask", { id, ...question });
+    if (signal?.aborted) return resolve(undefined);
+    const asked = { id, ...question };
+    questions.set(id, { chat, asked, resolve, turri: ofTurri });
+    emit("chat:ask", { chat, data: asked });
+    signal?.addEventListener("abort", () => putAway(id), { once: true });
   });
+}
+
+/** A question over unanswered: its promise settled, and its card taken from the window. */
+function putAway(id) {
+  const question = questions.get(id);
+  if (question === undefined) return;
+  questions.delete(id);
+  question.resolve(undefined);
+  emit("chat:unask", { chat: question.chat, data: { id } });
+}
+
+/**
+ * ctrl+c at a question, as turri's terminal has it: one of turri's declined - however many in a row, the turn going on
+ * - on a turri that can decline one (`unsupported` on one that cannot); one of pi's dialogs dismissed, as pi's terminal
+ * closes it.
+ */
+async function declineQuestion({ id }) {
+  const question = questions.get(id);
+  if (question === undefined) return "missing";
+  if (!question.turri) {
+    putAway(id);
+    return "dismissed";
+  }
+  if (!session.canDecline) return "unsupported";
+  await session.decline(question.chat);
+  // Over, whether or not turri's signal has said so yet.
+  putAway(id);
+  return "declined";
 }
 
 /**
@@ -614,7 +647,7 @@ const browser = askPane("browser");
 const terminal = askPane("terminal");
 
 function answer({ id, value }) {
-  questions.get(id)?.(value ?? undefined);
+  questions.get(id)?.resolve(value ?? undefined);
   questions.delete(id);
   return true;
 }
@@ -636,7 +669,7 @@ function summary() {
       // As turri has it - TURRI_DEBUG over the file's - where the turri running has a debug mode at all.
       ...(turri.debugMode !== undefined ? { debug: turri.debugMode(projectDir) } : {}),
     },
-    offers: offers(),
+    offers: { ...offers(), chats: MANY_CHATS },
     specs: plainFiles(projectDir).map((file) => describeSpec(file)),
   };
 }
@@ -709,7 +742,8 @@ function readSpec({ file }) {
 function writeSpec({ file, text }) {
   writeFileSync(file, text);
   const described = describeSpec(file);
-  // A spec that changes while the chat's loop looks after its module is work: the loop is told, as the chat's watch does.
+  // A ***plain that changes while the session's loop looks after its module is work: the loop is told, as a chat's watch does.
+  const loop = loopNow();
   if (described.ok && loop !== undefined && loop.status().some((status) => status.plainFile === file)) {
     loop.bringUp(file, { specChange: true }).then(() => emit("status", statusNow())).catch((error) => emit("log", { level: "error", text: String(error) }));
   }
@@ -743,6 +777,8 @@ function roleOf({ text, scopes }) {
 // ---------- the work ----------
 
 function statusNow() {
+  const registry = registryNow();
+  const loop = loopNow();
   return {
     modules: loop?.status() ?? [],
     jobs: (registry?.list() ?? []).filter((job) => job.replacedBy === undefined).map(jobView),
@@ -779,13 +815,13 @@ function regenerate({ file, frids, scratch, chain, guidance }) {
   // Set off from what comes before it - and never read as a functional spec's number, though it starts with one.
   const said = guidance?.trim();
   if (said) words.push(words.length > 1 || /^(fs)?\d/i.test(said) ? `- ${said}` : said);
-  chat.send(words.join(" "));
+  chatOf().send(words.join(" "));
   return true;
 }
 
 function conform({ file, frids }) {
   const module = basename(file, ".plain");
-  chat.send(frids?.length ? `Write and run the conformance tests for ${module}'s functional spec${frids.length === 1 ? "" : "s"} ${frids.join(", ")}.` : `Write and run the conformance tests for ${module}.`);
+  chatOf().send(frids?.length ? `Write and run the conformance tests for ${module}'s functional spec${frids.length === 1 ? "" : "s"} ${frids.join(", ")}.` : `Write and run the conformance tests for ${module}.`);
   return true;
 }
 
@@ -799,18 +835,23 @@ function look({ view, file, pane }) {
   return true;
 }
 
-function sendChat({ text }) {
-  chat.send(text);
+/**
+ * Something said in a chat. /new - pi's terminal's, which would go to the model as words here - opens a chat beside it,
+ * as it does in turri's terminal.
+ */
+async function sendChat({ chat, text }) {
+  if (/^\/new\s*$/.test(text.trim()) && session.canOpen) return (await openChat(), true);
+  chatOf(chat).send(text);
   return true;
 }
 
-function abortChat() {
-  void chat.abort();
+function abortChat({ chat }) {
+  void chatOf(chat).abort();
   return true;
 }
 
 function commands() {
-  return chat.commands();
+  return chatOf().commands();
 }
 
 /** Whether the turri running gives every setting of config.turri.yaml (after 0.1.12): else the window has summary's few. */
@@ -848,43 +889,82 @@ function projectSettings() {
  * false. Unset is left out: the window offers it in its own way.
  */
 async function configChoices({ typed }) {
-  if (chat === undefined) return [];
-  const items = await chat.completions("turri-config", typed);
+  if (session === undefined) return [];
+  const items = await chatOf().completions("turri-config", typed);
   return items.map((item) => item.value.slice(item.value.indexOf(" ") + 1)).filter((value) => value !== "unset");
 }
 
-function chatHistory() {
-  return { messages: chat.history(), model: chat.model(), stats: chat.stats() };
+/** A chat as the window draws it: what was said in it, its model, how full it is, and what it asks now. */
+function chatHistory({ chat }) {
+  const shown = chatOf(chat);
+  const asking = [...questions.values()].filter((question) => question.chat === shown.id).map((question) => question.asked);
+  return { messages: shown.history(), model: shown.model(), stats: shown.stats(), questions: asking };
 }
 
-/** The conversation, started: a session of its own, with turri's extension and its job registry and work loop made for it. */
-async function chatAnew() {
-  const harnessModel = turri.modelSpec(turri.projectModels(turri.readProjectConfig(projectDir)).harness);
-  // The work loop's plan can change with no word of it - planned again while a pulse runs, on a spec edited from the
-  // chat - so the window is sent it again as each of the chat's tools ends, and as it settles: regenerate, say, ends
-  // once the plan is made.
-  chat = await startChat({ cwd: projectDir, harnessModel, host, emit, ask, browser, terminal, whereNow: () => looking, onStep: () => loop !== undefined && emit("status", statusNow()) });
+/** The chats, in their order: each its id, title, what it is doing and whether it is the one shown. */
+function chats() {
+  return session.chats();
 }
 
 /**
- * A new session: the conversation started over, nothing of this one carried into it - as /new is in the terminal. Not
- * while pulses run: they are the work loop's that goes with this conversation, and would run on with no one to follow
- * them.
+ * turri's session, started with its first chat. The work loop's plan can change with no word of it - planned again while
+ * a pulse runs, on a ***plain edited from a chat - so the window is sent it again as each chat's tools end, and as it
+ * settles: regenerate, say, ends once the plan is made.
  */
-async function newChat() {
-  const running = (registry?.list() ?? []).filter((job) => job.status === "running" || job.status === "queued");
-  if (running.length > 0) throw new Error(`${running.length} pulse${running.length === 1 ? " is" : "s are"} running: start a new session once ${running.length === 1 ? "it has" : "they have"} finished.`);
-  for (const resolve of questions.values()) resolve(undefined);
-  questions.clear();
-  chat.abort();
-  chat.dispose();
-  registry = undefined;
-  loop = undefined;
-  await chatAnew();
-  emit("status", statusNow());
-  // The last session's pulses are an earlier session's now.
-  readEarlier();
-  return { messages: chat.history(), model: chat.model(), stats: chat.stats() };
+async function startChats() {
+  const harnessModel = turri.modelSpec(turri.projectModels(turri.readProjectConfig(projectDir)).harness);
+  session = await startSession({
+    cwd: projectDir,
+    harnessModel,
+    host,
+    emit,
+    ask,
+    browser,
+    terminal,
+    whereNow: () => looking,
+    onStep: () => loopNow() !== undefined && emit("status", statusNow()),
+    onChats: (now) => {
+      // A chat closed: what it was asking is put away.
+      for (const [id, question] of questions) {
+        if (now.some((chat) => chat.id === question.chat)) continue;
+        question.resolve(undefined);
+        questions.delete(id);
+      }
+      emit("chats", now);
+    },
+  });
+}
+
+/** A fresh chat beside the others, shown - as /chat new is in turri's terminal: its id. */
+async function openChat() {
+  return session.open();
+}
+
+/** A chat closed: its turn stopped and its conversation deleted - its pulses run on. The last one is kept. */
+async function closeChat({ chat }) {
+  if (session.chats().length <= 1) throw new Error("This is the only chat.");
+  await session.close(chat);
+  return true;
+}
+
+/**
+ * ctrl+c in a chat, as turri's terminal has it: what the chat is doing stopped, the others left as they are. One doing
+ * nothing has its draft cleared, when there is one - the window's own, so the window clears it (`cleared`) - and with
+ * none, turri's session ends, every chat with it, and the window closes with it (`ended`). A second press straight
+ * after one that stopped something is `ignored`.
+ */
+async function interruptChat({ chat, draft }) {
+  const shown = chatOf(chat);
+  if (draft === true && !busy(shown.session)) return "cleared";
+  const did = await session.interrupt(shown.id);
+  if (did === "ended") emit("ended", null);
+  return did;
+}
+
+/** The chat the person looks at now: a pulse a closed chat asked for is told there when it ends. */
+function focusChat({ chat }) {
+  session.focus(chat);
+  return true;
 }
 
 /** What regenerating would do, planned on a loop of its own that starts nothing - `turri glimpse`. */
@@ -920,7 +1000,7 @@ async function doctor({ models = false, dir = projectDir }) {
 
 // ---------- the wire ----------
 
-const methods = { ...auth, newChat, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, readFile, writeFile, stdlib, stdlibKinds, plainLinks, concepts, conceptDefinition, linkedResource, conceptBeingTyped, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, glimpse, earlierPulses, sendChat, abortChat, chatHistory, commands, answer, doctor };
+const methods = { ...auth, chats, openChat, closeChat, focusChat, interruptChat, declineQuestion, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, readFile, writeFile, stdlib, stdlibKinds, plainLinks, concepts, conceptDefinition, linkedResource, conceptBeingTyped, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, glimpse, earlierPulses, sendChat, abortChat, chatHistory, commands, answer, doctor };
 
 // What the window may ask before a project is open: to open one, to start a new one, whether the machine is ready, or to
 // sign in to the model providers.
@@ -929,7 +1009,14 @@ const BEFORE_A_PROJECT = new Set(["open", "vendors", "initConfig", "doctor", ...
 // The app gone - quit, crashed, killed - the engine goes with it: never a chat left running with no window.
 process.on("disconnect", () => {
   stopHearing();
-  process.exit(0);
+  // What turri started - a release, say - stopped with it, as long as that takes a moment.
+  const gone = setTimeout(() => process.exit(0), 2000);
+  Promise.resolve(session?.dispose())
+    .catch(() => {})
+    .finally(() => {
+      clearTimeout(gone);
+      process.exit(0);
+    });
 });
 
 process.on("message", async ({ id, method, params, reply, result, error }) => {

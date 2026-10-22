@@ -1,39 +1,175 @@
-// The conversation: pi's agent session with turri's extension loaded - the same chat `turri` opens in the terminal, its
-// tools, slash commands, rules and skills - with the window in place of the terminal. What the extension would draw in
-// the terminal (dialogs, notices, the working line) comes here as UI calls and goes to the window as events.
+// The conversations: pi's agent sessions with turri in them - the same chats `turri` opens in the terminal, their tools,
+// slash commands, rules and skills - with the window in place of the terminal. A turri session holds several (its
+// createTurri), each its own history and model on the session's one job registry and work loop; a turri without it
+// (0.1.16 and before) has one, its extension loaded here. What turri would draw in the terminal (dialogs, notices, the
+// working line) comes here as UI calls and goes to the window as events, each with the chat it is of.
 import turri from "./turri.mjs";
 import { browserExtension, retriedWithoutImages } from "./browser.mjs";
 import { terminalExtension } from "./terminal.mjs";
 import { APP_SURFACE, withWhere } from "./app.mjs";
 
-const { createTurriExtension, pi } = turri;
+const { pi } = turri;
+
+/** Whether the turri running holds several chats: the window offers them only then. */
+export const MANY_CHATS = typeof turri.createTurri === "function";
 
 /**
- * Start a chat in `cwd`. `host` is what turri's extension tells of its jobs and asks its questions in (TurriHost);
- * `emit` sends an event to the window; `ask` puts a question to the person there and resolves with the answer
+ * Start turri's session in `cwd`, with its first chat. `host` is what turri tells of its jobs (TurriHost); `emit`
+ * sends an event to the window; `ask` puts a question of a chat's to the person there and resolves with the answer
  * (undefined when they dismiss it); `browser` and `terminal` ask the window's preview - its browser pane, its terminal -
  * for one of the browser or terminal tools' actions; `whereNow` says what the person has open in the window; `onStep`
- * is called as each of its tools ends, and as it settles.
+ * is called as each tool of a chat ends, and as it settles; `onChats` with the chats, as they change.
  */
-export async function startChat({ cwd, harnessModel, host, emit, ask, browser, terminal, whereNow, onStep }) {
+export async function startSession({ cwd, harnessModel, host, emit, ask, browser, terminal, whereNow, onStep, onChats }) {
   process.env.PI_SKIP_VERSION_CHECK = "1";
+  /** The chats the window is told of, by id. */
+  const chats = new Map();
+  /** A chat's events, each with its id. */
+  const says = (id) => (event, data) => emit(event, { chat: id, data });
+  // The window is told when a chat's model changes - /turri-config switches it as it runs.
+  const modelWatch = (api) =>
+    api.on("model_select", ({ model }, ctx) => {
+      const chat = [...chats.values()].find((each) => each.session.sessionManager === ctx?.sessionManager) ?? (chats.size === 1 ? [...chats.values()][0] : undefined);
+      if (chat !== undefined) says(chat.id)("chat:model", { model: `${model.provider}/${model.id}` });
+    });
+  // turri is told it is in the app: the window's views in place of the terminal's, and what the person has open now.
+  const told = { surface: APP_SURFACE, systemPrompt: (prompt) => withWhere(prompt, whereNow()) };
+  const extensions = [browserExtension(browser), terminalExtension(terminal), modelWatch];
+  const follow = (id, session) => {
+    const chat = followChat({ id, session, harnessModel, emit: says(id), sendWhole: emit, onStep });
+    chats.set(id, chat);
+    return chat;
+  };
 
-  // The window is told when the conversation's model changes - /turri-config switches it as it runs.
-  const modelWatch = (api) => api.on("model_select", ({ model }) => emit("chat:model", { model: `${model.provider}/${model.id}` }));
-  const loader = new pi.DefaultResourceLoader({
-    cwd,
-    agentDir: pi.getAgentDir(),
-    // turri is told it is in the app: the window's views in place of the terminal's, and what the person has open now.
-    extensionFactories: [
-      createTurriExtension({ ...host, surface: APP_SURFACE, systemPrompt: (prompt) => withWhere(prompt, whereNow()) }),
-      browserExtension(browser),
-      terminalExtension(terminal),
-      modelWatch,
-    ],
+  if (!MANY_CHATS) return oneChat({ cwd, host, told, extensions, ask, says, follow, onChats });
+
+  const session = await turri.createTurri({
+    ...told,
+    onJobChange: host.onJobChange,
+    onPlanChange: host.onPlanChange,
+    // A chat's questions, put in the window - a choice of options, or words to type - with the chat they are of. Each is
+    // turri's to decline (ctrl+c), and over when its signal says so - declined, or its turn stopped.
+    dialogs: (id) => ({
+      select: (title, options, context, _at, given) => ask(id, { kind: "select", title, options, message: context }, { turri: true, signal: given?.signal }),
+      input: (title, context, given) => ask(id, { kind: "input", title, message: context }, { turri: true, signal: given?.signal }),
+    }),
+    uiContext: (id) => uiContext({ emit: says(id), ask: (question, signal) => ask(id, question, { signal }) }),
+    extensions,
   });
+  const tell = () => {
+    const now = session.chats();
+    for (const id of chats.keys()) if (!now.some((chat) => chat.id === id)) chats.delete(id);
+    onChats(now);
+  };
+  session.onChats(tell);
+
+  const open = async () => {
+    const info = await session.openChat();
+    const chat = chats.get(info.id) ?? follow(info.id, info.session);
+    await chat.onHarnessModel({ quiet: false });
+    tell();
+    return info.id;
+  };
+  // Made after the session tells of its chats: each is followed as it is opened.
+  await open();
+  return {
+    jobs: () => session.jobs,
+    loop: () => loopOf(session),
+    canOpen: true,
+    chats: () => session.chats(),
+    chat: (id) => chats.get(id),
+    shown: () => chats.get(session.chats().find((chat) => chat.shown)?.id) ?? [...chats.values()][0],
+    open,
+    close: (id) => session.closeChat(id),
+    focus: (id) => session.focus(id),
+    // ctrl+c, as turri's terminal has it - on a turri without it (before its interrupt), what a turn's stop does.
+    interrupt: (id) => (typeof session.interrupt === "function" ? session.interrupt(id) : stopOnly(chats.get(id))),
+    // ctrl+c at a question of turri's: declined - on a turri that can (its decline), else not at all.
+    canDecline: typeof session.decline === "function",
+    decline: (id) => session.decline(id),
+    dispose: () => session.dispose(),
+  };
+}
+
+/** ctrl+c on a turri that cannot end its session from it: a chat at work stopped, one doing nothing left as it is. */
+async function stopOnly(chat) {
+  if (chat === undefined) return "missing";
+  if (!busy(chat.session)) return "ignored";
+  await chat.abort();
+  return "stopped";
+}
+
+/** Whether a chat is doing something ctrl+c would stop: a turn, a ! command, a compaction, a retry. */
+export function busy(session) {
+  return session.isStreaming || session.isBashRunning || session.isCompacting || session.isRetrying;
+}
+
+/** The session's work loop, once a chat has made it - undefined before. */
+function loopOf(session) {
+  try {
+    return session.loop;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A turri of 0.1.16 and before: one chat, turri's extension loaded into it, its job registry and work loop handed over. */
+async function oneChat({ cwd, host, told, extensions, ask, says, follow, onChats }) {
+  const ID = "1";
+  let registry;
+  let loop;
+  const extension = turri.createTurriExtension({
+    ...told,
+    onJobs: (made) => (registry = made),
+    onWorkLoop: (made) => {
+      loop = made;
+      host.onPlanChange?.();
+    },
+    onJobChange: host.onJobChange,
+    onPlanChange: host.onPlanChange,
+    dialogs: {
+      select: (title, options, context) => ask(ID, { kind: "select", title, options, message: context }, { turri: true }),
+      input: (title, context) => ask(ID, { kind: "input", title, message: context }, { turri: true }),
+    },
+  });
+  const loader = new pi.DefaultResourceLoader({ cwd, agentDir: pi.getAgentDir(), extensionFactories: [extension, ...extensions] });
   await loader.reload();
   const { session } = await pi.createAgentSession({ cwd, resourceLoader: loader, sessionManager: pi.SessionManager.create(cwd) });
+  const chat = follow(ID, session);
+  await chat.onHarnessModel({ quiet: false });
+  // "tui": jobs run in the background and the chat stays free, as in the terminal.
+  await session.bindExtensions({
+    uiContext: uiContext({ emit: says(ID), ask: (question, signal) => ask(ID, question, { signal }) }),
+    mode: "tui",
+    onError: (error) => says(ID)("chat:notify", { level: "error", text: `${error.extensionPath ?? "extension"}: ${error.error ?? error.message ?? error}` }),
+  });
+  const info = () => [{ id: ID, title: "chat", status: session.isStreaming ? "working" : "idle", shown: true }];
+  session.subscribe((event) => (event.type === "agent_start" || event.type === "agent_settled") && onChats(info()));
+  onChats(info());
+  const one = () => {
+    throw new Error("This turri has one chat: a newer one opens more.");
+  };
+  return {
+    jobs: () => registry,
+    loop: () => loop,
+    canOpen: false,
+    chats: info,
+    chat: (id) => (id === ID ? chat : undefined),
+    shown: () => chat,
+    open: one,
+    close: one,
+    focus: () => {},
+    interrupt: (id) => stopOnly(id === ID ? chat : undefined),
+    canDecline: false,
+    dispose: async () => session.dispose(),
+  };
+}
 
+/**
+ * One chat, as the window follows it: what its session does, sent as events, and what the window asks of it. `emit`
+ * says an event of this chat's; `sendWhole` one of the window's own.
+ */
+function followChat({ id, session, harnessModel, emit, sendWhole, onStep }) {
   // The chat runs on harness-model, as `turri` starts pi with it - and is put on it after a sign-in, when it could not
   // be before.
   let onHarness = false;
@@ -48,16 +184,7 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser, t
     } else if (!quiet) emit("chat:notify", { level: "warning", text: `harness-model ${spec} was not found: the chat uses pi's default model.` });
     if (level && (found !== undefined || !quiet)) session.setThinkingLevel(level);
   };
-  await onHarnessModel({ quiet: false });
 
-  // "tui": jobs run in the background and the chat stays free, as in the terminal.
-  await session.bindExtensions({
-    uiContext: uiContext({ emit, ask }),
-    mode: "tui",
-    onError: (error) => emit("chat:notify", { level: "error", text: `${error.extensionPath ?? "extension"}: ${error.error ?? error.message ?? error}` }),
-  });
-
-  let streaming = null;
   let lastDelta = 0;
   /** How full the conversation's context is, and what it has cost - its own model's calls, not the pulses'. */
   const stats = () => {
@@ -78,7 +205,6 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser, t
         break;
       case "message_update": {
         // The reply as it is written: sent whole, at most ten times a second.
-        streaming = event.message;
         const now = Date.now();
         if (now - lastDelta > 100) {
           lastDelta = now;
@@ -88,7 +214,6 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser, t
       }
       case "message_end":
         tellStats();
-        streaming = null;
         emit("chat:streaming", null);
         for (const item of [normalise(event.message)].flat()) if (item) emit("chat:message", item);
         break;
@@ -109,6 +234,7 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser, t
   });
 
   return {
+    id,
     session,
     history: () => session.messages.flatMap((message) => [normalise(message)].flat()).filter(Boolean),
     /**
@@ -118,7 +244,7 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser, t
      */
     send: (text) => {
       const signIn = /^\/(?:login|logout)(?:\s+(\S+))?\s*$/.exec(text.trim());
-      if (signIn !== null) return emit("auth:open", { provider: signIn[1] ?? null });
+      if (signIn !== null) return sendWhole("auth:open", { provider: signIn[1] ?? null });
       const run = session.isStreaming ? session.followUp(text) : session.prompt(text);
       Promise.resolve(run).catch((error) => emit("chat:notify", { level: "error", text: error instanceof Error ? error.message : String(error) }));
     },
@@ -144,7 +270,6 @@ export async function startChat({ cwd, harnessModel, host, emit, ask, browser, t
     onHarnessModel,
     model: () => (session.model ? `${session.model.provider}/${session.model.id}` : null),
     stats,
-    dispose: () => session.dispose(),
   };
 }
 
@@ -230,9 +355,10 @@ function uiContext({ emit, ask }) {
   );
   const known = {
     theme,
-    select: (title, options) => ask({ kind: "select", title, options }),
-    confirm: async (title, message) => (await ask({ kind: "confirm", title, message })) === true,
-    input: (title, placeholder) => ask({ kind: "input", title, placeholder }),
+    // Each put away when its signal says so - pi's dialogs' own - as pi's terminal closes them.
+    select: (title, options, given) => ask({ kind: "select", title, options }, given?.signal),
+    confirm: async (title, message, given) => (await ask({ kind: "confirm", title, message }, given?.signal)) === true,
+    input: (title, placeholder, given) => ask({ kind: "input", title, placeholder }, given?.signal),
     editor: (title, prefill) => ask({ kind: "editor", title, prefill }),
     notify: (message, type = "info") => emit("chat:notify", { level: type, text: message }),
     setStatus: (key, text) => emit("chat:status", { key, text: text ?? null }),

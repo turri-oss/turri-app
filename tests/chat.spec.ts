@@ -1,4 +1,4 @@
-import { expect, offers, test } from "./app.ts";
+import { clickMenu, expect, offers, tellChat, test } from "./app.ts";
 
 // Only what calls no model: slash commands that print, and the window's own.
 test.describe("the chat", () => {
@@ -15,10 +15,7 @@ test.describe("the chat", () => {
   test("opens a concept clicked in the chat where the ***plain defines it", async ({ launched: { app, window } }) => {
     // Where it is defined, from turri's graph: on a turri whose host entry gives it.
     test.skip(!(await offers(window)).links, "the turri running gives the window no graph of the ***plain");
-    await app.evaluate(
-      ({ BrowserWindow }, message) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:chat:message", message),
-      { role: "assistant", text: "The :Greeter: greets whoever runs it." },
-    );
+    await tellChat(app, window, "chat:message", { role: "assistant", text: "The :Greeter: greets whoever runs it." });
     await window.getByRole("tab", { name: "regen" }).click();
     await window.locator(".prose .plain-concept", { hasText: ":Greeter:" }).click();
     await expect(window.locator(".toolbar").getByRole("tab", { name: "***plain", selected: true })).toBeVisible();
@@ -67,9 +64,7 @@ test.describe("the chat", () => {
   test("writes ***plain as its name is, its mark then plain - but not in code", async ({ launched: { window, app } }) => {
     // The window's own words: the empty chat's.
     await expect(window.locator(".chat-empty .plain-name img.plain-mark")).toHaveAttribute("src", "./plain/plain-mark.svg");
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0]!.webContents.send("engine:chat:notify", { level: "info", text: "the \\*\\*\\*plain says so - `***plain` in code stays as it is." }),
-    );
+    await tellChat(app, window, "chat:notify", { level: "info", text: "the \\*\\*\\*plain says so - `***plain` in code stays as it is." });
     const note = window.locator(".chat-body .msg.note", { hasText: "says so" });
     await expect(note.locator(".plain-name")).toHaveCount(1);
     await expect(note.locator("code")).toHaveText("***plain");
@@ -78,12 +73,10 @@ test.describe("the chat", () => {
   test("colours a ```plain block by turri's grammar", async ({ launched: { app, window } }) => {
     await expect(window.locator(".chat-model")).toBeVisible();
     // As the engine says a note: what a model would write, without one.
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0]!.webContents.send("engine:chat:notify", {
-        level: "info",
-        text: "the change:\n\n```plain\n***definitions***\n\n- :Greeter: is a command-line program.\n```",
-      }),
-    );
+    await tellChat(app, window, "chat:notify", {
+      level: "info",
+      text: "the change:\n\n```plain\n***definitions***\n\n- :Greeter: is a command-line program.\n```",
+    });
     const block = window.locator(".chat-body pre.plain-code");
     await expect(block.locator(".plain-concept").first()).toHaveText(":Greeter:");
     await expect(block).toHaveText("***definitions***\n\n- :Greeter: is a command-line program.");
@@ -91,13 +84,11 @@ test.describe("the chat", () => {
 
   test("colours a block with no language that is ***plain, and leaves other code alone", async ({ launched: { app, window } }) => {
     await expect(window.locator(".chat-model")).toBeVisible();
-    await app.evaluate(({ BrowserWindow }) => {
-      const say = (text: string) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:chat:notify", { level: "info", text });
-      say(
-        '```\n---\nimport:\n  - stdlib/backend/python-fastapi\ndescription: A small HTTP server.\n---\n\n***definitions***\n\n- :Server: is the HTTP service this module builds, named `server`.\n\n***functional specs***\n\n- :Server: answers `GET /` with `200` and the JSON body `{"name": "server"}`.\n```',
-      );
-      say("```\nprint('***not plain***, as no line is only a section')\n```");
-    });
+    const say = (text: string) => tellChat(app, window, "chat:notify", { level: "info", text });
+    await say(
+      '```\n---\nimport:\n  - stdlib/backend/python-fastapi\ndescription: A small HTTP server.\n---\n\n***definitions***\n\n- :Server: is the HTTP service this module builds, named `server`.\n\n***functional specs***\n\n- :Server: answers `GET /` with `200` and the JSON body `{"name": "server"}`.\n```',
+    );
+    await say("```\nprint('***not plain***, as no line is only a section')\n```");
     await expect(window.locator(".chat-body pre.plain-code .plain-concept").first()).toHaveText(":Server:");
     await expect(window.locator(".chat-body pre.plain-code .plain-section").first()).toHaveText("***definitions***");
     await expect(window.locator(".chat-body pre.plain-code")).toHaveCount(1);
@@ -105,11 +96,9 @@ test.describe("the chat", () => {
 
   test("colours a diff, and the ***plain in a diff of ***plain", async ({ launched: { app, window } }) => {
     await expect(window.locator(".chat-model")).toBeVisible();
-    await app.evaluate(({ BrowserWindow }) => {
-      const say = (text: string) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:chat:notify", { level: "info", text });
-      say("```diff\n--- a/hello.plain\n+++ b/hello.plain\n@@ -1,2 +1,2 @@\n ***definitions***\n-- :Greeter: greets.\n+- :Greeter: greets the person.\n```");
-      say("```diff\n--- a/main.py\n+++ b/main.py\n@@ -1 +1 @@\n-print('hi')\n+print('hello, world')\n```");
-    });
+    const say = (text: string) => tellChat(app, window, "chat:notify", { level: "info", text });
+    await say("```diff\n--- a/hello.plain\n+++ b/hello.plain\n@@ -1,2 +1,2 @@\n ***definitions***\n-- :Greeter: greets.\n+- :Greeter: greets the person.\n```");
+    await say("```diff\n--- a/main.py\n+++ b/main.py\n@@ -1 +1 @@\n-print('hi')\n+print('hello, world')\n```");
     const [plain, code] = [window.locator(".chat-body pre.diff").first(), window.locator(".chat-body pre.diff").nth(1)];
     await expect(plain.locator(".line.add .plain-concept")).toHaveText(":Greeter:");
     await expect(plain.locator(".line.del")).toHaveText("-- :Greeter: greets.");
@@ -126,4 +115,170 @@ test.describe("the chat", () => {
     await open.click();
     await expect(window.locator(".chat-model")).toBeVisible();
   });
+
+  test("has no new session button: a new chat is a tab of its own", async ({ launched: { window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    await expect(window.locator(".chat-top button[aria-label='new session']")).toHaveCount(0);
+  });
+
+  test("opens a new chat with ⌘T, as a tab, and closes it with ⌘W", async ({ launched: { app, window } }) => {
+    test.skip(!(await offers(window)).chats, "the turri running has one chat");
+    const box = window.getByPlaceholder("talk to turri - or / for a command");
+    await tellChat(app, window, "chat:notify", { level: "info", text: "said in the first chat" });
+    await box.fill("kept as it was");
+    // One chat: one tab, with no × - ⌘W would close the window.
+    const tabs = window.locator(".chat-tabs [role=tab]");
+    await expect(tabs).toHaveCount(1);
+    await expect(window.locator(".chat-tab-close")).toHaveCount(0);
+    await clickMenu(app, "New Chat");
+    await expect(tabs).toHaveCount(2);
+    await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+    await expect(tabs.nth(1)).toHaveText("new chat");
+    // A chat of its own: nothing of the first said in it, nothing typed.
+    await expect(window.locator(".chat-body")).not.toContainText("said in the first chat");
+    await expect(box).toHaveValue("");
+    // The first, shown again: what was said and typed in it is there.
+    await tabs.nth(0).click();
+    await expect(window.locator(".chat-body")).toContainText("said in the first chat");
+    await expect(box).toHaveValue("kept as it was");
+    // ⌘W closes the chat shown - its menu item says so - and the other is shown.
+    await tabs.nth(1).click();
+    await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+    await clickMenu(app, "Close Chat");
+    await expect(tabs).toHaveCount(1);
+    await expect(window.locator(".chat-body")).toContainText("said in the first chat");
+    const closes = await app.evaluate(({ Menu }) => Menu.getApplicationMenu()!.items.find((item) => item.label === "File")!.submenu!.items.some((item) => item.label === "Close Window"));
+    expect(closes).toBe(true);
+  });
+
+  test("goes to the next chat with ctrl+tab and the one before with ctrl+shift+tab, round from the ends", async ({ launched: { app, window } }) => {
+    test.skip(!(await offers(window)).chats, "the turri running has one chat");
+    await window.locator(".chat-model").waitFor();
+    const tabs = window.locator(".chat-tabs [role=tab]");
+    await clickMenu(app, "New Chat");
+    await clickMenu(app, "New Chat");
+    await expect(tabs).toHaveCount(3);
+    await expect(tabs.nth(2)).toHaveAttribute("aria-selected", "true");
+    await window.keyboard.press("Control+Tab");
+    await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
+    await window.keyboard.press("Control+Shift+Tab");
+    await expect(tabs.nth(2)).toHaveAttribute("aria-selected", "true");
+    await window.keyboard.press("Control+Shift+Tab");
+    await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("keeps a hidden chat's question until it is shown", async ({ launched: { app, window } }) => {
+    test.skip(!(await offers(window)).chats, "the turri running has one chat");
+    await window.locator(".chat-model").waitFor();
+    const [first] = await window.evaluate(() => (window as unknown as { turri: { call: (method: string) => Promise<Array<{ id: string }>> } }).turri.call("chats"));
+    await clickMenu(app, "New Chat");
+    const tabs = window.locator(".chat-tabs [role=tab]");
+    await expect(tabs).toHaveCount(2);
+    await app.evaluate(({ BrowserWindow }, chat) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:chat:ask", { chat, data: { id: 999, kind: "select", title: "which colour?", options: ["red", "blue"] } }), first!.id);
+    // Asked in the chat not shown: its tab says so, the chat shown keeps its message box.
+    await expect(tabs.nth(0).locator(".chat-tab-mark.asks")).toBeVisible();
+    await expect(window.locator(".question-card")).toHaveCount(0);
+    await tabs.nth(0).click();
+    await expect(window.locator(".question-card h2")).toHaveText("which colour?");
+  });
+
+  test("clears the draft with ctrl+c in a chat doing nothing", async ({ launched: { window } }) => {
+    const box = window.getByPlaceholder("talk to turri - or / for a command");
+    await window.locator(".chat-model").waitFor();
+    await box.fill("not sent");
+    await box.press("Control+c");
+    await expect(box).toHaveValue("");
+    // The window is still there: a draft cleared ends nothing.
+    await expect(window.locator(".chat-model")).toBeVisible();
+  });
+
+  test("ends turri's session with ctrl+c in a chat doing nothing, as the terminal leaves turri - and its window closes", async ({ launched: { app, window } }) => {
+    test.skip(!(await offers(window)).chats, "the turri running cannot end its session from a chat");
+    const box = window.getByPlaceholder("talk to turri - or / for a command");
+    await window.locator(".chat-model").waitFor();
+    const closed = window.waitForEvent("close");
+    // The window may close before the press is done with: that is what is wanted.
+    await box.press("Control+c").catch(() => {});
+    await closed;
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(0);
+  });
+
+  test("puts a question away once turri says it is over - declined, or its turn stopped", async ({ launched: { app, window } }) => {
+    await tellChat(app, window, "chat:ask", { id: 998, kind: "select", title: "which colour?", options: ["red", "blue"] });
+    await expect(window.locator(".question-card h2")).toHaveText("which colour?");
+    await tellChat(app, window, "chat:unask", { id: 998 });
+    await expect(window.locator(".question-card")).toHaveCount(0);
+    await expect(window.getByPlaceholder("talk to turri - or / for a command")).toBeVisible();
+  });
+
+  test("declines a question with ctrl+c, and never stops the turn or closes the window for it", async ({ launched: { app, window } }) => {
+    await tellChat(app, window, "chat:ask", { id: 999, kind: "select", title: "which colour?", options: ["red", "blue"] });
+    await expect(window.locator(".question-card h2")).toHaveText("which colour?");
+    // A chat doing nothing: ctrl+c without the question would end turri's session and close the window.
+    await window.locator(".question-card").press("Control+c");
+    await window.locator(".question-card").press("Control+c");
+    await expect(window.locator(".question-card h2")).toHaveText("which colour?");
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+  });
 });
+
+test.describe("a turn at work", () => {
+  test.use({ stubModel: "silent" });
+
+  test("is stopped by ctrl+c wherever the focus is, and the window stays", async ({ launched: { app, window } }) => {
+    const box = window.getByPlaceholder("talk to turri - or / for a command");
+    const stop = window.locator(".composer-bar button", { hasText: "stop" });
+    for (const focus of ["the message box", "nothing", "the ***plain"]) {
+      await box.fill("hello");
+      await box.press("Enter");
+      await expect(stop).toBeVisible();
+      // ctrl+c straight after a stop is ignored, as in the terminal: the turn under way a moment first.
+      await window.waitForTimeout(700);
+      await window.evaluate((where) => {
+        if (where === "the message box") return;
+        (document.activeElement as HTMLElement | null)?.blur();
+        if (where === "the ***plain") document.querySelector<HTMLTextAreaElement>(".editor-pane textarea")?.focus();
+      }, focus);
+      await window.keyboard.press("Control+c");
+      await expect(stop, `stopped with the focus on ${focus}`).toHaveCount(0);
+    }
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+  });
+});
+
+test.describe("turri's questions", () => {
+  test.use({ stubModel: "asks" });
+
+  test("are declined with ctrl+c, one after another, the turn going on", async ({ launched: { app, window, requests } }) => {
+    test.skip(!(await offers(window)).chats, "the turri running cannot decline a question");
+    const box = window.getByPlaceholder("talk to turri - or / for a command");
+    await box.fill("ask me things");
+    await box.press("Enter");
+    // Five questions, each declined: the next one asked, the turn still running - never stopped, nor the window closed.
+    for (let n = 1; n <= 5; n++) {
+      await expect(window.locator(".question-card h2")).toHaveText(`question ${n}?`);
+      await window.keyboard.press("Control+c");
+      await expect.poll(() => requests.length, `question ${n} declined, and the model told`).toBe(n + 1);
+      expect(requests[n]).toContain("declined to answer");
+    }
+    await expect(window.locator(".question-card h2")).toHaveText("question 6?");
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+  });
+
+  test("are put away when their turn is stopped", async ({ launched: { window } }) => {
+    test.skip(!(await offers(window)).chats, "the turri running does not say a question is over");
+    const box = window.getByPlaceholder("talk to turri - or / for a command");
+    await box.fill("ask me something");
+    await box.press("Enter");
+    await expect(window.locator(".question-card h2")).toHaveText("question 1?");
+    // The stop button is under the card: the chat's stop, as the engine has it.
+    await window.evaluate(() =>
+      (window as unknown as { turri: { call: (method: string, params?: unknown) => Promise<unknown> } }).turri
+        .call("chats")
+        .then((chats) => (window as unknown as { turri: { call: (method: string, params?: unknown) => Promise<unknown> } }).turri.call("abortChat", { chat: (chats as Array<{ id: string }>)[0]!.id })),
+    );
+    await expect(window.locator(".question-card")).toHaveCount(0);
+    await expect(box).toBeVisible();
+  });
+});
+
