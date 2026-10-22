@@ -1,7 +1,31 @@
 import MarkdownIt from "markdown-it";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Icon, Jellyfish, PlainName, Spinner } from "./ui.tsx";
+import { Icon, Jellyfish, PlainName, Spinner, withPlain } from "./ui.tsx";
 import { keys } from "./platform.ts";
+import type { Concept } from "./types.ts";
+
+/** The concepts the project's ***plain can name, as turri reads them - longest first - to colour where they are said. */
+let conceptNames: string[] = [];
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** A pattern of the concepts there are, by name: none, while there are none. */
+const conceptsIn = () => (conceptNames.length === 0 ? null : new RegExp(`(${conceptNames.map(escapeRegExp).join("|")})`, "g"));
+
+/** Words with the concepts in them coloured, as the ***plain colours them. */
+function withConcepts(text: string): React.ReactNode {
+  const pattern = conceptsIn();
+  if (pattern === null) return text;
+  return text.split(pattern).map((part, index) => (index % 2 === 1 ? <span key={index} className="plain-concept">{part}</span> : part));
+}
+
+/** The concepts that fit what is typed: those it starts first, then those with it anywhere in their name. */
+function fitting(concepts: Concept[], typed: string): Concept[] {
+  const word = typed.slice(1).toLowerCase();
+  const starts = (concept: Concept) => concept.name.slice(1).toLowerCase().startsWith(word);
+  return concepts
+    .filter((concept) => concept.name.slice(1, -1).toLowerCase().includes(word) && concept.name.toLowerCase() !== typed.toLowerCase())
+    .sort((a, b) => Number(starts(b)) - Number(starts(a)) || a.name.localeCompare(b.name))
+    .slice(0, 8);
+}
 
 export type ChatItem =
   | { role: "user"; text: string }
@@ -48,6 +72,8 @@ export function Chat(props: {
   fresh: boolean;
   /** What typing / offers: turri's commands, prompt templates and skills, as its chat has them. */
   commands: Array<{ name: string; description: string }>;
+  /** What typing : offers: the concepts the project's ***plain can name, as turri reads them. */
+  concepts: Concept[];
   onSend: (text: string) => void;
   onAbort: () => void;
   onClose: () => void;
@@ -60,9 +86,17 @@ export function Chat(props: {
   onNewSession: () => void;
   /** A pulse the chat says ended, opened in the work view. */
   onShowPulse: (id: string) => void;
+  /** A concept said in the chat, clicked: opened where the ***plain defines it. */
+  onShowConcept: (concept: string) => void;
   newSessionBlocked: string | null;
 }) {
   const [draft, setDraft] = useState("");
+  conceptNames = props.concepts.map((concept) => concept.name).sort((a, b) => b.length - a.length);
+  // Where the caret is in the message box, for the concept being typed there; the concept chosen in what is offered;
+  // and where one started that escape put away.
+  const [caret, setCaret] = useState(0);
+  const [active, setActive] = useState(0);
+  const [dismissed, setDismissed] = useState<number | null>(null);
   const question = useLingering(props.question);
   const end = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -83,10 +117,40 @@ export function Chat(props: {
     if (text === "") return;
     props.onSend(text);
     setDraft("");
+    setCaret(0);
     stick.current = true;
   };
 
   const suggestions = draft.startsWith("/") && !draft.includes(" ") ? props.commands.filter((command) => command.name.startsWith(draft)) : [];
+  // The concept being typed before the caret, as turri reads it - asked of the engine as the draft or the caret moves.
+  const [typing, setTyping] = useState<{ typed: string; from: number } | null>(null);
+  useEffect(() => {
+    if (suggestions.length > 0 || props.concepts.length === 0) return setTyping(null);
+    let alive = true;
+    void window.turri.call<{ typed: string; from: number } | null>("conceptBeingTyped", { text: draft.slice(0, caret) }).then((next) => alive && setTyping(next), () => {});
+    return () => void (alive = false);
+  }, [draft, caret, suggestions.length, props.concepts]);
+  const offered = typing !== null && dismissed !== typing.from ? fitting(props.concepts, typing.typed) : [];
+  const chosen = Math.min(active, Math.max(0, offered.length - 1));
+  useEffect(() => setActive(0), [typing?.typed]);
+
+  /** A concept offered, taken: in place of what was typed of it - and of the rest of its name after the caret. */
+  const take = (concept: Concept) => {
+    if (typing === null) return;
+    // What follows the caret of the concept's name already - `er:` of `:Us|er:` - is taken with it.
+    const rest = concept.name.slice(typing.typed.length);
+    let kept = 0;
+    while (kept < rest.length && draft[caret + kept] === rest[kept]) kept++;
+    const after = draft.slice(caret + kept);
+    const space = /^\s/.test(after) ? "" : " ";
+    const at = typing.from + concept.name.length + space.length;
+    setDraft(draft.slice(0, typing.from) + concept.name + space + after);
+    setCaret(at);
+    requestAnimationFrame(() => {
+      input.current?.focus();
+      input.current?.setSelectionRange(at, at);
+    });
+  };
   const statusLine = Object.values(props.statuses).filter(Boolean).join(" · ");
 
   return (
@@ -111,6 +175,12 @@ export function Chat(props: {
       </div>
       <div
         className="chat-body"
+        // A concept said - in turri's words, the person's or a ***plain block - opens where it is defined: not when the
+        // click ends a selection of its text.
+        onClick={(event) => {
+          const concept = (event.target as HTMLElement).closest(".plain-concept");
+          if (concept !== null && !window.getSelection()?.toString()) props.onShowConcept(concept.textContent ?? "");
+        }}
         onScroll={(event) => {
           const el = event.currentTarget;
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
@@ -170,13 +240,53 @@ export function Chat(props: {
             ))}
           </ul>
         )}
+        {offered.length > 0 && (
+          <ul className="suggestions concepts" role="listbox" aria-label="concepts">
+            {offered.map((concept, index) => (
+              <li
+                key={concept.name}
+                role="option"
+                aria-selected={index === chosen}
+                className={index === chosen ? "on" : ""}
+                onMouseDown={(event) => (event.preventDefault(), take(concept))}
+                onMouseEnter={() => setActive(index)}
+              >
+                <span className="plain-concept">{concept.name}</span>
+                <span className="muted concept-about">{concept.about}</span>
+                <span className="concept-from">{withPlain(concept.from)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         <textarea
           ref={input}
           rows={Math.min(8, Math.max(2, draft.split("\n").length))}
           placeholder={props.busy ? "turri hears this when it finishes its turn…" : "talk to turri - or / for a command"}
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setCaret(event.target.selectionStart);
+          }}
+          onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
           onKeyDown={(event) => {
+            // A concept offered: the arrows choose, enter or tab takes it, escape puts the list away.
+            if (offered.length > 0) {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                setActive((chosen + (event.key === "ArrowDown" ? 1 : offered.length - 1)) % offered.length);
+                return;
+              }
+              if ((event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) || event.key === "Tab") {
+                event.preventDefault();
+                take(offered[chosen]!);
+                return;
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setDismissed(typing!.from);
+                return;
+              }
+            }
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
               send();
@@ -220,7 +330,7 @@ function Message({
   onShowPulse?: (id: string) => void;
 }) {
   const [thinking, setThinking] = useState(false);
-  if (item.role === "user") return <div className="msg user">{item.text}</div>;
+  if (item.role === "user") return <div className="msg user">{withConcepts(item.text)}</div>;
   if (item.role === "command") return <div className="msg user command">{item.text}</div>;
   // A pulse that ended: one line - what it was, how it ended, how long and what it cost - coloured by its kind, as the
   // work view colours it. A click opens it there, its report and its spec a click away: the chat stays a conversation.
@@ -389,7 +499,11 @@ markdown.set({
 
 // ***plain in what turri writes, written as its name is - in its words, never in its code.
 const PLAIN_NAME = '<span class="plain-name"><img class="plain-mark" src="./plain/plain-mark.svg" alt="***" draggable="false">plain</span>';
-markdown.renderer.rules.text = (tokens, index) => escape(tokens[index]!.content).replaceAll("***plain", PLAIN_NAME);
+// Its concepts - `:User:` - coloured as the ***plain colours them, in its words too.
+markdown.renderer.rules.text = (tokens, index) =>
+  escape(tokens[index]!.content)
+    .replace(conceptsIn() ?? /$^/, '<span class="plain-concept">$1</span>')
+    .replaceAll("***plain", PLAIN_NAME);
 
 export function Prose({ text }: { text: string }) {
   const [coloured, setColoured] = useState(0);

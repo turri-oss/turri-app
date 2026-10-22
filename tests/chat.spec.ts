@@ -1,4 +1,4 @@
-import { expect, test } from "./app.ts";
+import { expect, offers, test } from "./app.ts";
 
 // Only what calls no model: slash commands that print, and the window's own.
 test.describe("the chat", () => {
@@ -10,6 +10,38 @@ test.describe("the chat", () => {
     const box = window.getByPlaceholder("talk to turri - or / for a command");
     await box.fill("/std");
     await expect(window.locator(".suggestions")).toContainText("/stdlib");
+  });
+
+  test("opens a concept clicked in the chat where the ***plain defines it", async ({ launched: { app, window } }) => {
+    // Where it is defined, from turri's graph: on a turri whose host entry gives it.
+    test.skip(!(await offers(window)).links, "the turri running gives the window no graph of the ***plain");
+    await app.evaluate(
+      ({ BrowserWindow }, message) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:chat:message", message),
+      { role: "assistant", text: "The :Greeter: greets whoever runs it." },
+    );
+    await window.getByRole("tab", { name: "work" }).click();
+    await window.locator(".prose .plain-concept", { hasText: ":Greeter:" }).click();
+    await expect(window.getByRole("tab", { name: "intent", selected: true })).toBeVisible();
+    await expect(window.locator(".editor-pane .pane-header")).toContainText("hello.plain");
+    // Its definition, lit: line 6 of hello.plain.
+    await expect(window.locator(".editor-colours > div.rendering")).toContainText(":Greeter: is a command-line program");
+  });
+
+  test("offers the concepts the ***plain names as one is typed, and takes one", async ({ launched: { window } }) => {
+    // Concepts as turri reads them: on a turri whose host entry gives them.
+    test.skip(!(await offers(window)).concepts, "the turri running gives the window no concepts");
+    const box = window.getByPlaceholder("talk to turri - or / for a command");
+    await box.fill("what does :Gre");
+    const offered = window.getByRole("listbox", { name: "concepts" });
+    // The fixture's own, with what its definition says; and ***plain's own, which it does not start.
+    await expect(offered.getByRole("option").first()).toContainText(":Greeter:");
+    await expect(offered).toContainText("greets the person running it");
+    await box.press("Tab");
+    await expect(box).toHaveValue("what does :Greeter: ");
+    await expect(offered).toHaveCount(0);
+    // Not after a concept closed: its colon opens none.
+    await box.fill("what does :Greeter:");
+    await expect(offered).toHaveCount(0);
   });
 
   test("runs a slash command that only prints", async ({ launched: { window } }) => {

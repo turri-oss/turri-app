@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } f
 import type { Job, Spec } from "./types.ts";
 import { elapsed, Icon, PlainMark, PlainName, Spinner, useTick, withPlain } from "./ui.tsx";
 import { stageOf } from "./PulseSpec.tsx";
+import { followAt, PlainLinks, useModHeld, usePlainLinks, type Followed, type OpenLink } from "./PlainLinks.tsx";
 import { keys, withMod } from "./platform.ts";
 
 type Token = { text: string; role: string | null };
@@ -113,6 +114,10 @@ export function SpecView(props: {
   saveRef: MutableRefObject<(() => Promise<void>) | null>;
   onRegenerate: (frids?: string[]) => void;
   onConform: (frids?: string[]) => void;
+  /** A module it imports or requires, or a .plain that requires or imports it: the stdlib view's, or the project's file. */
+  onOpen: OpenLink;
+  /** A module, concept or linked resource ⌘-clicked in it: to open what it names. */
+  onFollow: (followed: Followed, point: { x: number; y: number }) => void;
   say: (text: string, tone?: "info" | "error") => void;
 }) {
   const { spec, running } = props;
@@ -130,6 +135,8 @@ export function SpecView(props: {
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const now = useRef({ text, saved });
   now.current = { text, saved };
+  const links = usePlainLinks(spec.file);
+  const linking = useModHeld();
 
   useEffect(() => {
     void window.turri.call<{ text: string }>("readSpec", { file: spec.file }).then(({ text }) => {
@@ -389,6 +396,7 @@ export function SpecView(props: {
             <div style={{ width: `${(built / total) * 100}%` }} />
           </div>
         )}
+        <PlainLinks links={links} onOpen={props.onOpen} />
         {!spec.ok && (
           <div className="parse-error">
             <Icon name="warn" />
@@ -424,7 +432,7 @@ export function SpecView(props: {
           // and coloured once its colours, a moment behind, are for the same text. The gutter, left of both, is drawn
           // by the coloured lines, so each functional spec's mark stays beside its lines however they wrap.
           <div
-            className="editor"
+            className={`editor ${linking ? "linking" : ""}`}
             ref={editorRef}
             onMouseMove={(event) => pointAt(event.clientX, event.clientY)}
             onMouseLeave={leave}
@@ -490,11 +498,15 @@ export function SpecView(props: {
               spellCheck={false}
               value={visible}
               onChange={(event) => edit(event.target.value)}
-              // A click on a collapsed spec's first line opens it, the caret where it was clicked.
+              // A click on a collapsed spec's first line opens it, the caret where it was clicked; ⌘-click on a module it
+              // imports or requires opens that.
               onMouseUp={(event) => {
                 const area = event.currentTarget;
                 if (area.selectionStart !== area.selectionEnd) return;
                 const at = toFull(area.selectionStart);
+                const line = lineAt(at);
+                const followed = withMod(event) ? followAt(links, lines[line], at - fullStarts[line]!, line + 1) : null;
+                if (followed !== null) return props.onFollow(followed, { x: event.clientX, y: event.clientY });
                 if (isCollapsed(lineAt(at))) {
                   caretRef.current = at;
                   toggle(lineAt(at));

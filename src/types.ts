@@ -36,6 +36,8 @@ export interface Project {
   stacks: string[];
   settings: Record<string, string | number | boolean | null>;
   specs: Spec[];
+  /** What of ***plain the turri it runs gives the window: the stdlib view, what a ***plain links, its concepts, its linked resources. */
+  offers: { stdlib: boolean; links: boolean; concepts: boolean; resources: boolean };
   /** A project just started: what turri said of the config it wrote for it - its models, and how to sign in. */
   setup?: string;
 }
@@ -143,6 +145,30 @@ export interface TranscriptEntry {
   agent?: { label: string; model?: string };
 }
 
-export type View = "spec" | "work" | "preview";
+export type View = "spec" | "work" | "preview" | "stdlib";
+
+/** A concept the project's ***plain can name - `:User:` - with what its definition says, and where it is defined. */
+export interface Concept {
+  name: string;
+  about: string;
+  /** The .plain that defines it, by its path in the project; a template of the standard library; or ***plain itself. */
+  from: string;
+}
+
+/** A template of turri's standard library, as turri lists it, and which of the project's .plain files import it. */
+export interface StdlibModule {
+  /** What a ***plain imports it as: `stdlib/backend/java-springboot`. */
+  name: string;
+  kind: string;
+  /** A stack to import - not a kind's `common`, a conformance template or a language's. */
+  stack: boolean;
+  /** A stack's conformance template, when it has one; a conformance template's stack. */
+  conformance?: string;
+  tests?: string;
+  description: string;
+  imports: string[];
+  usedBy: Array<{ file: string; rel: string }>;
+  text: string;
+}
 /** What the preview tries the app in: a browser pane, or a terminal. */
 export type Pane = "browser" | "terminal";

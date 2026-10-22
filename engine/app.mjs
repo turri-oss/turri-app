@@ -40,6 +40,8 @@ export const APP_SURFACE = [
   "- Your questions - ask_user, a confirm, a choice - are docked at the foot of the chat, in the message box's place.",
   "- The chat shows what you write as Markdown. Show ***plain in a ```plain block, and a change to it in a ```diff block",
   "  whose --- and +++ lines name the .plain file: the chat colours both by the ***plain grammar, as the intent view does.",
+  "  A concept you write - :User: - is coloured too, and a click on it opens the ***plain that defines it, on its",
+  "  definition: write concepts by their names so the person can follow them.",
   "- Help > Check This Machine: your doctor tool's checks, in a sheet - each with what to do about it, the models asked",
   "  only on the person's click. Anything missing is said in amber at the foot of the sidebar, and a click opens it; a",
   "  project just started is checked at once, its models asked. Point the person to it when something is missing.",
@@ -56,12 +58,20 @@ export const APP_SURFACE = [
   "  frontend in the browser; a backend in the browser when it serves API docs to try it in (/docs, an OpenAPI or",
   "  Swagger page), otherwise with requests from the terminal (curl); anything else, whichever shows it working best.",
   "  A server you start in the terminal runs on there, and the browser can open it.",
+  `- stdlib (${MOD}4): turri's standard library to look through, read only - every template by its kind (backends,`,
+  "  frontends, command-line tools, libraries, languages), marked in use when the project builds on it, and the one",
+  "  chosen as its ***plain: what it imports, what imports it, its conformance tests and the project's .plain files that",
+  "  import it, each a click away. Point the person there when they choose a stack or ask what one gives them.",
+  "- Under a .plain's header in intent: what it imports and requires, and which .plain files require it or import it,",
+  `  each a button - up and down the requires chain, a stdlib module opening in stdlib; ${MOD}-click on a module in its`,
+  "  front matter opens it too, on a concept its definition - as that module sees it, in whichever .plain or template -",
+  "  and, on the concept where it is defined, a list of where it is used, each a click away; on a linked resource, its file.",
   "Speak of these by their names - the intent view, the work view, a pulse in the work view - as the person sees them.",
   "The window never says spec: what the person writes with you is ***plain - a .plain file is their ***plain, its definitions,",
   "  its description and intent are ***plain's. Say it so too; a functional spec keeps its name, as ***plain calls it.",
 ].join("\n");
 
-const VIEWS = { spec: "intent", work: "work", preview: "preview" };
+const VIEWS = { spec: "intent", work: "work", preview: "preview", stdlib: "stdlib" };
 
 /** The prompt turri built for this turn, and what the person is looking at in the window now, after it. */
 export function withWhere(prompt, where) {

@@ -686,6 +686,7 @@ function buildMenu() {
         { label: "intent", accelerator: "CmdOrCtrl+1", click: menuAction("view:spec") },
         { label: "work", accelerator: "CmdOrCtrl+2", click: menuAction("view:work") },
         { label: "preview", accelerator: "CmdOrCtrl+3", click: menuAction("view:preview") },
+        { label: "stdlib", accelerator: "CmdOrCtrl+4", click: menuAction("view:stdlib") },
         { type: "separator" },
         { label: "Show or Hide the Files", accelerator: "CmdOrCtrl+B", click: menuAction("sidebar") },
         { label: "Show or Hide the Chat", accelerator: "CmdOrCtrl+J", click: menuAction("chat") },

@@ -6,7 +6,7 @@ import turri, { turriFrom } from "./turri.mjs";
 import { startChat } from "./chat.mjs";
 import { createAuth } from "./auth.mjs";
 import { existsSync, readdirSync, readFileSync, statSync, watch, writeFileSync } from "node:fs";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 // turri writes progress to the console as it would to a terminal; here it is only a log line for the app.
 for (const level of ["log", "info", "warn", "error"]) {
@@ -301,6 +301,149 @@ function writeFile({ file, text }) {
   return true;
 }
 
+// ---------- the standard library, and what the ***plain links ----------
+
+// What of ***plain the window has from turri's host entry - the graph, its concepts, the standard library: each left out
+// on a turri without it.
+// A graph's items give their linked resources where its turri reads them - known from any item, and a project with none
+// links none.
+const offers = () => ({
+  stdlib: turri.stdlibTemplates !== undefined,
+  links: turri.plainGraph !== undefined,
+  concepts: turri.conceptsOf !== undefined,
+  resources: turri.plainGraph !== undefined && turri.plainGraph(projectDir).items[0]?.resources !== undefined,
+});
+
+/** The standard library's import names, to tell a link to one of its templates from a module of the project's. */
+const stdlibNames = () => new Set(turri.stdlibTemplates?.().map((template) => template.name) ?? []);
+
+/**
+ * What a .plain file of the project builds on, and what builds on it, as saved, for the window to go between them: the
+ * modules it imports and requires - each with its file, and whether it is the standard library's - and the project's
+ * .plain files that require it or import it, by their paths in the project. All of it from turri's graph.
+ */
+function plainLinks({ file }) {
+  const full = inProject(file);
+  if (turri.plainGraph === undefined) return null;
+  const graph = turri.plainGraph(projectDir);
+  const node = graph.modules.find((module) => module.file === full);
+  if (node === undefined) return { imports: [], requires: [], requiredBy: [], importedBy: [] };
+  const stdlib = stdlibNames();
+  const down = (link) => ({ ...link, stdlib: stdlib.has(link.name) });
+  const up = (link) => ({ name: relative(projectDir, link.file), file: link.file });
+  return { imports: node.imports.map(down), requires: node.requires.map(down), requiredBy: node.requiredBy.map(up), importedBy: node.importedBy.map(up) };
+}
+
+/**
+ * Every concept the project's ***plain can name, for the chat to offer as it is typed and colour where it is said - as
+ * turri reads them (conceptsOf), for each .plain of the project, each once. None on a turri without them.
+ */
+function concepts() {
+  if (turri.conceptsOf === undefined) return [];
+  const seen = new Map();
+  for (const file of plainFiles(projectDir))
+    for (const { concept, definition, module } of turri.conceptsOf(file)) if (!seen.has(concept)) seen.set(concept, { name: concept, about: definition, from: module ?? "***plain" });
+  return [...seen.values()];
+}
+
+/** The item of a .plain file a line of it is in, from turri's graph - the last to start at or before it - or undefined. */
+function itemAt(graph, file, line) {
+  let found;
+  for (const item of graph.items) if (item.file === file && item.line <= line && (found === undefined || item.line > found.line)) found = item;
+  return found;
+}
+
+/** An item's first line, in parts - each concept in it one of its own, as turri finds them - for the window to colour. */
+function excerpt(text) {
+  const line = text.split("\n")[0].trim();
+  const parts = [];
+  let at = 0;
+  for (const { concept, start, end } of turri.findConcepts(line)) {
+    if (start > at) parts.push({ text: line.slice(at, start) });
+    parts.push({ text: concept, concept: true });
+    at = end;
+  }
+  if (at < line.length) parts.push({ text: line.slice(at) });
+  return parts;
+}
+
+/**
+ * Where a concept is defined, for the window to open it there, from turri's graph: the .plain file and the line its
+ * definition starts on, and the module - the standard library's or the project's. Said on a line of a .plain - ⌘-clicked
+ * there - the definition that item names, as its module sees it, or, where it defines it, the item and every item that
+ * uses it (`uses`), by its file's path in the project or its template's name. Said in the
+ * chat, of several, the one in the file open now, then the project's own. `{ plain: true }` for one of ***plain's own;
+ * null for one defined nowhere.
+ */
+function conceptDefinition({ concept, file, line }) {
+  if (turri.plainGraph === undefined) return null;
+  const graph = turri.plainGraph(projectDir);
+  const nodes = graph.concepts.filter((node) => node.concept === concept);
+  const items = new Map(graph.items.map((item) => [item.id, item]));
+  const stdlib = stdlibNames();
+  const where = (item) => ({ file: item.file, line: item.line, module: item.module, stdlib: stdlib.has(item.module) });
+  if (file !== undefined && line !== undefined) {
+    const item = itemAt(graph, inProject(file), line);
+    // ⌘-clicked where it is defined: where it is used, each with its first line.
+    if (item?.defines.includes(concept)) {
+      const usedBy = graph.concepts.find((node) => node.concept === concept && node.definition === item.id)?.usedBy ?? [];
+      const uses = usedBy.filter((id) => id !== item.id && items.has(id)).map((id) => items.get(id));
+      return { ...where(item), uses: uses.map((use) => ({ ...where(use), name: stdlib.has(use.module) ? use.module : relative(projectDir, use.file), text: excerpt(use.text) })) };
+    }
+    const definition = item?.uses.find((use) => use.concept === concept)?.definition;
+    if (definition != null && items.has(definition)) return where(items.get(definition));
+  }
+  const defined = nodes.flatMap((node) => (node.definition !== null && items.has(node.definition) ? [items.get(node.definition)] : []));
+  if (defined.length === 0) return nodes.length > 0 ? { plain: true } : null;
+  const open = looking.file !== null ? resolve(projectDir, looking.file) : null;
+  return where(defined.find((each) => each.file === open) ?? defined.find((each) => !stdlib.has(each.module)) ?? defined[0]);
+}
+
+/**
+ * The file a linked resource of a .plain names - the `index`th link on its `line`, ⌘-clicked there - as turri's graph
+ * resolves it: `{ file }`, or `{ missing }` with its target when it is not there. Null on a turri whose graph does not
+ * give an item's resources.
+ */
+function linkedResource({ file, line, index }) {
+  if (turri.plainGraph === undefined) return null;
+  const graph = turri.plainGraph(projectDir);
+  const item = itemAt(graph, inProject(file), line);
+  if (item?.resources === undefined) return null;
+  const resource = item.resources.filter((each) => each.line === line)[index];
+  if (resource === undefined) return null;
+  return resource.file !== null ? { file: resource.file } : { missing: resource.target };
+}
+
+/** The concept being typed at the end of what is before the caret - `:Us` - and where it starts, as turri reads it; or null. */
+function conceptBeingTyped({ text }) {
+  const typing = turri.conceptBeingTyped?.(text);
+  return typing === undefined ? null : { typed: typing.typed, from: typing.start };
+}
+
+/**
+ * turri's standard library, to read in the stdlib view: every template as turri lists it - its import name, kind, what
+ * it is, what it imports, its conformance template or its stack, and its text - and which of the project's .plain files
+ * import each, from turri's graph.
+ */
+function stdlib() {
+  const graph = turri.plainGraph(projectDir);
+  const project = graph.modules.filter((module) => !relative(projectDir, module.file).startsWith(".."));
+  return turri.stdlibTemplates().map(({ name, kind, description, imports, conformance, text, tests }) => ({
+    name,
+    kind,
+    description,
+    imports,
+    stack: turri.isStack({ name }),
+    ...(conformance !== undefined ? { conformance } : {}),
+    ...(tests !== undefined ? { tests } : {}),
+    usedBy: project.filter((module) => module.imports.some((link) => link.name === name)).map((module) => ({ file: module.file, rel: relative(projectDir, module.file) })),
+    text,
+  }));
+}
+
+/** The standard library's kinds, in turri's order, each titled as the window shows it. */
+const stdlibKinds = () => turri.STDLIB_KINDS.map(({ kind, title }) => ({ kind, title: title.toLowerCase() }));
+
 // ---------- a new project ----------
 
 // ---------- Amazon Bedrock's models ----------
@@ -481,6 +624,7 @@ function summary() {
       // As turri has it - TURRI_DEBUG over the file's - where the turri running has a debug mode at all.
       ...(turri.debugMode !== undefined ? { debug: turri.debugMode(projectDir) } : {}),
     },
+    offers: offers(),
     specs: plainFiles(projectDir).map((file) => describeSpec(file)),
   };
 }
@@ -645,7 +789,8 @@ function release({ file }) {
  * told to turri at its next turn.
  */
 function look({ view, file, pane }) {
-  looking = { view, file: file ? relative(projectDir, file) || file : null, pane: pane ?? null };
+  // A file of the project by its path in it; a module of the standard library by its name, as it is.
+  looking = { view, file: file ? (isAbsolute(file) ? relative(projectDir, file) || file : file) : null, pane: pane ?? null };
   return true;
 }
 
@@ -774,7 +919,7 @@ function transcript({ id }) {
 
 // ---------- the wire ----------
 
-const methods = { ...auth, newChat, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, readFile, writeFile, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, earlierPulses, pastPulseDetail, sendChat, abortChat, chatHistory, commands, answer, doctor };
+const methods = { ...auth, newChat, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, readFile, writeFile, stdlib, stdlibKinds, plainLinks, concepts, conceptDefinition, linkedResource, conceptBeingTyped, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, earlierPulses, pastPulseDetail, sendChat, abortChat, chatHistory, commands, answer, doctor };
 
 // What the window may ask before a project is open: to open one, to start a new one, whether the machine is ready, or to
 // sign in to the model providers.

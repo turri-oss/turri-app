@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./types.ts";
-import type { Job, Pane, PastRun, Project, Spec, Status, View } from "./types.ts";
+import type { Concept, Job, Pane, PastRun, Project, Spec, Status, View } from "./types.ts";
 import { Welcome } from "./Welcome.tsx";
 import { SpecView } from "./SpecView.tsx";
 import { WorkView } from "./WorkView.tsx";
@@ -18,6 +18,8 @@ import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
 import { FileTree } from "./FileTree.tsx";
 import { FileView } from "./FileView.tsx";
 import { PreviewView, savedPane, savePane } from "./PreviewView.tsx";
+import { StdlibView } from "./StdlibView.tsx";
+import { ConceptUses, type Followed, type Link, type Place, type Use } from "./PlainLinks.tsx";
 import { Empty, Icon, Jellyfish, PlainName, Spinner, TurriVersionLine, withPlain } from "./ui.tsx";
 import { Chat, type ChatItem, type ChatStats, type Question, type SkillProgress } from "./Chat.tsx";
 import { keys } from "./platform.ts";
@@ -55,6 +57,8 @@ export function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<View>("spec");
   const [pane, setPane] = useState<Pane>("browser");
+  /** The standard library's template open in the stdlib view: kept as the person goes to another view and back. */
+  const [template, setTemplate] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>(EMPTY_STATUS);
   const [jobs, setJobs] = useState<Map<string, Job>>(new Map());
   /** Earlier sessions' pulses, from the ledger: read when the project opens and again as each pulse ends. */
@@ -125,6 +129,16 @@ export function App() {
   const [chatModel, setChatModel] = useState<string | null>(null);
   const [chatStats, setChatStats] = useState<ChatStats | null>(null);
   const [commands, setCommands] = useState<Array<{ name: string; description: string }>>([]);
+  /** The concepts the project's ***plain can name, for the chat to offer as one is typed: read again as a .plain changes. */
+  const [concepts, setConcepts] = useState<Concept[]>([]);
+  useEffect(() => {
+    if (project === null || !project.offers.concepts) return setConcepts([]);
+    const read = () => void window.turri.call<Concept[]>("concepts").then(setConcepts, () => {});
+    read();
+    const offFiles = window.turri.on("engine:files", ({ paths }: { paths: string[] }) => paths.some((path) => path.endsWith(".plain")) && read());
+    const offSpec = window.turri.on("engine:spec", read);
+    return () => (offFiles(), offSpec());
+  }, [project?.dir]);
 
   // What is selected in the tree: one of the project's specs, or any other file of it.
   const spec = project?.specs.find((entry) => entry.file === selected) ?? null;
@@ -146,6 +160,7 @@ export function App() {
     setGuide(false);
     setProject(summary);
     setSelected(summary.specs[0]?.file ?? null);
+    setTemplate(null);
     setStatus(EMPTY_STATUS);
     setJobs(new Map());
     setEarlier([]);
@@ -332,8 +347,8 @@ export function App() {
   // What the person is looking at, for turri to know: the view, and the file open in it - or the preview's browser or terminal.
   useEffect(() => {
     if (project === null) return;
-    void window.turri.call("look", { view, file: view === "spec" ? selected : null, pane: view === "preview" ? pane : null }).catch(() => {});
-  }, [project?.dir, view, selected, pane]);
+    void window.turri.call("look", { view, file: view === "spec" ? selected : view === "stdlib" ? template : null, pane: view === "preview" ? pane : null }).catch(() => {});
+  }, [project?.dir, view, selected, pane, template]);
   useEffect(() => {
     if (project !== null) savePane(project.dir, pane);
   }, [project?.dir, pane]);
@@ -345,6 +360,68 @@ export function App() {
     if (project === null) return;
     void window.turri.doctor().then(setMachine).catch(() => {});
   }, [project?.dir]);
+
+  // The stdlib view only where the turri running gives the window its standard library: intent otherwise.
+  useEffect(() => {
+    if (view === "stdlib" && project !== null && !project.offers.stdlib) setView("spec");
+  }, [view, project]);
+
+  /** A module a ***plain names, or one that names it: the standard library's in the stdlib view, the project's in intent. */
+  /** A place in the ***plain opened, its line in view and lit: a template of the standard library in stdlib, the project's in intent. */
+  const showAt = useCallback((where: Place) => {
+    const lit = { lines: [where.line], at: Date.now() };
+    if (where.stdlib) {
+      setTemplate(where.module);
+      setReveal({ file: where.module, ...lit });
+      setView("stdlib");
+    } else {
+      setSelected(where.file);
+      setReveal({ file: where.file, ...lit });
+      setView("spec");
+    }
+  }, []);
+
+  /** Where a concept ⌘-clicked where it is defined is used - at the point clicked - to go to one. */
+  const [uses, setUses] = useState<{ concept: string; uses: Use[]; x: number; y: number } | null>(null);
+
+  /**
+   * A concept clicked in the chat, or ⌘-clicked on a line of a .plain - `from` - opened where it is defined, as turri's
+   * graph has it: from a line, the definition that line's item names. ⌘-clicked where it is defined, where it is used.
+   */
+  const showConcept = useCallback(
+    async (concept: string, from?: { file: string; line: number; x: number; y: number }) => {
+      const where = await window.turri
+        .call<(Place & { uses?: Use[] }) | { plain: true } | null>("conceptDefinition", { concept, file: from?.file, line: from?.line })
+        .catch(() => null);
+      if (where === null) return say(`no ***plain file of the project defines ${concept}.`);
+      if ("plain" in where) return say(`${concept} is ***plain's own: no ***plain file defines it.`);
+      if (where.uses === undefined) return showAt(where);
+      if (where.uses.length === 0) return say(`no ***plain file uses ${concept} yet.`);
+      setUses({ concept, uses: where.uses, x: from!.x, y: from!.y });
+    },
+    [say, showAt],
+  );
+
+  const openLink = useCallback((link: Link) => {
+    if (link.stdlib) setTemplate(link.name);
+    else if (link.file !== null) setSelected(link.file);
+    else return;
+    setView(link.stdlib ? "stdlib" : "spec");
+  }, []);
+
+  /** What is ⌘-clicked in a .plain of the project: the module it names, a concept's definition, a linked resource's file. */
+  const follow = useCallback(
+    async (file: string, followed: Followed, point: { x: number; y: number }) => {
+      if ("module" in followed) return openLink(followed.module);
+      if ("concept" in followed) return showConcept(followed.concept, { file, line: followed.line, ...point });
+      const resource = await window.turri.call<{ file: string } | { missing: string } | null>("linkedResource", { file, line: followed.line, index: followed.resource }).catch(() => null);
+      if (resource === null) return;
+      if ("missing" in resource) return say(`${resource.missing} is not in the project.`);
+      setSelected(resource.file);
+      setView("spec");
+    },
+    [openLink, showConcept, say],
+  );
 
   const allJobs = useMemo(() => [...jobs.values()].sort((a, b) => b.sequence - a.sequence), [jobs]);
   const runningFor = (module: string) => allJobs.find((job) => job.module === module && job.status === "running");
@@ -439,15 +516,15 @@ export function App() {
           </aside>
         )}
 
-        <main className="main">
+        <main className={`main ${project?.offers.resources ? "follows-resources" : ""}`}>
           <header className="toolbar">
             <button className="icon-button sidebar-toggle" onClick={() => setSidebarOpen((open) => !open)} title={`${sidebarOpen ? "hide" : "show"} the files (${keys("B")})`} aria-label={sidebarOpen ? "hide the files" : "show the files"} aria-pressed={sidebarOpen}>
               <Icon name="sidebar" />
             </button>
             <div className="segmented" role="tablist">
-              {(["spec", "work", "preview"] as View[]).map((name) => (
+              {(["spec", "work", "preview", ...(project.offers.stdlib ? ["stdlib"] : [])] as View[]).map((name) => (
                 <button key={name} role="tab" aria-selected={view === name} className={view === name ? "on" : ""} onClick={() => setView(name)}>
-                  {name === "spec" ? "intent" : name === "preview" ? "preview" : `work${running.length ? ` · ${running.length}` : ""}`}
+                  {name === "spec" ? "intent" : name === "work" ? `work${running.length ? ` · ${running.length}` : ""}` : name}
                 </button>
               ))}
             </div>
@@ -487,6 +564,17 @@ export function App() {
             {view === "preview" ? (
               // A sheet over the window would be under the pane: while one is open, the pane steps aside.
               <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || signIn !== null || creating || choosing !== null || switching !== null || switcher || settingsOpen || projectSettingsOpen || about !== null || guide} pane={pane} onPane={setPane} />
+            ) : view === "stdlib" ? (
+              <StdlibView
+                key={project.dir}
+                selected={template}
+                reveal={reveal !== null && reveal.file === template ? reveal : undefined}
+                onSelect={setTemplate}
+                onOpenSpec={(path) => {
+                  setSelected(path);
+                  setView("spec");
+                }}
+              />
             ) : view === "work" ? (
               <WorkView
                 status={status}
@@ -502,7 +590,7 @@ export function App() {
                 }}
               />
             ) : file !== null ? (
-              <FileView key={file} root={project.dir} file={file} onDirty={setDirty} saveRef={saveRef} say={say} />
+              <FileView key={file} root={project.dir} file={file} reveal={reveal?.file === file ? reveal : undefined} onDirty={setDirty} saveRef={saveRef} say={say} onOpen={openLink} onFollow={(followed, point) => void follow(file, followed, point)} />
             ) : spec === null ? (
               project.specs.length === 0 && (
                 <Empty icon="doc" title="no ***plain yet">
@@ -520,10 +608,22 @@ export function App() {
                 saveRef={saveRef}
                 onRegenerate={(frids) => void regenerate(frids?.length ? { how: "again", frids, guidance: "" } : undefined)}
                 onConform={(frids) => void conform(frids)}
+                onOpen={openLink}
+                onFollow={(followed, point) => void follow(spec.file, followed, point)}
                 say={say}
               />
             )}
           </section>
+          {uses !== null && (
+            <ConceptUses
+              {...uses}
+              onGo={(use) => {
+                setUses(null);
+                showAt(use);
+              }}
+              onClose={() => setUses(null)}
+            />
+          )}
         </main>
 
         {chatOpen && (
@@ -559,7 +659,8 @@ export function App() {
             statuses={statuses}
             model={chatModel}
             fresh={project.specs.length === 0}
-          commands={commands}
+            commands={commands}
+            concepts={concepts}
             onSend={(text) => void window.turri.call("sendChat", { text })}
             onAbort={() => void window.turri.call("abortChat")}
             onClose={() => setChatOpen(false)}
@@ -567,6 +668,7 @@ export function App() {
             progress={progress}
             stats={chatStats}
             newSessionBlocked={running.length > 0 ? `${running.length} pulse${running.length === 1 ? " is" : "s are"} running: start a new session once ${running.length === 1 ? "it has" : "they have"} finished` : null}
+            onShowConcept={(concept) => void showConcept(concept)}
             onShowPulse={(id) => {
               if (!jobs.has(id) && !earlier.some((run) => run.pulses.some((pulse) => pulse.id === id))) return say("that pulse ran in an earlier session, and the ledger has nothing of it now.");
               setView("work");
@@ -610,7 +712,8 @@ export function App() {
         {plan !== null && plan !== "loading" && <PlanSheet plan={plan} onClose={() => setPlan(null)} onRegenerate={() => (setPlan(null), void regenerate())} />}
         {toast && (
           <div className={`toast ${toast.tone}`} onClick={() => setToast(null)}>
-            {toast.tone === "error" && <Icon name="warn" />} {withPlain(toast.text)}
+            {toast.tone === "error" && <Icon name="warn" />}
+            {withPlain(toast.text)}
           </div>
         )}
       </div>

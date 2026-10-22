@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
 /** Bundled into the window by Vite: devDependencies by npm's word, but in the app all the same. */
-const IN_THE_WINDOW = ["react", "react-dom", "markdown-it", "@xterm/xterm", "@xterm/addon-fit"];
+const IN_THE_WINDOW = ["react", "react-dom", "markdown-it", "@xterm/xterm", "@xterm/addon-fit", "highlight.js"];
 const LICENCE_FILE = /^(licen[cs]e|copying|notice)(\.|-|$)/i;
 
 /** Where a package is installed as `from` would find it: its own node_modules first, then each folder up. */

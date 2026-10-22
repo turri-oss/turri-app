@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./app.ts";
 import { keys } from "./keys.ts";
@@ -55,6 +56,43 @@ test.describe("the spec editor", () => {
     // itself, out of step with the other layer.
     expect(layers.height).toBeGreaterThanOrEqual(layers.coloured);
     expect(layers.scroll).toBeLessThanOrEqual(layers.height);
+  });
+
+  test("colours code - a resource the ***plain links - in its palette, its two layers alike", async ({ launched: { window, project } }) => {
+    mkdirSync(join(project, "resources"));
+    writeFileSync(join(project, "resources", "database.yaml"), '# where the greetings are kept\ntables:\n  greetings:\n    name: "greeting"\n    rows: 3\n');
+    await window.locator(".tree-row", { hasText: "resources" }).click();
+    await window.locator(".tree-row", { hasText: "database.yaml" }).click();
+    await expect(window.locator(".editor textarea")).toHaveValue(/greetings/);
+
+    const colours = window.locator(".editor-colours");
+    await expect(colours.locator(".plain-comment", { hasText: "# where the greetings are kept" })).toBeVisible();
+    await expect(colours.locator(".plain-keyword", { hasText: "tables" })).toBeVisible();
+    await expect(colours.locator(".plain-literal", { hasText: '"greeting"' })).toBeVisible();
+    await expect(colours.locator(".plain-concept", { hasText: "3" })).toBeVisible();
+
+    // Monospaced in both layers, and coloured only: no span of it bolder or slanted than the text under the caret.
+    const layers = await window.evaluate(() => {
+      const font = (element: Element) => {
+        const style = getComputedStyle(element);
+        return `${style.fontFamily} ${style.fontSize} ${style.fontWeight} ${style.fontStyle} ${style.lineHeight}`;
+      };
+      const pre = document.querySelector(".editor-colours")!;
+      return { area: font(document.querySelector(".editor textarea")!), pre: font(pre), spans: [...new Set([...pre.querySelectorAll("span")].map(font))] };
+    });
+    expect(layers.area).toEqual(layers.pre);
+    expect(layers.pre).toMatch(/Menlo|monospace/);
+    expect(layers.spans).toEqual([layers.pre]);
+  });
+
+  test("colours a linked resource apart from the text, not underlined", async ({ launched: { window, spec } }) => {
+    writeFileSync(spec, readFileSync(spec, "utf8").replace("greets the person running it.", "greets the person running it, as [resources/greeting.yaml](resources/greeting.yaml) says."));
+    const link = window.locator(".editor-colours .plain-link", { hasText: "[resources/greeting.yaml](resources/greeting.yaml)" });
+    await expect(link).toBeVisible();
+    // Not underlined: it is a link only while ⌘ is held.
+    const style = await link.evaluate((element) => ({ colour: getComputedStyle(element).color, line: getComputedStyle(element).textDecorationLine, text: getComputedStyle(element.parentElement!).color }));
+    expect(style.line).toBe("none");
+    expect(style.colour).not.toBe(style.text);
   });
 
   test("saves an edit to the file", async ({ launched: { window, spec } }) => {

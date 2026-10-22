@@ -141,7 +141,8 @@ export function PlainName() {
 /** Words with ***plain in them, each ***plain written as its name is: for what a string brings to the window. */
 export function withPlain(text: string): React.ReactNode {
   const parts = text.split("***plain");
-  return parts.length === 1 ? text : parts.flatMap((part, at) => (at === 0 ? [part] : [<PlainName key={at} />, part]));
+  // One span, so that a flex parent - a notice, a pulse's line in work - lays it out as the one run of words it is.
+  return parts.length === 1 ? text : <span>{parts.flatMap((part, at) => (at === 0 ? [part] : [<PlainName key={at} />, part]))}</span>;
 }
 
 /** Working: four pixels chasing each other round a square. */

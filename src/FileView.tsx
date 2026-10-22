@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Empty, Icon, Spinner } from "./ui.tsx";
-import { keys, MAC, withMod } from "./platform.ts";
+import { MAC, withMod } from "./platform.ts";
+import { highlightCode, languageOf } from "./highlight.ts";
+import { followAt, PlainLinks, useModHeld, usePlainLinks, type Followed, type OpenLink } from "./PlainLinks.tsx";
 
 type Token = { text: string; role: string | null };
 type Read = { file: string; text: string | null; reason?: "large" | "binary"; size: number };
@@ -14,23 +16,45 @@ function kilobytes(size: number) {
 
 /**
  * Any file of the project that is not one of its specs: a template a spec imports, a test script, a readme, a skill. It
- * is edited as text - a .plain file coloured by turri's grammar, as the spec is - and saved with ⌘S; what turri
+ * is edited as text - a .plain file coloured by turri's grammar, as the spec is, code in its palette - and saved with ⌘S; what turri
  * generates is read only. A file that is not text, or too large, is offered to the app that opens it.
  */
-export function FileView(props: { root: string; file: string; onDirty: (dirty: boolean) => void; saveRef: MutableRefObject<(() => Promise<void>) | null>; say: (text: string, tone?: "info" | "error") => void }) {
+export function FileView(props: { root: string; file: string; onDirty: (dirty: boolean) => void; saveRef: MutableRefObject<(() => Promise<void>) | null>; say: (text: string, tone?: "info" | "error") => void; onOpen: OpenLink;
+  /** A module, concept or linked resource ⌘-clicked in a .plain: to open what it names. */
+  onFollow: (followed: Followed, point: { x: number; y: number }) => void;
+  /** Lines to bring into view and light for a moment, from 1: a concept's definition, clicked in the chat. */
+  reveal?: { lines: number[]; at: number };
+}) {
   const { root, file } = props;
   const rel = file.slice(root.length + 1);
   const readOnly = GENERATED.some((dir) => rel === dir || rel.startsWith(`${dir}/`));
   const plain = file.endsWith(".plain");
+  // Code, coloured in the ***plain's palette, by what highlight.js knows of its language.
+  const code = !plain && languageOf(file) !== null;
   const [read, setRead] = useState<Read | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [lines, setLines] = useState<Token[][]>([]);
-  const [saving, setSaving] = useState(false);
   const [onDisk, setOnDisk] = useState<string | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  // Lines shown from elsewhere: in view once the text is here, and lit for a few seconds.
+  const [revealed, setRevealed] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    if (props.reveal === undefined || text === null || props.reveal.lines.length === 0) return;
+    const lines = new Set(props.reveal.lines.map((line) => line - 1));
+    setRevealed(lines);
+    requestAnimationFrame(() => {
+      const line = editorRef.current?.querySelector<HTMLElement>(`.editor-colours > div:nth-child(${Math.min(...lines) + 1})`);
+      if (line && editorRef.current) editorRef.current.scrollTo({ top: Math.max(0, line.offsetTop - editorRef.current.clientHeight / 3), behavior: "smooth" });
+    });
+    const timer = setTimeout(() => setRevealed(new Set()), 4000);
+    return () => clearTimeout(timer);
+  }, [props.reveal?.at, text === null]);
   const now = useRef({ text, saved });
   now.current = { text, saved };
+  const links = usePlainLinks(file, plain);
+  const linking = useModHeld();
 
   useEffect(() => {
     window.turri
@@ -63,35 +87,33 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
     [file, rel],
   );
 
-  // A .plain file coloured as turri's grammar has it, a moment after typing stops.
+  // A .plain file coloured as turri's grammar has it, code as highlight.js reads its language - a moment after typing stops.
   useEffect(() => {
-    if (!plain || text === null) return;
-    const timer = setTimeout(() => void window.turri.call<Token[][]>("highlightSpec", { text }).then(setLines), 80);
+    if ((!plain && !code) || text === null) return;
+    const timer = setTimeout(() => (plain ? void window.turri.call<Token[][]>("highlightSpec", { text }).then(setLines) : setLines(highlightCode(file, text) ?? [])), 80);
     return () => clearTimeout(timer);
-  }, [plain, text]);
+  }, [plain, code, file, text]);
 
   const dirty = text !== null && text !== saved;
   useEffect(() => props.onDirty(dirty), [dirty]);
 
   const save = async () => {
     if (text === null || !dirty || readOnly) return;
-    setSaving(true);
     try {
       await window.turri.call("writeFile", { file, text });
       setSaved(text);
       setOnDisk(null);
     } catch (error) {
       props.say(`not saved: ${(error as Error).message}`, "error");
-    } finally {
-      setSaving(false);
     }
   };
   props.saveRef.current = save;
 
+  // Only for a file not shown here: the app that opens it, or where it is.
   const header = (
     <div className="pane-header">
       <span>
-        <Icon name={plain ? "doc" : "file"} /> {rel}
+        <Icon name="file" /> {rel}
       </span>
       <span className="pane-header-right">
         <button className="link" onClick={() => void window.turri.openPath(file)} title="open it in the app your mac opens it with">
@@ -101,18 +123,6 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
         <button className="link" onClick={() => void window.turri.reveal(file)}>
           reveal
         </button>
-        <span className="muted">·</span>
-        {readOnly ? (
-          <span className="muted" title="turri writes this file: an edit here would be lost to the next pulse">
-            generated - read only
-          </span>
-        ) : dirty ? (
-          <button className="button small" onClick={() => void save()} disabled={saving}>
-            {saving ? <Spinner /> : null} save <kbd>{keys("S")}</kbd>
-          </button>
-        ) : (
-          <span className="muted">saved</span>
-        )}
       </span>
     </div>
   );
@@ -143,7 +153,7 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
 
   return (
     <div className="editor-pane">
-      {header}
+      {plain && <PlainLinks links={links} onOpen={props.onOpen} />}
       {onDisk !== null && (
         <div className="disk-banner">
           <Icon name="warn" />
@@ -160,14 +170,14 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
           </button>
         </div>
       )}
-      {/* The two layers of the spec's editor: the text drawn, coloured for a .plain file, and the textarea laid over it. */}
-      <div className="editor">
-        <div className="editor-sheet file-sheet">
+      {/* The two layers of the spec's editor: the text drawn, coloured for a .plain file and for code, and the textarea laid over it. */}
+      <div className={`editor ${plain && linking ? "linking" : ""}`} ref={editorRef}>
+        <div className={`editor-sheet file-sheet ${code ? "code" : ""}`}>
           <pre className="editor-colours" aria-hidden>
             {text.split("\n").map((line, index) => {
-              const tokens = plain ? lines[index] : undefined;
+              const tokens = plain || code ? lines[index] : undefined;
               const coloured = tokens !== undefined && tokens.map((token) => token.text).join("") === line;
-              return <div key={index}>{line === "" ? "​" : coloured ? tokens.map((token, at) => (token.role ? <span key={at} className={`plain-${token.role}`}>{token.text}</span> : token.text)) : line}</div>;
+              return <div key={index} className={revealed.has(index) ? "rendering" : undefined}>{line === "" ? "​" : coloured ? tokens.map((token, at) => (token.role ? <span key={at} className={`plain-${token.role}`}>{token.text}</span> : token.text)) : line}</div>;
             })}
           </pre>
           <textarea
@@ -175,6 +185,14 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
             value={text}
             readOnly={readOnly}
             onChange={(event) => setText(event.target.value)}
+            // ⌘-click on a module a .plain imports or requires, a concept or a linked resource opens it.
+            onMouseUp={(event) => {
+              const area = event.currentTarget;
+              if (!plain || !withMod(event) || area.selectionStart !== area.selectionEnd) return;
+              const before = area.value.slice(0, area.selectionStart).split("\n");
+              const followed = followAt(links, lines[before.length - 1], before.at(-1)!.length, before.length);
+              if (followed !== null) props.onFollow(followed, { x: event.clientX, y: event.clientY });
+            }}
             onKeyDown={(event) => {
               if (event.key === "s" && withMod(event)) {
                 event.preventDefault();

@@ -68,3 +68,11 @@ export const test = base.extend<Options & { launched: Launched; scratch: string 
 });
 
 export { expect } from "@playwright/test";
+
+/** What of ***plain the turri running gives the window - its standard library, the graph, concepts - once the project is open. */
+export async function offers(window: Page): Promise<{ stdlib: boolean; links: boolean; concepts: boolean; resources: boolean }> {
+  await window.locator(".tree-row").first().waitFor();
+  return window.evaluate(() =>
+    (window as unknown as { turri: { call: (method: string) => Promise<{ offers: { stdlib: boolean; links: boolean; concepts: boolean; resources: boolean } }> } }).turri.call("summary").then((summary) => summary.offers),
+  );
+}
