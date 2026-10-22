@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Job } from "./types.ts";
-import { Icon, PlainMark, PlainName } from "./ui.tsx";
+import type { Job, Spec } from "./types.ts";
+import { Icon, PlainMark } from "./ui.tsx";
 
 type Token = { text: string; role: string | null };
 type Line = { kind: "context" | "add" | "del" | "gap"; text: string; line?: number };
@@ -96,20 +96,16 @@ export function stageOf(job: Job): string | undefined {
   return turriSays(job.stage);
 }
 
-/** Whether a pulse has a part of the spec to show. */
-export function hasSpecPart(job: Job): boolean {
-  return Boolean(job.diff?.trim()) || buildingOf(job) !== null;
-}
-
 /**
  * The ***plain a pulse works on: its spec change, coloured by turri's grammar - the lines it renders lit, as the spec
  * lights them while it runs - or, for a conformance run, the functional spec it builds. Each file's part opens in the
  * spec, its lines lit there.
  */
-export function PulseSpec({ job, onShowInSpec }: { job: Job; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void }) {
+export function PulseSpec({ job, specs, onShowInSpec }: { job: Job; specs: Spec[]; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void }) {
   const files = job.diff?.trim() ? filesOf(job.diff, job.diffWhere) : [];
   const building = buildingOf(job);
-  if (files.length === 0 && building === null) return <p className="muted pad">this pulse works on no part of the <PlainName /> it says: read its conversation.</p>;
+  // None yet - a pulse being planned - or none at all: the card says what the pulse does without it.
+  if (files.length === 0 && building === null) return null;
   return (
     <div className="pulse-spec">
       {building && (
@@ -140,17 +136,42 @@ export function PulseSpec({ job, onShowInSpec }: { job: Job; onShowInSpec: (file
                   · {added} line{added === 1 ? "" : "s"} to render{again ? " again, unchanged" : ""}{taken > 0 ? `, ${taken} taken out` : ""}
                 </span>
               </span>
-              {lines.length > 0 && (
-                <button className="link" onClick={() => onShowInSpec(file.file, lines)}>
-                  open in intent
-                </button>
-              )}
+              <OpenInPlain spec={specs.find((entry) => entry.rel === file.file)} lines={lines} onShow={(shown) => onShowInSpec(file.file, shown)} />
             </div>
             <Coloured lines={file.lines} />
           </section>
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Open in ***plain, for a pulse's lines that are still in the ***plain: not for a file gone since, or lines edited away -
+ * there would be nothing of the pulse's to light. Looked for again each time the file changes.
+ */
+function OpenInPlain({ spec, lines, onShow }: { spec: Spec | undefined; lines: Array<{ line: number; text: string }>; onShow: (lines: Array<{ line: number; text: string }>) => void }) {
+  const [there, setThere] = useState(false);
+  const key = lines.map((each) => `${each.line}:${each.text}`).join("\n");
+  useEffect(() => {
+    setThere(false);
+    if (spec === undefined || lines.length === 0) return;
+    let alive = true;
+    void window.turri
+      .call<{ text: string }>("readSpec", { file: spec.file })
+      .then(({ text }) => {
+        const all = text.split("\n");
+        const now = relocate(all, lines.map((each) => each.line), lines.map((each) => each.text));
+        if (alive) setThere(now.some((line, at) => all[line - 1] === lines[at]!.text));
+      })
+      .catch(() => alive && setThere(false));
+    return () => void (alive = false);
+  }, [spec, key]);
+  if (!there) return null;
+  return (
+    <button className="link" onClick={() => onShow(lines)} title="light these lines in the ***plain view, where they are now">
+      open
+    </button>
   );
 }
 

@@ -199,15 +199,6 @@ function earlierPulses() {
   return earlier;
 }
 
-/** One earlier pulse, opened: what `turri ledger <pulse>` says of it, and its log, when it is still there. */
-function pastPulseDetail({ id, run }) {
-  const view = turri.pulseView(id, turri.readLedger(projectDir, { run }));
-  if (view === undefined) throw new Error(`The ledger has nothing of pulse ${id} now.`);
-  const named = view.finished?.logFile ?? view.started?.logFile;
-  const log = named !== undefined ? resolve(projectDir, named) : undefined;
-  return { lines: turri.describePulseView(view).split("\n"), log: log !== undefined && existsSync(log) ? log : null };
-}
-
 /**
  * The project's files change under the window too - turri edits the specs from the chat, a pulse writes code - and the
  * window is told. A .plain file comes with its text and what it now says; a save of the window's own comes back the
@@ -276,12 +267,33 @@ function inProject(path) {
   return full;
 }
 
-/** One folder of the project, folders first: the tree lists a folder when it is opened. Null for one not there (any more). */
+/**
+ * What the tree shows: the project's ***plain - its .plain files and the templates of its own they import - and the
+ * resources they link, as turri's graph has them, and nothing else: no config, no test scripts, nothing turri keeps
+ * for itself. On a turri without the graph, the .plain files alone; without linked resources in it, no resources.
+ */
+function shownInTree() {
+  const files = new Set(plainFiles(projectDir));
+  const ours = (file) => file !== null && file !== undefined && file.startsWith(projectDir + sep) && !relative(projectDir, file).split(sep).includes(turri.MODULES_DIR);
+  if (turri.plainGraph !== undefined) {
+    const graph = turri.plainGraph(projectDir);
+    for (const module of graph.modules) if (ours(module.file) && existsSync(module.file)) files.add(module.file);
+    for (const item of graph.items) for (const resource of item.resources ?? []) if (ours(resource.file) && existsSync(resource.file)) files.add(resource.file);
+  }
+  return files;
+}
+
+/**
+ * One folder of the project, folders first: the tree lists a folder when it is opened - only what it shows of it, and
+ * the folders on the way to that. Null for one not there (any more).
+ */
 function listFiles({ dir }) {
   const at = inProject(dir ?? projectDir);
   if (!existsSync(at) || !statSync(at).isDirectory()) return null;
+  const shown = [...shownInTree()];
+  const wanted = (path, isDir) => (isDir ? shown.some((file) => file.startsWith(path + sep)) : shown.includes(path));
   const entries = readdirSync(at, { withFileTypes: true })
-    .filter((entry) => !UNLISTED.has(entry.name) && (entry.isDirectory() || entry.isFile()))
+    .filter((entry) => !UNLISTED.has(entry.name) && (entry.isDirectory() || entry.isFile()) && wanted(join(at, entry.name), entry.isDirectory()))
     .map((entry) => ({ name: entry.name, path: join(at, entry.name), dir: entry.isDirectory() }));
   return entries.sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name));
 }
@@ -738,10 +750,10 @@ function statusNow() {
   };
 }
 
-/** A job as the app shows it: everything but its transcript, which is fetched when it is opened. */
+/** A job as the app shows it: everything but its agents' transcript, which the window does not show. */
 function jobView(job) {
   const { transcript, tail, details, ...rest } = job;
-  return { ...rest, transcriptLength: transcript?.length ?? 0, specGaps: details?.specGaps ?? [], failures: failures.get(job.id) ?? [] };
+  return { ...rest, specGaps: details?.specGaps ?? [], failures: failures.get(job.id) ?? [] };
 }
 
 const lastSent = new Map();
@@ -774,13 +786,6 @@ function regenerate({ file, frids, scratch, chain, guidance }) {
 function conform({ file, frids }) {
   const module = basename(file, ".plain");
   chat.send(frids?.length ? `Write and run the conformance tests for ${module}'s functional spec${frids.length === 1 ? "" : "s"} ${frids.join(", ")}.` : `Write and run the conformance tests for ${module}.`);
-  return true;
-}
-
-function release({ file }) {
-  chat.send(
-    `Release ${relative(projectDir, file)} for me to try. Once it runs, open it in the preview where I can watch - the terminal or the browser, whichever suits what it is - and check it starts. Then tell me how to open or run it, and what to test: what was built from the ***plain, and for each the steps to check it works and what I should see.`,
-  );
   return true;
 }
 
@@ -913,13 +918,9 @@ async function doctor({ models = false, dir = projectDir }) {
   return turri.doctor({ dir, models: models === true && dir !== undefined, env: process.env });
 }
 
-function transcript({ id }) {
-  return registry?.get(id)?.transcript ?? [];
-}
-
 // ---------- the wire ----------
 
-const methods = { ...auth, newChat, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, readFile, writeFile, stdlib, stdlibKinds, plainLinks, concepts, conceptDefinition, linkedResource, conceptBeingTyped, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, release, glimpse, transcript, earlierPulses, pastPulseDetail, sendChat, abortChat, chatHistory, commands, answer, doctor };
+const methods = { ...auth, newChat, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, readFile, writeFile, stdlib, stdlibKinds, plainLinks, concepts, conceptDefinition, linkedResource, conceptBeingTyped, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, glimpse, earlierPulses, sendChat, abortChat, chatHistory, commands, answer, doctor };
 
 // What the window may ask before a project is open: to open one, to start a new one, whether the machine is ready, or to
 // sign in to the model providers.

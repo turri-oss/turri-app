@@ -1,18 +1,62 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ElectronApplication, Locator, Page } from "@playwright/test";
 import { expect, offers, test } from "./app.ts";
 
+/**
+ * ⌘-click - Ctrl on Linux - on a piece of the coloured ***plain, through the textarea over it: in the middle of one of
+ * its line boxes, the first or the last, as a piece that wraps - a long link - has its box over two lines and more, and
+ * the middle of that box may be on other words.
+ */
+async function modClick(window: Page, piece: Locator, part: "first" | "last" = "first") {
+  const rects = await piece.evaluate((element) => [...element.getClientRects()].map(({ x, y, width, height }) => ({ x, y, width, height })));
+  const at = part === "first" ? rects[0]! : rects.at(-1)!;
+  const area = window.locator(".editor textarea");
+  const box = (await area.boundingBox())!;
+  await area.click({ position: { x: at.x - box.x + at.width / 2, y: at.y - box.y + at.height / 2 }, modifiers: ["ControlOrMeta"] });
+}
+
+/**
+ * ***plain > Standard Library, as the person chooses it from the menu bar: the item is there, and what it sends the
+ * window in front - the windows of a test are never in front, so it is sent to the window here.
+ */
+async function openStdlib(app: ElectronApplication) {
+  await app.evaluate(({ BrowserWindow, Menu }) => {
+    const item = Menu.getApplicationMenu()!.items.find((menu) => menu.label === "***plain")!.submenu!.items.find((each) => each.label === "Standard Library");
+    if (item === undefined) throw new Error("no ***plain > Standard Library");
+    BrowserWindow.getAllWindows()[0]!.webContents.send("menu", "view:stdlib");
+  });
+}
+
 test.describe("the stdlib view", () => {
+  test("opens from the ***plain menu on ⌘4, not from a tab among the views", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    await expect(window.locator(".toolbar").getByRole("tab")).toHaveCount(3);
+    await expect(window.locator(".toolbar").getByRole("tab", { name: "stdlib" })).toHaveCount(0);
+    const item = await app.evaluate(({ Menu }) => {
+      const menus = Menu.getApplicationMenu()!.items;
+      const found = menus.find((menu) => menu.label === "***plain")!.submenu!.items.find((each) => each.label === "Standard Library");
+      return { accelerator: found?.accelerator, inView: menus.find((menu) => menu.label === "View")!.submenu!.items.some((each) => /stdlib|standard library/i.test(each.label)) };
+    });
+    expect(item).toEqual({ accelerator: "CmdOrCtrl+4", inView: false });
+    test.skip(!(await offers(window)).stdlib, "the turri running gives the window no standard library");
+    await openStdlib(app);
+    await expect(window.getByRole("navigation", { name: "the standard library" })).toBeVisible();
+    // No tab is the view's: none of the others is shown as chosen.
+    await expect(window.locator(".toolbar").getByRole("tab", { selected: true })).toHaveCount(0);
+  });
+
+
   // The standard library and the graph, as turri gives them: on a turri whose host entry does.
   test.beforeEach(async ({ launched: { window } }) => {
     const offered = await offers(window);
     test.skip(!offered.stdlib || !offered.links, "the turri running gives the window no standard library or graph");
   });
 
-  test("lists the standard library, and follows a template's imports and its conformance tests", async ({ launched: { window, project } }) => {
+  test("lists the standard library, and follows a template's imports and its conformance tests", async ({ launched: { app, window, project } }) => {
     // A module of the project's on Spring Boot: the view says the project builds on it, and on what it imports.
     writeFileSync(join(project, "backend.plain"), "---\nimport:\n  - stdlib/backend/java-springboot\ndescription: A backend.\n---\n\n***functional specs***\n\n- It answers.\n");
-    await window.getByRole("tab", { name: "stdlib" }).click();
+    await openStdlib(app);
 
     const list = window.getByRole("navigation", { name: "the standard library" });
     await expect(list).toContainText("backends");
@@ -48,7 +92,7 @@ test.describe("the stdlib view", () => {
     await window.locator(".stdlib-import", { hasText: "stdlib/backend/common" }).click();
     await window.locator(".stdlib-facts").getByRole("button", { name: "stdlib/backend/java-springboot" }).click();
     await window.locator(".stdlib-facts").getByRole("button", { name: /backend\.plain/ }).click();
-    await expect(window.getByRole("tab", { name: "intent", selected: true })).toBeVisible();
+    await expect(window.locator(".toolbar").getByRole("tab", { name: "***plain", selected: true })).toBeVisible();
     await expect(window.locator(".editor-pane .pane-header")).toContainText("backend.plain");
   });
 
@@ -59,17 +103,17 @@ test.describe("the stdlib view", () => {
 
     // From what it builds on, under the header.
     await window.locator(".plain-links").getByRole("button", { name: "stdlib/backend/java-springboot" }).click();
-    await expect(window.getByRole("tab", { name: "stdlib", selected: true })).toBeVisible();
+    await expect(window.getByRole("navigation", { name: "the standard library" })).toBeVisible();
     await expect(window.locator(".stdlib-module .pane-header")).toContainText("stdlib/backend/java-springboot");
 
     // And ⌘-clicked where the ***plain imports it.
-    await window.getByRole("tab", { name: "intent" }).click();
+    await window.locator(".toolbar").getByRole("tab", { name: "***plain" }).click();
     const area = window.locator(".editor textarea");
     // Coloured by turri's grammar first: the module it names is what a ⌘-click opens.
     await expect(window.locator(".editor-colours [data-line='2'] .plain-module")).toBeVisible();
     const line = (await window.locator(".editor-colours [data-line='2']").boundingBox())!;
     await area.click({ position: { x: 60, y: line.y - (await area.boundingBox())!.y + line.height / 2 }, modifiers: ["ControlOrMeta"] });
-    await expect(window.getByRole("tab", { name: "stdlib", selected: true })).toBeVisible();
+    await expect(window.getByRole("navigation", { name: "the standard library" })).toBeVisible();
     await expect(window.locator(".stdlib-module .pane-header")).toContainText("stdlib/backend/java-springboot");
   });
 
@@ -118,9 +162,7 @@ test.describe("the stdlib view", () => {
     await window.locator(".tree-row", { hasText: "backend.plain" }).click();
     const area = window.locator(".editor textarea");
     const click = async (concept: string, nth: number) => {
-      const at = (await window.locator(".editor-colours .plain-concept", { hasText: concept }).nth(nth).boundingBox())!;
-      const box = (await area.boundingBox())!;
-      await area.click({ position: { x: at.x - box.x + at.width / 2, y: at.y - box.y + at.height / 2 }, modifiers: ["ControlOrMeta"] });
+      await modClick(window, window.locator(".editor-colours .plain-concept", { hasText: concept }).nth(nth));
     };
 
     // Defined in the same ***plain: its definition lit, where it is.
@@ -152,9 +194,7 @@ test.describe("the stdlib view", () => {
   test("⌘-click on ***plain's own concept says so, in one run of words", async ({ launched: { window } }) => {
     await window.locator(".tree-row", { hasText: "hello.plain" }).click();
     const area = window.locator(".editor textarea");
-    const at = (await window.locator(".editor-colours .plain-concept", { hasText: ":Implementation:" }).boundingBox())!;
-    const box = (await area.boundingBox())!;
-    await area.click({ position: { x: at.x - box.x + at.width / 2, y: at.y - box.y + at.height / 2 }, modifiers: ["ControlOrMeta"] });
+    await modClick(window, window.locator(".editor-colours .plain-concept", { hasText: ":Implementation:" }));
     const toast = window.locator(".toast");
     await expect(toast).toContainText(":Implementation: is plain's own: no plain file defines it.");
     // Its words one element in the notice's row, ***plain's name and its "'s" with no gap between them.
@@ -166,6 +206,8 @@ test.describe("the stdlib view", () => {
 
   test("⌘-click on a linked resource opens its file", async ({ launched: { window, project } }) => {
     test.skip(!(await offers(window)).resources, "the turri running gives no linked resources in its graph");
+    // Narrow enough that the second link on its line wraps, as it does on Linux's wider font at any width.
+    await window.setViewportSize({ width: 1200, height: 800 });
     mkdirSync(join(project, "resources"));
     writeFileSync(join(project, "resources", "database.yaml"), "tables:\n  - greetings\n");
     writeFileSync(join(project, "resources", "schema.json"), '{ "greeting": "string" }\n');
@@ -173,19 +215,21 @@ test.describe("the stdlib view", () => {
       join(project, "backend.plain"),
       "---\ndescription: A backend.\n---\n\n***functional specs***\n\n- It keeps [the database](resources/database.yaml) as [the schema](resources/schema.json) says.\n- It reads [the archive](resources/gone.md).\n",
     );
-    const open = async (nth: number) => {
+    const open = async (nth: number, part: "first" | "last" = "first") => {
       await window.locator(".tree-row", { hasText: "backend.plain" }).click();
-      const area = window.locator(".editor textarea");
       await expect(window.locator(".editor-colours .plain-link")).toHaveCount(3);
-      const at = (await window.locator(".editor-colours .plain-link").nth(nth).boundingBox())!;
-      const box = (await area.boundingBox())!;
-      await area.click({ position: { x: at.x - box.x + at.width / 2, y: at.y - box.y + at.height / 2 }, modifiers: ["ControlOrMeta"] });
-      return area;
+      await modClick(window, window.locator(".editor-colours .plain-link").nth(nth), part);
+      return window.locator(".editor textarea");
     };
 
-    // The first link on its line, and the second.
+    // The first link on its line, and the second - which wraps at this width, on every system: followed from either of
+    // its lines.
+    await window.locator(".tree-row", { hasText: "backend.plain" }).click();
+    await expect(window.locator(".editor-colours .plain-link")).toHaveCount(3);
+    expect(await window.locator(".editor-colours .plain-link").nth(1).evaluate((element) => element.getClientRects().length)).toBeGreaterThan(1);
     await expect(await open(0)).toHaveValue(/greetings/);
     await expect(await open(1)).toHaveValue(/"greeting": "string"/);
+    await expect(await open(1, "last")).toHaveValue(/"greeting": "string"/);
     // One to a file that is not there: said so, and the ***plain stays open.
     await open(2);
     await expect(window.locator(".toast")).toContainText("resources/gone.md is not in the project.");

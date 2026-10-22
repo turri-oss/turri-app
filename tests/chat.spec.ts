@@ -21,7 +21,7 @@ test.describe("the chat", () => {
     );
     await window.getByRole("tab", { name: "work" }).click();
     await window.locator(".prose .plain-concept", { hasText: ":Greeter:" }).click();
-    await expect(window.getByRole("tab", { name: "intent", selected: true })).toBeVisible();
+    await expect(window.locator(".toolbar").getByRole("tab", { name: "***plain", selected: true })).toBeVisible();
     await expect(window.locator(".editor-pane .pane-header")).toContainText("hello.plain");
     // Its definition, lit: line 6 of hello.plain.
     await expect(window.locator(".editor-colours > div.rendering")).toContainText(":Greeter: is a command-line program");
@@ -118,9 +118,9 @@ test.describe("the chat", () => {
     await expect(code.locator("[class^='plain-']")).toHaveCount(0);
   });
 
-  test("once hidden, is opened again by the turri button, rightmost in the toolbar", async ({ launched: { window } }) => {
+  test("once hidden, is opened again by the turri button, leftmost in the toolbar", async ({ launched: { window } }) => {
     await window.locator(".chat button[title^='hide the chat']").click();
-    const open = window.locator(".toolbar-actions > :last-child");
+    const open = window.locator(".toolbar > :first-child");
     await expect(open).toHaveText("turri");
     await expect(open.locator("img")).toHaveAttribute("src", "./jellyfish/logo-mark.svg");
     await open.click();

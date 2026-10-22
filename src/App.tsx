@@ -75,6 +75,8 @@ export function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [view, setView] = useState<View>("spec");
   const [pane, setPane] = useState<Pane>("browser");
+  /** turri at work in the preview, with its browser or terminal tools: the pane edged in blue, and said in its bar. */
+  const [testing, setTesting] = useState(false);
   /** The standard library's template open in the stdlib view: kept as the person goes to another view and back. */
   const [template, setTemplate] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>(EMPTY_STATUS);
@@ -82,6 +84,8 @@ export function App() {
   /** Earlier sessions' pulses, from the ledger: read when the project opens and again as each pulse ends. */
   const [earlier, setEarlier] = useState<PastRun[]>([]);
   const [toast, setToast] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  // The engine stopped under the window - crashed, say: said until it is started again, with the button that does it.
+  const [stopped, setStopped] = useState<"stopped" | "starting" | null>(null);
   const [plan, setPlan] = useState<Plan | "loading" | null>(null);
   // Whether this machine is ready for turri: the sheet of turri doctor's checks, and what they found as the project opened.
   // Open, and whether it asks the models from the start: a project just started does, to see that its models answer.
@@ -190,6 +194,7 @@ export function App() {
   const opened = useCallback((summary: Project | null) => {
     if (summary === null) return;
     setSwitching(null);
+    setStopped(null);
     setGuide(false);
     setProject(summary);
     setSelected(summary.specs[0]?.file ?? null);
@@ -231,7 +236,15 @@ export function App() {
       }),
       window.turri.on("engine:earlier", (runs: PastRun[]) => setEarlier(runs)),
       window.turri.on("engine:incident", (incident: { job?: string; text: string }) => say(incident.text, "error")),
-      window.turri.on("engine:exit", () => say("the turri engine stopped. open the project again to restart it.", "error")),
+      window.turri.on("engine:exit", () => {
+        setStopped("stopped");
+        // Its pulses went with it: none is running or waiting any more, whatever they last said.
+        setJobs((all) => {
+          const now = Date.now();
+          const ended = [...all.values()].map((job): Job => (job.status === "running" || job.status === "queued" ? { ...job, status: "stopped", finishedAt: now, error: "The turri engine stopped under this pulse. Open the project again to restart it." } : job));
+          return new Map(ended.map((job) => [job.id, job]));
+        });
+      }),
       window.turri.on("project:opened", opened),
       window.turri.on("project:opening", setSwitching),
       window.turri.on("project:failed", ({ text }: { text: string }) => say(text, "error")),
@@ -267,6 +280,7 @@ export function App() {
       // turri works in the preview with its browser tools: the window shows it, so the person sees what it does.
       window.turri.on("preview:reveal", () => (setView("preview"), setPane("browser"))),
       window.turri.on("terminal:reveal", () => (setView("preview"), setPane("terminal"))),
+      window.turri.on("preview:testing", (now: boolean) => setTesting(now)),
       // /login typed in the chat: pi's terminal would sign in there, the window does it in its sheet.
       window.turri.on("engine:auth:open", ({ provider }: { provider: string | null }) => setSignIn({ provider })),
       window.turri.on("engine:chat:ask", (question: Question) => {
@@ -320,19 +334,6 @@ export function App() {
     [spec, say],
   );
 
-  // Something is built: there is a commit to release.
-  const releasable = spec !== null && spec.ok && (spec.built === true || spec.functionalSpecs.some((entry) => entry.built));
-
-  const release = useCallback(async () => {
-    if (spec === null || !releasable) return;
-    setChatOpen(true);
-    try {
-      await window.turri.call("release", { file: spec.file });
-    } catch (error) {
-      say(String((error as Error).message ?? error), "error");
-    }
-  }, [spec, releasable, say]);
-
   const glimpse = useCallback(async () => {
     if (spec === null) return;
     if (dirty) await saveRef.current?.();
@@ -354,7 +355,6 @@ export function App() {
         else if (action === "regenerate") void regenerate();
         else if (action === "glimpse") void glimpse();
         else if (action === "conform") void conform();
-        else if (action === "release") void release();
         else if (action === "save") void saveRef.current?.();
         else if (action === "new-project") setCreating(true);
         else if (action === "switch-project") setSwitcher((open) => !open);
@@ -374,7 +374,7 @@ export function App() {
         else if (action === "about" || action === "privacy" || action === "notices") setAbout(action);
         else if (action === "getting-started") setGuide(true);
       }),
-    [regenerate, glimpse, conform, release, project, spec, view, pane],
+    [regenerate, glimpse, conform, project, spec, view, pane],
   );
 
   // What the person is looking at, for turri to know: the view, and the file open in it - or the preview's browser or terminal.
@@ -522,177 +522,9 @@ export function App() {
         style={{ "--chat-width": `${chatShown}px`, "--files-width": `${filesShown}px` } as React.CSSProperties}
         inert={switching !== null}
       >
-        {sidebarOpen && (
-          // The files' right edge: drag it to make them wider or thinner, double-click it for the width they start at.
-          <div
-            className="files-resize"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="resize the files"
-            title="drag to resize the files - double-click to reset"
-            onPointerDown={(event) => {
-              event.preventDefault();
-              event.currentTarget.setPointerCapture(event.pointerId);
-              setResizing(true);
-            }}
-            onPointerMove={(event) => {
-              if (event.currentTarget.hasPointerCapture(event.pointerId)) setFilesWidth(clampFiles(event.clientX, chatOpen ? chatShown : 0));
-            }}
-            onPointerUp={(event) => {
-              event.currentTarget.releasePointerCapture(event.pointerId);
-              setResizing(false);
-            }}
-            onDoubleClick={() => setFilesWidth(FILES_WIDTH)}
-          />
-        )}
-        {sidebarOpen && (
-          <aside className="sidebar">
-            <div className="project-name" title={project.dir}>
-              <Jellyfish size={18} swimming={running.length > 0} />
-              <span>{project.name}</span>
-            </div>
-            <div className="sidebar-section">files</div>
-            <FileTree
-              root={project.dir}
-              specs={project.specs}
-              selected={selected}
-              isRunning={(module) => runningFor(module) !== undefined}
-              onSelect={(path) => {
-                setSelected(path);
-                setView("spec");
-              }}
-            />
-            <div className="sidebar-footer">
-              {running.length > 0 ? (
-                <button className="link" onClick={() => setView("work")}>
-                  <Jellyfish size={22} /> {running.length} pulse{running.length === 1 ? "" : "s"} running
-                </button>
-              ) : (
-                <span className="muted">idle</span>
-              )}
-              {problems(machine).length > 0 && (
-                <button className="link machine-wanting" onClick={() => (setDoctorModels(false), setDoctorOpen(true))} title={problems(machine).map((check) => `${check.name}: ${check.detail}`).join("\n")}>
-                  <Icon name="warn" size={12} /> {toSeeTo(problems(machine))}
-                </button>
-              )}
-              <TurriVersionLine />
-            </div>
-          </aside>
-        )}
-
-        <main className={`main ${project?.offers.resources ? "follows-resources" : ""}`}>
-          <header className="toolbar">
-            <button className="icon-button sidebar-toggle" onClick={() => setSidebarOpen((open) => !open)} title={`${sidebarOpen ? "hide" : "show"} the files (${keys("B")})`} aria-label={sidebarOpen ? "hide the files" : "show the files"} aria-pressed={sidebarOpen}>
-              <Icon name="sidebar" />
-            </button>
-            <div className="segmented" role="tablist">
-              {(["spec", "work", "preview", ...(project.offers.stdlib ? ["stdlib"] : [])] as View[]).map((name) => (
-                <button key={name} role="tab" aria-selected={view === name} className={view === name ? "on" : ""} onClick={() => setView(name)}>
-                  {name === "spec" ? "intent" : name === "work" ? `work${running.length ? ` · ${running.length}` : ""}` : name}
-                </button>
-              ))}
-            </div>
-            <div className="toolbar-actions">
-              {/* The project's settings - config.turri.yaml's - in a sheet, changed through /turri-config as the person would type
-                  it: in the toolbar, there with the files hidden too. */}
-              <button className="icon-button project-settings-button" onClick={() => setProjectSettingsOpen(true)} title="project settings - its models, conformance tests, review, pulses at once, debug" aria-label="project settings">
-                <Icon name="gear" />
-              </button>
-              <button className="button" disabled={!releasable} onClick={() => void release()} title={releasable ? "release what is built to try, and hear from turri what to test" : "nothing is built yet: regenerate first"}>
-                <Icon name="release" /> release
-              </button>
-              {/* Only turri halts a pulse: while one regenerates this module, Regenerate waits for it. */}
-              <button
-                className="button primary"
-                disabled={spec === null || !spec.ok || busy || runningFor(spec.module) !== undefined}
-                onClick={() => setChoosing([])}
-                title={
-                  spec && runningFor(spec.module)
-                    ? "turri is regenerating this module"
-                    : spec && !spec.functionalSpecs.some((entry) => entry.built)
-                      ? "regenerate all of it - nothing is built yet"
-                      : "regenerate - what changed, chosen functional specs, or from scratch"
-                }
-              >
-                {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} regenerate…
-              </button>
-              {!chatOpen && (
-                <button className={`button open-chat ${questions.length > 0 ? "asking" : ""}`} onClick={() => setChatOpen(true)} title={questions.length > 0 ? "turri is asking you something" : `talk to turri (${keys("J")})`}>
-                  <Jellyfish size={16} swimming={false} /> turri{questions.length > 0 && " · asks"}
-                </button>
-              )}
-            </div>
-          </header>
-
-          <section className="content">
-            {view === "preview" ? (
-              // A sheet over the window would be under the pane: while one is open, the pane steps aside.
-              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || signIn !== null || creating || choosing !== null || switching !== null || switcher || settingsOpen || projectSettingsOpen || about !== null || guide} pane={pane} onPane={setPane} />
-            ) : view === "stdlib" ? (
-              <StdlibView
-                key={project.dir}
-                selected={template}
-                reveal={reveal !== null && reveal.file === template ? reveal : undefined}
-                onSelect={setTemplate}
-                onOpenSpec={(path) => {
-                  setSelected(path);
-                  setView("spec");
-                }}
-              />
-            ) : view === "work" ? (
-              <WorkView
-                status={status}
-                jobs={allJobs}
-                earlier={earlier}
-                focus={focusPulse}
-                onShowInSpec={(rel, lines) => {
-                  const shown = project.specs.find((entry) => entry.rel === rel);
-                  if (shown === undefined) return say(`${rel} is not one of the project's ***plain files now.`, "error");
-                  setSelected(shown.file);
-                  setView("spec");
-                  // Where the pulse's lines are now: the ***plain may have changed since it ran.
-                  setReveal({ file: shown.file, lines: lines.map((each) => each.line), texts: lines.map((each) => each.text), at: Date.now() });
-                }}
-              />
-            ) : file !== null ? (
-              <FileView key={file} root={project.dir} file={file} reveal={reveal?.file === file ? reveal : undefined} onDirty={setDirty} saveRef={saveRef} say={say} onOpen={openLink} onFollow={(followed, point) => void follow(file, followed, point)} />
-            ) : spec === null ? (
-              project.specs.length === 0 && (
-                <Empty icon="doc" title="no ***plain yet">
-                  tell turri what you want to build. it writes the first <PlainName /> with you, then builds the code from it.
-                </Empty>
-              )
-            ) : (
-              <SpecView
-                key={spec.file}
-                spec={spec}
-                running={runningFor(spec.module)}
-                reveal={reveal?.file === spec.file ? reveal : undefined}
-                onSaved={(next: Spec) => setProject((now) => now && { ...now, specs: now.specs.map((entry) => (entry.file === next.file ? next : entry)) })}
-                onDirty={setDirty}
-                saveRef={saveRef}
-                onRegenerate={(frids) => void regenerate(frids?.length ? { how: "again", frids, guidance: "" } : undefined)}
-                onConform={(frids) => void conform(frids)}
-                onOpen={openLink}
-                onFollow={(followed, point) => void follow(spec.file, followed, point)}
-                say={say}
-              />
-            )}
-          </section>
-          {uses !== null && (
-            <ConceptUses
-              {...uses}
-              onGo={(use) => {
-                setUses(null);
-                showAt(use);
-              }}
-              onClose={() => setUses(null)}
-            />
-          )}
-        </main>
 
         {chatOpen && (
-          // The chat's left edge: drag it to make the chat wider or thinner, double-click it for the width it starts at.
+          // The chat's right edge, against the views: drag it to make the chat wider or thinner, double-click it for the width it starts at.
           <div
             className="chat-resize"
             role="separator"
@@ -705,7 +537,7 @@ export function App() {
               setResizing(true);
             }}
             onPointerMove={(event) => {
-              if (event.currentTarget.hasPointerCapture(event.pointerId)) setChatWidth(clampChat(window.innerWidth - event.clientX, sidebarOpen ? filesShown : 0));
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) setChatWidth(clampChat(event.clientX, sidebarOpen ? filesShown : 0));
             }}
             onPointerUp={(event) => {
               event.currentTarget.releasePointerCapture(event.pointerId);
@@ -763,6 +595,174 @@ export function App() {
             }}
           />
         )}
+
+        <main className={`main ${project?.offers.resources ? "follows-resources" : ""}`}>
+          <header className="toolbar">
+            {!chatOpen && (
+              <button className={`button open-chat ${questions.length > 0 ? "asking" : ""}`} onClick={() => setChatOpen(true)} title={questions.length > 0 ? "turri is asking you something" : `talk to turri (${keys("J")})`}>
+                <Jellyfish size={16} swimming={false} /> turri{questions.length > 0 && " · asks"}
+              </button>
+            )}
+            <div className="segmented" role="tablist">
+              {(["spec", "work", "preview"] as View[]).map((name) => (
+                <button key={name} role="tab" aria-selected={view === name} className={view === name ? "on" : ""} onClick={() => setView(name)}>
+                  {name === "spec" ? <PlainName /> : name === "work" ? `work${running.length ? ` · ${running.length}` : ""}` : name}
+                </button>
+              ))}
+            </div>
+            <div className="toolbar-actions">
+              {/* The project's settings - config.turri.yaml's - in a sheet, changed through /turri-config as the person would type
+                  it: in the toolbar, there with the files hidden too. */}
+              <button className="icon-button project-settings-button" onClick={() => setProjectSettingsOpen(true)} title="project settings - its models, conformance tests, review, pulses at once, debug" aria-label="project settings">
+                <Icon name="gear" />
+              </button>
+              {/* Only turri halts a pulse: while one regenerates this module, Regenerate waits for it. */}
+              <button
+                className="button primary"
+                disabled={spec === null || !spec.ok || busy || runningFor(spec.module) !== undefined}
+                onClick={() => setChoosing([])}
+                title={
+                  spec && runningFor(spec.module)
+                    ? "turri is regenerating this module"
+                    : spec && !spec.functionalSpecs.some((entry) => entry.built)
+                      ? "regenerate all of it - nothing is built yet"
+                      : "regenerate - what changed, chosen functional specs, or from scratch"
+                }
+              >
+                {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} regenerate…
+              </button>
+              <button className="icon-button sidebar-toggle" onClick={() => setSidebarOpen((open) => !open)} title={`${sidebarOpen ? "hide" : "show"} the files (${keys("B")})`} aria-label={sidebarOpen ? "hide the files" : "show the files"} aria-pressed={sidebarOpen}>
+                <Icon name="sidebar" />
+              </button>
+            </div>
+          </header>
+
+          <section className="content">
+            {view === "preview" ? (
+              // A sheet over the window would be under the pane: while one is open, the pane steps aside.
+              <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || signIn !== null || creating || choosing !== null || switching !== null || switcher || settingsOpen || projectSettingsOpen || about !== null || guide} pane={pane} onPane={setPane} testing={testing} />
+            ) : view === "stdlib" ? (
+              <StdlibView
+                key={project.dir}
+                selected={template}
+                reveal={reveal !== null && reveal.file === template ? reveal : undefined}
+                onSelect={setTemplate}
+                onOpenSpec={(path) => {
+                  setSelected(path);
+                  setView("spec");
+                }}
+              />
+            ) : view === "work" ? (
+              <WorkView
+                status={status}
+                jobs={allJobs}
+                earlier={earlier}
+                specs={project.specs}
+                focus={focusPulse}
+                onShowInSpec={(rel, lines) => {
+                  const shown = project.specs.find((entry) => entry.rel === rel);
+                  if (shown === undefined) return say(`${rel} is not one of the project's ***plain files now.`, "error");
+                  setSelected(shown.file);
+                  setView("spec");
+                  // Where the pulse's lines are now: the ***plain may have changed since it ran.
+                  setReveal({ file: shown.file, lines: lines.map((each) => each.line), texts: lines.map((each) => each.text), at: Date.now() });
+                }}
+              />
+            ) : file !== null ? (
+              <FileView key={file} root={project.dir} file={file} reveal={reveal?.file === file ? reveal : undefined} onDirty={setDirty} saveRef={saveRef} say={say} onOpen={openLink} onFollow={(followed, point) => void follow(file, followed, point)} />
+            ) : spec === null ? (
+              project.specs.length === 0 && (
+                <Empty icon="doc" title="no ***plain yet">
+                  tell turri what you want to build. it writes the first <PlainName /> with you, then builds the code from it.
+                </Empty>
+              )
+            ) : (
+              <SpecView
+                key={spec.file}
+                spec={spec}
+                running={runningFor(spec.module)}
+                reveal={reveal?.file === spec.file ? reveal : undefined}
+                onSaved={(next: Spec) => setProject((now) => now && { ...now, specs: now.specs.map((entry) => (entry.file === next.file ? next : entry)) })}
+                onDirty={setDirty}
+                saveRef={saveRef}
+                onRegenerate={(frids) => void regenerate(frids?.length ? { how: "again", frids, guidance: "" } : undefined)}
+                onConform={(frids) => void conform(frids)}
+                onOpen={openLink}
+                onFollow={(followed, point) => void follow(spec.file, followed, point)}
+                say={say}
+              />
+            )}
+          </section>
+          {uses !== null && (
+            <ConceptUses
+              {...uses}
+              onGo={(use) => {
+                setUses(null);
+                showAt(use);
+              }}
+              onClose={() => setUses(null)}
+            />
+          )}
+        </main>
+
+        {sidebarOpen && (
+          // The files' left edge, against the views: drag it to make them wider or thinner, double-click it for the width they start at.
+          <div
+            className="files-resize"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="resize the files"
+            title="drag to resize the files - double-click to reset"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setResizing(true);
+            }}
+            onPointerMove={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) setFilesWidth(clampFiles(window.innerWidth - event.clientX, chatOpen ? chatShown : 0));
+            }}
+            onPointerUp={(event) => {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+              setResizing(false);
+            }}
+            onDoubleClick={() => setFilesWidth(FILES_WIDTH)}
+          />
+        )}
+        {sidebarOpen && (
+          <aside className="sidebar">
+            <div className="project-name" title={project.dir}>
+              <Jellyfish size={18} swimming={running.length > 0} />
+              <span>{project.name}</span>
+            </div>
+            <div className="sidebar-section">files</div>
+            <FileTree
+              root={project.dir}
+              specs={project.specs}
+              selected={selected}
+              isRunning={(module) => runningFor(module) !== undefined}
+              onSelect={(path) => {
+                setSelected(path);
+                setView("spec");
+              }}
+            />
+            <div className="sidebar-footer">
+              {running.length > 0 ? (
+                <button className="link" onClick={() => setView("work")}>
+                  <Jellyfish size={22} /> {running.length} pulse{running.length === 1 ? "" : "s"} running
+                </button>
+              ) : (
+                <span className="muted">idle</span>
+              )}
+              {problems(machine).length > 0 && (
+                <button className="link machine-wanting" onClick={() => (setDoctorModels(false), setDoctorOpen(true))} title={problems(machine).map((check) => `${check.name}: ${check.detail}`).join("\n")}>
+                  <Icon name="warn" size={12} /> {toSeeTo(problems(machine))}
+                </button>
+              )}
+              <TurriVersionLine />
+            </div>
+          </aside>
+        )}
+
         {choosing !== null && spec !== null && (
           <RegenerateSheet
             spec={spec}
@@ -775,6 +775,28 @@ export function App() {
           />
         )}
         {plan !== null && plan !== "loading" && <PlanSheet plan={plan} onClose={() => setPlan(null)} onRegenerate={() => (setPlan(null), void regenerate())} />}
+        {stopped && project && (
+          <div className="toast error engine-stopped" role="alert">
+            <Icon name="warn" />
+            <span>the turri engine stopped, and what it was running with it.</span>
+            <button
+              className="button"
+              disabled={stopped === "starting"}
+              onClick={() => {
+                setStopped("starting");
+                window.turri.openProject(project.dir).then(
+                  (summary) => opened(summary as Project | null),
+                  (error) => {
+                    setStopped("stopped");
+                    say(String((error as Error).message ?? error), "error");
+                  },
+                );
+              }}
+            >
+              {stopped === "starting" ? "starting…" : "start it again"}
+            </button>
+          </div>
+        )}
         {toast && (
           <div className={`toast ${toast.tone}`} onClick={() => setToast(null)}>
             {toast.tone === "error" && <Icon name="warn" />}

@@ -147,7 +147,7 @@ export function StdlibView(props: {
                 <span className="muted">{inProject(shown.name) ? "through a template it imports" : <>no <PlainName /> of it imports it</>}</span>
               ) : (
                 shown.usedBy.map((spec) => (
-                  <button key={spec.file} className="stdlib-chip" onClick={() => props.onOpenSpec(spec.file)} title={`open ${spec.rel} in intent`}>
+                  <button key={spec.file} className="stdlib-chip" onClick={() => props.onOpenSpec(spec.file)} title={`open ${spec.rel}`}>
                     <PlainMark size={12} /> {spec.rel}
                   </button>
                 ))

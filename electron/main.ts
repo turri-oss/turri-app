@@ -41,6 +41,8 @@ let theme: Theme = readTheme();
 let zoom = readAppearance().zoom ?? 0;
 const ZOOM_MIN = -3;
 const ZOOM_MAX = 5;
+/** How long the preview stays marked as testing after turri's last browser or terminal tool, in ms. */
+const TESTING_LINGERS = 4000;
 
 function readAppearance(): { theme?: Theme; zoom?: number } {
   try {
@@ -265,6 +267,18 @@ function createWorkspace(): Workspace {
   };
   const preview = createPreview({ windowOf: () => (window.isDestroyed() ? undefined : window), send });
   const terminal = createTerminal({ send });
+  // turri's browser and terminal tools at work in the preview: the window marks it as testing ("preview:testing") from
+  // the first until a moment after the last - turri thinks between them, and the mark would flicker otherwise.
+  let testing = 0;
+  let testingOver: NodeJS.Timeout | undefined;
+  const testingStarts = () => {
+    clearTimeout(testingOver);
+    if (testing++ === 0) send("preview:testing", true);
+  };
+  const testingEnds = () => {
+    if (--testing > 0) return;
+    testingOver = setTimeout(() => send("preview:testing", false), TESTING_LINGERS);
+  };
   let engine: ChildProcess | undefined;
   let nextId = 0;
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
@@ -339,10 +353,12 @@ function createWorkspace(): Workspace {
           console.log(`turri engine: Node ${(message.data as { node: string }).node}, turri from ${(message.data as { turri: string }).turri}`);
           return resolve();
         }
-        // One of turri's browser or terminal tools, asked of the preview: done there, and answered.
+        // One of turri's browser or terminal tools, asked of the preview: done there, and answered - the window saying
+        // turri is testing while it is.
         if (message.browser !== undefined || message.terminal !== undefined) {
+          testingStarts();
           const done = message.browser !== undefined ? preview.request(message.browser, message.params) : terminal.request(message.terminal!, message.params);
-          done.then(
+          done.finally(testingEnds).then(
             (result) => child.connected && child.send({ reply: message.id, result }),
             (error) => child.connected && child.send({ reply: message.id, error: error instanceof Error ? error.message : String(error) }),
           );
@@ -683,10 +699,9 @@ function buildMenu() {
     {
       label: "View",
       submenu: [
-        { label: "intent", accelerator: "CmdOrCtrl+1", click: menuAction("view:spec") },
+        { label: "***plain", accelerator: "CmdOrCtrl+1", click: menuAction("view:spec") },
         { label: "work", accelerator: "CmdOrCtrl+2", click: menuAction("view:work") },
         { label: "preview", accelerator: "CmdOrCtrl+3", click: menuAction("view:preview") },
-        { label: "stdlib", accelerator: "CmdOrCtrl+4", click: menuAction("view:stdlib") },
         { type: "separator" },
         { label: "Show or Hide the Files", accelerator: "CmdOrCtrl+B", click: menuAction("sidebar") },
         { label: "Show or Hide the Chat", accelerator: "CmdOrCtrl+J", click: menuAction("chat") },
@@ -725,7 +740,9 @@ function buildMenu() {
         { label: "Regenerate What Changed", accelerator: "CmdOrCtrl+Shift+R", click: menuAction("regenerate"), enabled: ready },
         { label: "Preview the Plan", click: menuAction("glimpse"), enabled: ready },
         { label: "Write Conformance Tests", click: menuAction("conform"), enabled: ready },
-        { label: "Release to Try", click: menuAction("release"), enabled: ready },
+        { type: "separator" },
+        // The stdlib view, here rather than among the views' tabs: turri's standard library to look through.
+        { label: "Standard Library", accelerator: "CmdOrCtrl+4", click: menuAction("view:stdlib"), enabled: ready },
       ],
     },
     // At the right, before Help, as in every Mac app: macOS lists the open windows here, each by its project's name,

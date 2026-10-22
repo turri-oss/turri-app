@@ -9,8 +9,6 @@ export interface FileEntry {
   dir: boolean;
 }
 
-/** Folders turri and its pulses keep for themselves: listed, but quieter than what the person writes. */
-const QUIET = new Set(["plain_modules", "dist"]);
 const OPEN_KEY = "turri-app.tree-open";
 
 function savedOpen(dir: string): Set<string> {
@@ -26,9 +24,9 @@ function parentOf(path: string) {
 }
 
 /**
- * Everything in the project, as a tree: the specs with their state beside them, and the templates they import, the
- * test scripts, resources, readmes, skills - each folder listed when it is opened, and again when what is in it changes.
- * Which folders are open is kept between launches, project by project.
+ * The project's ***plain, as a tree: the specs with their state beside them, the templates they import and the resources
+ * they link - nothing else of the project, the engine lists only these - each folder listed when it is opened, and again
+ * when what is in it changes. Which folders are open is kept between launches, project by project.
  */
 export function FileTree(props: { root: string; specs: Spec[]; selected: string | null; isRunning: (module: string) => boolean; onSelect: (path: string) => void }) {
   const { root } = props;
@@ -67,11 +65,13 @@ export function FileTree(props: { root: string; specs: Spec[]; selected: string 
     }
   }, [root, open]);
 
-  // Something changed on disk: the folders it changed in, that are listed, are listed again.
+  // Something changed on disk: the folders it changed in, that are listed, are listed again - every one, when a .plain
+  // changed, as what it imports and links may be anywhere.
   useEffect(
     () =>
       window.turri.on("engine:files", ({ paths }: { paths: string[] }) => {
-        const dirs = new Set(paths.flatMap((path) => [parentOf(path), path]).filter((dir) => listedRef.current.has(dir)));
+        const plain = paths.some((path) => path.endsWith(".plain"));
+        const dirs = new Set(plain ? listedRef.current.keys() : paths.flatMap((path) => [parentOf(path), path]).filter((dir) => listedRef.current.has(dir)));
         for (const dir of dirs) void list(dir);
       }),
     [list],
@@ -101,18 +101,17 @@ export function FileTree(props: { root: string; specs: Spec[]; selected: string 
     else if (chosen === "copy-rel") void navigator.clipboard.writeText(entry.path.slice(root.length + 1));
   };
 
-  const rows = (dir: string, depth: number, quiet: boolean): React.ReactNode => {
+  const rows = (dir: string, depth: number): React.ReactNode => {
     const entries = listed.get(dir);
     if (entries === undefined) return null;
     if (entries.length === 0) return <div className="tree-empty" style={{ "--depth": depth } as React.CSSProperties}>empty</div>;
     return entries.map((entry) => {
-      const muted = quiet || entry.name.startsWith(".") || (depth === 0 && QUIET.has(entry.name));
       const spec = entry.dir ? undefined : props.specs.find((candidate) => candidate.file === entry.path);
       const isOpen = entry.dir && open.has(entry.path);
       return (
         <div key={entry.path} role="treeitem" aria-expanded={entry.dir ? isOpen : undefined} aria-selected={entry.path === props.selected}>
           <button
-            className={`tree-row ${entry.path === props.selected ? "active" : ""} ${muted ? "quiet" : ""}`}
+            className={`tree-row ${entry.path === props.selected ? "active" : ""}`}
             style={{ "--depth": depth } as React.CSSProperties}
             title={entry.path.slice(root.length + 1)}
             onClick={() => (entry.dir ? toggle(entry.path) : props.onSelect(entry.path))}
@@ -128,7 +127,7 @@ export function FileTree(props: { root: string; specs: Spec[]; selected: string 
             {spec && <SpecState spec={spec} running={props.isRunning(spec.module)} />}
             {spec && <span className="spec-row-count">{spec.ok ? `${spec.functionalSpecs.filter((entry) => entry.built).length}/${spec.functionalSpecs.length}` : "!"}</span>}
           </button>
-          {isOpen && <div role="group">{rows(entry.path, depth + 1, muted)}</div>}
+          {isOpen && <div role="group">{rows(entry.path, depth + 1)}</div>}
         </div>
       );
     });
@@ -136,7 +135,7 @@ export function FileTree(props: { root: string; specs: Spec[]; selected: string 
 
   return (
     <nav className="tree" role="tree">
-      {listed.has(root) ? rows(root, 0, false) : <Spinner />}
+      {listed.has(root) ? rows(root, 0) : <Spinner />}
     </nav>
   );
 }

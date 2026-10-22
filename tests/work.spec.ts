@@ -10,7 +10,7 @@ const pulse = () => ({
   module: "hello",
   pulse: 1,
   title: "the greeting by name",
-  diff: "diff --git a/hello.plain b/hello.plain\n--- a/hello.plain\n+++ b/hello.plain\n@@ -13,1 +13,2 @@\n ***functional specs***\n+- :Greeter: prints hello, world.\n",
+  diff: "diff --git a/hello.plain b/hello.plain\n--- a/hello.plain\n+++ b/hello.plain\n@@ -13,1 +13,2 @@\n ***functional specs***\n+- :Greeter: prints \"hello, world\" and exits with 0.\n",
   diffWhere: { 4: { file: "hello.plain", line: 13 }, 5: { file: "hello.plain", line: 15 } },
   status: "succeeded",
   sequence: 1,
@@ -21,23 +21,100 @@ const pulse = () => ({
   activity: [],
   usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 },
   agents: [],
-  transcriptLength: 0,
   specGaps: [],
   failures: [],
 });
 
 test.describe("the work view", () => {
-  test("opens a pulse on what it renders, and opens that in intent", async ({ launched: { app, window } }) => {
+  test("shows what a pulse renders in its card, and opens that in the ***plain view", async ({ launched: { app, window } }) => {
     await expect(window.locator(".chat-model")).toBeVisible();
     await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), pulse());
     await window.getByRole("tab", { name: /^work/ }).click();
-    await window.locator(".job", { hasText: "the greeting by name" }).click();
-    // The panel's tabs: what it renders - intent, as the view it is read in - and its agents' conversation.
-    await expect(window.locator(".transcript-tabs [role=tab]")).toHaveText(["intent", "conversation"]);
-    await expect(window.locator(".pulse-spec-lines")).toContainText(":Greeter: prints hello, world.");
-    await window.getByRole("button", { name: "open in intent" }).click();
-    await expect(window.getByRole("tab", { name: "intent", selected: true })).toBeVisible();
+    // In the card itself, nothing to open: no panel beside it, and no conversation.
+    const card = window.locator(".job", { hasText: "the greeting by name" });
+    await expect(card.locator(".pulse-spec-lines")).toContainText(':Greeter: prints "hello, world" and exits with 0.');
+    // In the card's right half, beside what the pulse is and did.
+    const main = (await card.locator(".job-main").boundingBox())!;
+    const plain = (await card.locator(".pulse-spec").boundingBox())!;
+    const whole = (await card.boundingBox())!;
+    expect(plain.x).toBeGreaterThan(main.x + main.width);
+    expect(plain.x).toBeGreaterThanOrEqual(whole.x + whole.width / 2 - 20);
+    await card.click();
+    await expect(window.locator(".transcript")).toHaveCount(0);
+    await expect(window.getByRole("tab", { name: "conversation" })).toHaveCount(0);
+    await card.getByRole("button", { name: "open", exact: true }).click();
+    await expect(window.locator(".toolbar").getByRole("tab", { name: "***plain", selected: true })).toBeVisible();
     await expect(window.locator(".editor-pane .pane-header")).toContainText("hello.plain");
+  });
+
+  test("offers to open a pulse's lines in the ***plain only while they are still there", async ({ launched: { app, window, project } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), pulse());
+    // A pulse on a ***plain file that is no longer the project's: nothing to open.
+    const gone = pulse();
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), {
+      ...gone,
+      id: "p2",
+      summary: "gone: a file since removed",
+      title: "a file since removed",
+      diff: gone.diff.replaceAll("hello.plain", "gone.plain"),
+      diffWhere: { 4: { file: "gone.plain", line: 13 }, 5: { file: "gone.plain", line: 15 } },
+    });
+    await window.getByRole("tab", { name: /^work/ }).click();
+    const card = window.locator(".job", { hasText: "the greeting by name" });
+    const open = card.getByRole("button", { name: "open", exact: true });
+    await expect(open).toBeVisible();
+    const removed = window.locator(".job", { hasText: "a file since removed" });
+    await expect(removed.locator(".pulse-spec-lines")).toContainText("hello, world");
+    await expect(removed.getByRole("button", { name: "open", exact: true })).toHaveCount(0);
+    // Its line edited away since: the button goes.
+    const file = join(project, "hello.plain");
+    writeFileSync(file, readFileSync(file, "utf8").replace('prints "hello, world" and exits with 0.', "prints a greeting."));
+    await expect(open).toHaveCount(0);
+  });
+
+  test("stops the pulses that were running once the engine stops", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    const send = (channel: string, data: unknown) => app.evaluate(({ BrowserWindow }, [channel, data]) => BrowserWindow.getAllWindows()[0]!.webContents.send(channel as string, data), [channel, data] as const);
+    await send("engine:job", { ...pulse(), status: "running", finishedAt: undefined });
+    await window.getByRole("tab", { name: /^work/ }).click();
+    const card = window.locator(".job", { hasText: "the greeting by name" });
+    await expect(card).toHaveClass(/\brunning\b/);
+    await send("engine:exit", { code: 1 });
+    await expect(card).toHaveClass(/\bstopped\b/);
+    await card.getByRole("button", { name: "why it failed" }).or(card.getByRole("button", { name: "report" })).click();
+    await expect(card.locator(".job-report .prose")).toContainText("The turri engine stopped under this pulse.");
+  });
+
+  test("keeps a long ***plain change within a ceiling, to scroll", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    const added = Array.from({ length: 80 }, (_, at) => `+- :Greeter: greets visitor ${at + 1}.`);
+    const diff = `diff --git a/hello.plain b/hello.plain\n--- a/hello.plain\n+++ b/hello.plain\n@@ -13,1 +13,${added.length + 1} @@\n ***functional specs***\n${added.join("\n")}\n`;
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), { ...pulse(), diff, diffWhere: {} });
+    await window.getByRole("tab", { name: /^work/ }).click();
+    const lines = window.locator(".job", { hasText: "the greeting by name" }).locator(".pulse-spec-lines");
+    await expect(lines).toContainText("greets visitor 80.");
+    const box = await lines.evaluate((element) => ({ height: element.clientHeight, content: element.scrollHeight, overflow: getComputedStyle(element).overflowY }));
+    expect(box.height).toBeLessThanOrEqual(220);
+    expect(box.content).toBeGreaterThan(box.height);
+    expect(box.overflow).toBe("auto");
+    await lines.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+    await expect.poll(() => lines.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  });
+
+  test("keeps a long report within a ceiling, to scroll", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    const report = Array.from({ length: 60 }, (_, at) => `Step ${at + 1}: the greeting was checked again.`).join("\n\n");
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), { ...pulse(), report });
+    await window.getByRole("tab", { name: /^work/ }).click();
+    const card = window.locator(".job", { hasText: "the greeting by name" });
+    await card.getByRole("button", { name: "report" }).click();
+    const prose = card.locator(".job-report .prose");
+    await expect(prose).toContainText("Step 60:");
+    const box = await prose.evaluate((element) => ({ height: element.clientHeight, content: element.scrollHeight, overflow: getComputedStyle(element).overflowY }));
+    expect(box.height).toBeLessThanOrEqual(220);
+    expect(box.content).toBeGreaterThan(box.height);
+    expect(box.overflow).toBe("auto");
   });
 
   test("finds a pulse's lines where they are now, and shows the blank line between two of its functional specs", async ({ launched: { app, window, project } }) => {
@@ -62,26 +139,26 @@ test.describe("the work view", () => {
     const job = { ...pulse(), id: "p2", module: "repos", summary: "repos: create and list", title: "create and list", diff, diffWhere: where };
     await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), job);
     await window.getByRole("tab", { name: /^work/ }).click();
-    await window.locator(".job", { hasText: "create and list" }).click();
+    const card = window.locator(".job", { hasText: "create and list" });
 
     // Two functional specs, and the blank lines turri's diff leaves out - after the section's header, and between them -
     // drawn, numbered.
-    const panel = window.locator(".pulse-spec-lines > div");
+    const panel = card.locator(".pulse-spec-lines > div");
     await expect(panel.nth(1)).toHaveText("14​");
     await expect(panel.nth(4)).toHaveText("17​");
     await expect(panel.nth(5)).toContainText("lists their :Repo: items");
 
-    // Both lit in intent, where they are now - not where they were.
-    await window.getByRole("button", { name: "open in intent" }).click();
+    // Both lit in the ***plain view, where they are now - not where they were.
+    await card.getByRole("button", { name: "open", exact: true }).click();
     const line = (index: number) => window.locator(`.editor-colours [data-line="${index}"]`);
     await expect(line(16)).toHaveClass(/rendering/);
     await expect(line(19)).toHaveClass(/rendering/);
     await expect(line(12)).not.toHaveClass(/rendering/);
     await expect(line(14)).not.toHaveClass(/rendering/);
 
-    // Lit once: back to work and to intent again, nothing is.
+    // Lit once: back to work and to the ***plain view again, nothing is.
     await window.getByRole("tab", { name: /^work/ }).click();
-    await window.getByRole("tab", { name: "intent" }).click();
+    await window.locator(".toolbar").getByRole("tab", { name: "***plain" }).click();
     await expect(window.locator(".editor-pane .pane-header")).toContainText("repos.plain");
     await expect(line(16)).toBeVisible();
     // Looked at once, a moment in: lines lit again would stay so for seconds, and a retrying expect would wait them out.
@@ -89,7 +166,7 @@ test.describe("the work view", () => {
     expect(await window.locator(".editor-colours .rendering").count()).toBe(0);
   });
 
-  test("keeps what a running pulse renders lit in intent as a functional spec is added above it", async ({ launched: { app, window, spec } }) => {
+  test("keeps what a running pulse renders lit in the ***plain view as a functional spec is added above it", async ({ launched: { app, window, spec } }) => {
     // Running: it renders hello.plain's functional spec, line 15 when it started.
     const diff = ["diff --git a/hello.plain b/hello.plain", "--- a/hello.plain", "+++ b/hello.plain", "@@ @@", " ***functional specs***", '+- :Greeter: prints "hello, world" and exits with 0.'].join("\n");
     const running = { ...pulse(), id: "p3", status: "running", finishedAt: undefined, diff, diffWhere: { 4: { file: "hello.plain", line: 13 }, 5: { file: "hello.plain", line: 15 } } };
@@ -103,5 +180,25 @@ test.describe("the work view", () => {
     await expect(line(16)).toContainText("prints");
     await expect(line(16)).toHaveClass(/rendering/);
     await expect(line(14)).not.toHaveClass(/rendering/);
+  });
+
+  test("shows an earlier session's pulse as a card that opens into nothing", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    const run = {
+      run: "r1",
+      mode: "host",
+      started: new Date(Date.now() - 3_600_000).toISOString(),
+      version: "0.1.15",
+      pulses: [{ id: "old1", run: "r1", kind: "regenerate", summary: "hello: the root endpoint", module: "hello", pulse: 1, title: "the root endpoint", status: "succeeded", landed: true, stoppedBy: null, ms: 97_000, usage: null, error: null, failures: [] }],
+    };
+    await app.evaluate(({ BrowserWindow }, runs) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:earlier", runs), [run]);
+    await window.getByRole("tab", { name: /^work/ }).click();
+    const card = window.locator(".job.past", { hasText: "the root endpoint" });
+    await expect(card).toContainText("succeeded, landed");
+    // What the ledger says of it is not the window's to show: a click opens nothing.
+    await card.click();
+    await expect(card).not.toContainText("from the ledger");
+    await expect(card.locator(".job-main")).toHaveCount(1);
+    await expect(card.locator("> :not(.job-main)")).toHaveCount(0);
   });
 });

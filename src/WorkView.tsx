@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import type { Failure, Job, PastPulse, PastRun, Status, TranscriptEntry } from "./types.ts";
+import { useEffect, useState } from "react";
+import type { Failure, Job, PastPulse, PastRun, Spec, Status } from "./types.ts";
 import { cost, elapsed, Empty, Icon, PlainName, Spinner, tokens, useTick, withPlain } from "./ui.tsx";
-import { hasSpecPart, PulseSpec, stageOf, turriSays } from "./PulseSpec.tsx";
+import { PulseSpec, stageOf, turriSays } from "./PulseSpec.tsx";
 import { Prose } from "./Chat.tsx";
 
 /** Earlier sessions' runs shown at first: the last few, and more on asking. */
@@ -18,11 +18,6 @@ export function short(text: string): string {
   if (words.length <= SUMMARY_WORDS && cut.length <= SUMMARY_CHARS) return cut;
   if (cut.length > SUMMARY_CHARS - 1) cut = cut.slice(0, SUMMARY_CHARS - 1).replace(/\s+\S*$/, "") || cut.slice(0, SUMMARY_CHARS - 1);
   return `${cut.replace(/[\s,.;:-]+$/, "")}…`;
-}
-
-/** A click on a card opens it - unless it ended a drag that selected some of its text, to copy. */
-function opens(): boolean {
-  return window.getSelection()?.isCollapsed !== false;
 }
 
 /** What is copied of a pulse: its summary whole, and, for the chat, what turri looks it up by. */
@@ -63,21 +58,24 @@ function CopyButton({ pulse }: { pulse: Copyable }) {
 }
 
 /**
- * The work: each codebase's plan, and every pulse - running, planned and done - opened into its agents' conversation;
- * below them, earlier sessions' pulses, from the ledger, opened into what it says of each.
+ * The work: each codebase's plan, and every pulse - running, planned and done - with the ***plain it works on in its
+ * card; below them, earlier sessions' pulses, from the ledger, read only.
  */
 export function WorkView({
   status,
   jobs,
   earlier,
+  specs,
   onShowInSpec,
   focus,
 }: {
   status: Status;
   jobs: Job[];
   earlier: PastRun[];
+  /** The project's ***plain files as they are now: a pulse's lines open in one only while they are still there. */
+  specs: Spec[];
   onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void;
-  /** A pulse to open and bring into view - one the chat says ended. */
+  /** A pulse to bring into view and mark - one the chat says ended. */
   focus?: { id: string; at: number };
 }) {
   const [open, setOpen] = useState<string | null>(focus?.id ?? null);
@@ -92,8 +90,6 @@ export function WorkView({
   }, [focus?.at]);
   const anyRunning = jobs.some((job) => job.status === "running");
   useTick(anyRunning);
-  const selected = jobs.find((job) => job.id === open) ?? null;
-  const past = selected === null ? (earlier.flatMap((run) => run.pulses).find((pulse) => pulse.id === open) ?? null) : null;
 
   if (jobs.length === 0 && status.modules.length === 0 && earlier.length === 0)
     return (
@@ -136,7 +132,7 @@ export function WorkView({
           </div>
         )}
         {jobs.map((job) => (
-          <JobCard key={job.id} job={job} open={job.id === open} onOpen={() => setOpen(job.id === open ? null : job.id)} />
+          <JobCard key={job.id} job={job} open={job.id === open} specs={specs} onShowInSpec={onShowInSpec} />
         ))}
 
         {earlier.length > 0 && <div className="sidebar-section inline">earlier sessions</div>}
@@ -149,7 +145,7 @@ export function WorkView({
               {runCost(run) && <span className="muted">· {runCost(run)}</span>}
             </div>
             {run.pulses.map((pulse) => (
-              <PastPulseCard key={pulse.id} pulse={pulse} open={pulse.id === open} onOpen={() => setOpen(pulse.id === open ? null : pulse.id)} />
+              <PastPulseCard key={pulse.id} pulse={pulse} open={pulse.id === open} />
             ))}
           </div>
         ))}
@@ -159,20 +155,18 @@ export function WorkView({
           </button>
         )}
       </div>
-      {selected && <Transcript key={selected.id} job={selected} onClose={() => setOpen(null)} onShowInSpec={onShowInSpec} />}
-      {past && <PastPulseDetail key={past.id} pulse={past} onClose={() => setOpen(null)} />}
     </div>
   );
 }
 
-function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () => void }) {
+function JobCard({ job, open, specs, onShowInSpec }: { job: Job; open: boolean; specs: Spec[]; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void }) {
   // What a pulse that ended reports, and what it found the spec does not say: each folded, to open and read - the card
   // says how it went without them.
   const [reading, setReading] = useState<"report" | "gaps" | null>(null);
   const toggle = (what: "report" | "gaps") => setReading((now) => (now === what ? null : what));
   const gaps = job.specGaps.length;
   const report = job.status !== "running" && job.status !== "queued" ? (job.announce ?? job.report ?? job.error ?? "").trim() : "";
-  // Its kind, coloured as the intent view marks it: a regenerate pulse pink, as a built functional spec; a conformance
+  // Its kind, coloured as the ***plain view marks it: a regenerate pulse pink, as a built functional spec; a conformance
   // pulse turri's cyan, as a conformance-tested one - two ticks when it lands.
   const kind = job.kind === "conformance" ? "conformance" : "regenerate";
   const copyable: Copyable = { id: job.id, summary: job.title ?? job.summary, module: job.module, pulse: job.pulse, kind: job.kind };
@@ -189,83 +183,87 @@ function JobCard({ job, open, onOpen }: { job: Job; open: boolean; onOpen: () =>
       <Icon name="clock" />
     );
   return (
-    <div className={`job ${kind} ${job.status} ${open ? "open" : ""}`} data-id={job.id} onClick={() => opens() && onOpen()} onContextMenu={(event) => void copyMenu(event, copyable)}>
-      <div className="job-head">
-        <span className={`job-icon ${job.status}`}>{icon}</span>
-        <div className="job-title">
-          <strong title={copyable.summary}>{short(copyable.summary)}</strong>
-          <span className="muted">
-            {job.module}
-            {job.pulse !== undefined ? ` · pulse ${job.pulse}` : ""} <span className="kind-tag">{job.kind}</span>
-          </span>
-        </div>
-        <div className="job-meta">
-          <span>{job.status === "queued" ? "waiting" : elapsed(job.startedAt, job.finishedAt)}</span>
-          {cost(job.usage) && <span className="muted">{cost(job.usage)}</span>}
-        </div>
-        <CopyButton pulse={copyable} />
-      </div>
-      {job.status === "running" && (
-        <div className="job-live">
-          {stageOf(job) && <div className="stage">{stageOf(job)}</div>}
-          {job.now && (
-            <div className="now">
-              <span className="pulse-dot" /> {withPlain(turriSays(job.now.label))} <span className="muted">· {elapsed(job.now.since)}</span>
-            </div>
-          )}
-          {job.building && <div className="building">building {withPlain(turriSays(job.building.label))}</div>}
-          <ul className="activity">
-            {job.activity.slice(-5).map((line, index) => (
-              <li key={index}>{withPlain(turriSays(line))}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {(report !== "" || gaps > 0) && (
-        <div className={`job-report ${job.status}`} onClick={(event) => event.stopPropagation()}>
-          <div className="job-report-toggles">
-            {report !== "" && (
-              <button className="link job-report-toggle" onClick={() => toggle("report")} aria-expanded={reading === "report"}>
-                <Icon name="chevron" size={12} /> {job.status === "failed" ? "why it failed" : "report"}
-              </button>
-            )}
-            {gaps > 0 && (
-              <button className="link job-report-toggle gaps-toggle" onClick={() => toggle("gaps")} aria-expanded={reading === "gaps"}>
-                <Icon name="chevron" size={12} /> <span className="gaps-count">{gaps}</span> <PlainName /> gap{gaps === 1 ? "" : "s"}
-              </button>
-            )}
+    <div className={`job ${kind} ${job.status} ${open ? "open" : ""}`} data-id={job.id} onContextMenu={(event) => void copyMenu(event, copyable)}>
+      <div className="job-main">
+        <div className="job-head">
+          <span className={`job-icon ${job.status}`}>{icon}</span>
+          <div className="job-title">
+            <strong title={copyable.summary}>{short(copyable.summary)}</strong>
+            <span className="muted">
+              {job.module}
+              {job.pulse !== undefined ? ` · pulse ${job.pulse}` : ""} <span className="kind-tag">{job.kind}</span>
+            </span>
           </div>
-          {reading === "report" && <Prose text={report} />}
-          {reading === "gaps" && (
-            <ul className="gaps">
-              {job.specGaps.map((gap, index) => (
-                <li key={index}>
-                  <div>
-                    <strong>the <PlainName /> does not say:</strong> {gap.question}
-                  </div>
-                  <div className="muted">Meanwhile, the pulse assumed: {gap.assumption}</div>
-                </li>
+          <div className="job-meta">
+            <span>{job.status === "queued" ? "waiting" : elapsed(job.startedAt, job.finishedAt)}</span>
+            {cost(job.usage) && <span className="muted">{cost(job.usage)}</span>}
+          </div>
+          <CopyButton pulse={copyable} />
+        </div>
+        {job.status === "running" && (
+          <div className="job-live">
+            {stageOf(job) && <div className="stage">{stageOf(job)}</div>}
+            {job.now && (
+              <div className="now">
+                <span className="pulse-dot" /> {withPlain(turriSays(job.now.label))} <span className="muted">· {elapsed(job.now.since)}</span>
+              </div>
+            )}
+            {job.building && <div className="building">building {withPlain(turriSays(job.building.label))}</div>}
+            <ul className="activity">
+              {job.activity.slice(-5).map((line, index) => (
+                <li key={index}>{withPlain(turriSays(line))}</li>
               ))}
             </ul>
-          )}
-        </div>
-      )}
-      {job.diagnosis && (
-        <div className="diagnosis">
-          <Icon name="spark" /> <div>{job.diagnosis}</div>
-        </div>
-      )}
-      <FailureMarks failures={job.failures} />
-      {job.agents.length > 0 && (
-        <div className="agents">
-          {job.agents.map((agent) => (
-            <span key={agent.label} className="agent-chip" title={agent.model}>
-              {withPlain(turriSays(agent.label))} · {agent.turns} turn{agent.turns === 1 ? "" : "s"}
-              {tokens(agent.usage) && ` · ${tokens(agent.usage)}`}
-            </span>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+        {(report !== "" || gaps > 0) && (
+          <div className={`job-report ${job.status}`}>
+            <div className="job-report-toggles">
+              {report !== "" && (
+                <button className="link job-report-toggle" onClick={() => toggle("report")} aria-expanded={reading === "report"}>
+                  <Icon name="chevron" size={12} /> {job.status === "failed" ? "why it failed" : "report"}
+                </button>
+              )}
+              {gaps > 0 && (
+                <button className="link job-report-toggle gaps-toggle" onClick={() => toggle("gaps")} aria-expanded={reading === "gaps"}>
+                  <Icon name="chevron" size={12} /> <span className="gaps-count">{gaps}</span> <PlainName /> gap{gaps === 1 ? "" : "s"}
+                </button>
+              )}
+            </div>
+            {reading === "report" && <Prose text={report} />}
+            {reading === "gaps" && (
+              <ul className="gaps">
+                {job.specGaps.map((gap, index) => (
+                  <li key={index}>
+                    <div>
+                      <strong>the <PlainName /> does not say:</strong> {gap.question}
+                    </div>
+                    <div className="muted">Meanwhile, the pulse assumed: {gap.assumption}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {job.diagnosis && (
+          <div className="diagnosis">
+            <Icon name="spark" /> <div>{job.diagnosis}</div>
+          </div>
+        )}
+        <FailureMarks failures={job.failures} />
+        {job.agents.length > 0 && (
+          <div className="agents">
+            {job.agents.map((agent) => (
+              <span key={agent.label} className="agent-chip" title={agent.model}>
+                {withPlain(turriSays(agent.label))} · {agent.turns} turn{agent.turns === 1 ? "" : "s"}
+                {tokens(agent.usage) && ` · ${tokens(agent.usage)}`}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* The ***plain it works on, in the card's right half: what it renders, or the functional spec a conformance run builds. */}
+      <PulseSpec job={job} specs={specs} onShowInSpec={onShowInSpec} />
     </div>
   );
 }
@@ -314,8 +312,8 @@ function outcome(pulse: PastPulse): string {
   return `${pulse.status}${by}${landed}`;
 }
 
-/** A pulse of an earlier session: read only - how it ended, how long, what it cost - and opened into the ledger's facts. */
-function PastPulseCard({ pulse, open, onOpen }: { pulse: PastPulse; open: boolean; onOpen: () => void }) {
+/** A pulse of an earlier session: read only - how it ended, how long, what it cost. */
+function PastPulseCard({ pulse, open }: { pulse: PastPulse; open: boolean }) {
   const kind = pulse.kind === "conformance" ? "conformance" : "regenerate";
   const copyable: Copyable = { id: pulse.id, summary: pulse.title ?? pulse.summary, module: pulse.module, pulse: pulse.pulse, kind: pulse.kind };
   const icon =
@@ -329,191 +327,26 @@ function PastPulseCard({ pulse, open, onOpen }: { pulse: PastPulse; open: boolea
       <Icon name="clock" />
     );
   return (
-    <div className={`job past ${kind} ${pulse.status} ${open ? "open" : ""}`} data-id={pulse.id} onClick={() => opens() && onOpen()} onContextMenu={(event) => void copyMenu(event, copyable)}>
-      <div className="job-head">
-        <span className={`job-icon ${pulse.status}`}>{icon}</span>
-        <div className="job-title">
-          <strong title={copyable.summary}>{short(copyable.summary)}</strong>
-          <span className="muted">
-            {pulse.module ?? ""}
-            {pulse.pulse !== null ? ` · pulse ${pulse.pulse}` : ""} <span className="kind-tag">{pulse.kind}</span>
-          </span>
+    <div className={`job past ${kind} ${pulse.status} ${open ? "open" : ""}`} data-id={pulse.id} onContextMenu={(event) => void copyMenu(event, copyable)}>
+      <div className="job-main">
+        <div className="job-head">
+          <span className={`job-icon ${pulse.status}`}>{icon}</span>
+          <div className="job-title">
+            <strong title={copyable.summary}>{short(copyable.summary)}</strong>
+            <span className="muted">
+              {pulse.module ?? ""}
+              {pulse.pulse !== null ? ` · pulse ${pulse.pulse}` : ""} <span className="kind-tag">{pulse.kind}</span>
+            </span>
+          </div>
+          <div className="job-meta">
+            <span>{pulse.ms !== null ? elapsed(0, pulse.ms) : ""}</span>
+            {cost(pulse.usage ?? undefined) && <span className="muted">{cost(pulse.usage ?? undefined)}</span>}
+          </div>
+          <CopyButton pulse={copyable} />
         </div>
-        <div className="job-meta">
-          <span>{pulse.ms !== null ? elapsed(0, pulse.ms) : ""}</span>
-          {cost(pulse.usage ?? undefined) && <span className="muted">{cost(pulse.usage ?? undefined)}</span>}
-        </div>
-        <CopyButton pulse={copyable} />
+        <div className={`past-outcome ${pulse.status}`}>{outcome(pulse)}</div>
+        <FailureMarks failures={pulse.failures} />
       </div>
-      <div className={`past-outcome ${pulse.status}`}>{outcome(pulse)}</div>
-      <FailureMarks failures={pulse.failures} />
     </div>
   );
-}
-
-/** An earlier pulse, opened: what the ledger says of it - as `turri ledger <pulse>` prints it - and its log, to open. */
-function PastPulseDetail({ pulse, onClose }: { pulse: PastPulse; onClose: () => void }) {
-  const [detail, setDetail] = useState<{ lines: string[]; log: string | null } | { error: string } | null>(null);
-  useEffect(() => {
-    let alive = true;
-    window.turri.call<{ lines: string[]; log: string | null }>("pastPulseDetail", { id: pulse.id, run: pulse.run }).then(
-      (next) => alive && setDetail(next),
-      (error: Error) => alive && setDetail({ error: error.message }),
-    );
-    return () => void (alive = false);
-  }, [pulse.id, pulse.run]);
-  // Its first line names it, as the card does; the log is a button, not a path to copy.
-  const lines = detail !== null && "lines" in detail ? detail.lines.slice(1).filter((line) => !/^\s*log: /.test(line)) : [];
-  return (
-    <aside className="transcript">
-      <div className="pane-header transcript-head">
-        <span className="past-detail-title">
-          {pulse.title ?? pulse.summary} <span className="muted">· from the ledger</span>
-        </span>
-        <span className="pane-header-right">
-          {detail !== null && "log" in detail && detail.log !== null && (
-            <button className="link" title={detail.log} onClick={() => void window.turri.openPath(detail.log!)}>
-              <Icon name="file" size={14} /> open its log
-            </button>
-          )}
-          <button className="icon-button" onClick={onClose} aria-label="close">
-            <Icon name="x" />
-          </button>
-        </span>
-      </div>
-      <div className="transcript-body">
-        {detail === null && <p className="muted pad">reading the ledger…</p>}
-        {detail !== null && "error" in detail && <p className="muted pad">{detail.error}</p>}
-        <ul className="ledger-lines">
-          {lines.map((line, index) => (
-            <li key={index} className={`${/^\s{4}/.test(line) ? "sub" : ""} ${/FAILED/.test(line) ? "failed" : ""}`}>
-              {line.trim()}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </aside>
-  );
-}
-
-/**
- * A pulse, opened: the ***plain it works on - what it renders, coloured as the spec is - and its agents' conversation,
- * as chat bubbles, polled while it runs.
- */
-function Transcript({ job, onClose, onShowInSpec }: { job: Job; onClose: () => void; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void }) {
-  const [tab, setTab] = useState<"spec" | "conversation">(hasSpecPart(job) ? "spec" : "conversation");
-  const [entries, setEntries] = useState<TranscriptEntry[]>([]);
-  const [showThinking, setShowThinking] = useState(false);
-  const end = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
-
-  useEffect(() => {
-    let alive = true;
-    const load = () => void window.turri.call<TranscriptEntry[]>("transcript", { id: job.id }).then((next) => alive && setEntries(next));
-    load();
-    if (job.status !== "running") return () => void (alive = false);
-    const timer = setInterval(load, 1000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [job.id, job.status]);
-
-  useEffect(() => {
-    if (stick.current) end.current?.scrollIntoView({ block: "end" });
-  }, [entries]);
-
-  return (
-    <aside className="transcript">
-      <div className="pane-header transcript-head">
-        <div className="segmented transcript-tabs" role="tablist">
-          {(["spec", "conversation"] as const).map((name) => (
-            <button key={name} role="tab" aria-selected={tab === name} className={tab === name ? "on" : ""} onClick={() => setTab(name)}>
-              {name === "spec" ? "intent" : name}
-            </button>
-          ))}
-        </div>
-        <span className="pane-header-right">
-          {tab === "conversation" && (
-            <label className="toggle">
-              <input type="checkbox" checked={showThinking} onChange={(event) => setShowThinking(event.target.checked)} /> thinking
-            </label>
-          )}
-          <button className="icon-button" onClick={onClose} aria-label="close">
-            <Icon name="x" />
-          </button>
-        </span>
-      </div>
-      {tab === "spec" ? (
-        <div className="transcript-body">
-          <PulseSpec job={job} onShowInSpec={onShowInSpec} />
-        </div>
-      ) : (
-      <div
-        className="transcript-body"
-        onScroll={(event) => {
-          const el = event.currentTarget;
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-        }}
-      >
-        {entries.length === 0 && <p className="muted pad">nothing said yet.</p>}
-        {entries
-          .filter((entry) => showThinking || entry.kind !== "thinking")
-          .map((entry, index) => (
-            <Entry key={index} entry={entry} />
-          ))}
-        <div ref={end} />
-      </div>
-      )}
-    </aside>
-  );
-}
-
-function Entry({ entry }: { entry: TranscriptEntry }) {
-  const [expanded, setExpanded] = useState(false);
-  switch (entry.kind) {
-    case "stage":
-      return <div className="t-stage">{withPlain(turriSays(entry.text))}</div>;
-    case "spec":
-      return <div className="t-spec">{entry.text}</div>;
-    case "diff":
-      return <pre className="t-diff">{colourDiff(entry.text)}</pre>;
-    case "prompt":
-      return (
-        <div className="t-bubble prompt" onClick={() => setExpanded(!expanded)}>
-          <div className="t-who">turri → {entry.agent?.label ?? "agent"}</div>
-          <div className={expanded ? "" : "clamp"}>{entry.text}</div>
-        </div>
-      );
-    case "text":
-      return (
-        <div className="t-bubble reply">
-          <div className="t-who">{entry.agent?.label ?? "agent"}</div>
-          {entry.text}
-        </div>
-      );
-    case "thinking":
-      return <div className="t-thinking">{entry.text}</div>;
-    case "tool":
-      return (
-        <div className="t-tool" onClick={() => setExpanded(!expanded)}>
-          <Icon name="code" size={13} /> <span>{entry.text}</span>
-          {expanded && entry.full && <pre>{entry.full}</pre>}
-        </div>
-      );
-    case "result":
-      return (
-        <div className={`t-result ${entry.error ? "error" : ""}`} onClick={() => setExpanded(!expanded)}>
-          <pre className={expanded ? "" : "clamp"}>{expanded ? (entry.full ?? entry.text) : entry.text}</pre>
-        </div>
-      );
-  }
-}
-
-function colourDiff(text: string) {
-  return text.split("\n").map((line, index) => (
-    <div key={index} className={line.startsWith("+") && !line.startsWith("+++") ? "add" : line.startsWith("-") && !line.startsWith("---") ? "del" : line.startsWith("@@") ? "hunk" : ""}>
-      {line || "​"}
-    </div>
-  ));
 }

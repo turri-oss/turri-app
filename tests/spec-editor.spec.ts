@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { expect, test } from "./app.ts";
+import { expect, offers, test } from "./app.ts";
 import { keys } from "./keys.ts";
 
 /** A functional spec's mark in the gutter, by its number. */
@@ -26,6 +26,28 @@ test.describe("the spec editor", () => {
     await expect(window.locator(".editor-colours .plain-concept").first()).toBeVisible();
     // In the coloured layer, which is hidden from the accessibility tree: the textarea over it reads the spec.
     await expect(mark(window, 1)).toHaveAttribute("aria-label", "functional spec 1, to build");
+  });
+
+  test("takes the pane's whole width, as far in from the right as from the left, wrapping what is longer", async ({ launched: { window } }) => {
+    await window.setViewportSize({ width: 2200, height: 900 });
+    await expect(window.locator(".editor textarea")).toHaveValue(/Greeter/);
+    await atTheEnd(window);
+    await window.keyboard.type(`\n- :Greeter: ${"says hello again and again, ".repeat(40)}then stops.`);
+    const measured = await window.evaluate(() => {
+      const editor = document.querySelector<HTMLElement>(".editor")!.getBoundingClientRect();
+      const pre = document.querySelector<HTMLPreElement>(".editor-colours")!;
+      const style = getComputedStyle(pre);
+      const box = pre.getBoundingClientRect();
+      const text = { left: box.left + parseFloat(style.paddingLeft), right: box.right - parseFloat(style.paddingRight) };
+      const last = pre.lastElementChild as HTMLElement;
+      return { left: text.left - editor.left, right: editor.right - text.right, wide: editor.width, lines: last.offsetHeight / parseFloat(style.lineHeight) };
+    });
+    // Far wider than the 920px it used to be kept to.
+    expect(measured.wide).toBeGreaterThan(1000);
+    // A scrollbar, if any, is on the right: within its width of symmetric.
+    expect(Math.abs(measured.left - measured.right)).toBeLessThanOrEqual(16);
+    // The long line wraps within it.
+    expect(measured.lines).toBeGreaterThan(1.5);
   });
 
   test("keeps its two layers alike, so the caret is on the line it shows", async ({ launched: { window } }) => {
@@ -58,9 +80,12 @@ test.describe("the spec editor", () => {
     expect(layers.scroll).toBeLessThanOrEqual(layers.height);
   });
 
-  test("colours code - a resource the ***plain links - in its palette, its two layers alike", async ({ launched: { window, project } }) => {
+  test("colours code - a resource the ***plain links - in its palette, its two layers alike", async ({ launched: { window, project, spec } }) => {
+    // The tree shows a resource the ***plain links: on a turri whose graph gives them.
+    test.skip(!(await offers(window)).resources, "the turri running gives no linked resources in its graph");
     mkdirSync(join(project, "resources"));
     writeFileSync(join(project, "resources", "database.yaml"), '# where the greetings are kept\ntables:\n  greetings:\n    name: "greeting"\n    rows: 3\n');
+    writeFileSync(spec, readFileSync(spec, "utf8").replace("greets the person running it.", "greets the person running it, as [the database](resources/database.yaml) says."));
     await window.locator(".tree-row", { hasText: "resources" }).click();
     await window.locator(".tree-row", { hasText: "database.yaml" }).click();
     await expect(window.locator(".editor textarea")).toHaveValue(/greetings/);

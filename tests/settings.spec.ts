@@ -1,7 +1,7 @@
 import type { ElectronApplication, Page } from "@playwright/test";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test } from "./app.ts";
+import { expect, offers, test } from "./app.ts";
 
 /** A menu item chosen: the window in front is sent its action, as the native menu sends it - once it is drawn, to hear it. */
 async function choose(app: ElectronApplication, page: Page, action: string) {
@@ -132,6 +132,25 @@ test.describe("⌘R", () => {
 });
 
 test.describe("the files' sidebar", () => {
+  test("shows only the ***plain and the resources it links - no config, test scripts or what turri keeps", async ({ launched: { window: page, project, spec } }) => {
+    test.skip(!(await offers(page)).resources, "the turri running gives no linked resources in its graph");
+    for (const dir of ["test_scripts", "plain_modules", ".turri", "resources", "notes"]) mkdirSync(join(project, dir), { recursive: true });
+    writeFileSync(join(project, "test_scripts", "run_unittests.sh"), "#!/bin/sh\n");
+    writeFileSync(join(project, "plain_modules", "hello.txt"), "built\n");
+    writeFileSync(join(project, ".turri", "state.json"), "{}\n");
+    writeFileSync(join(project, "resources", "greeting.yaml"), "greeting: hello\n");
+    writeFileSync(join(project, "resources", "unlinked.yaml"), "nobody: links me\n");
+    writeFileSync(join(project, "notes", "todo.md"), "- nothing\n");
+    writeFileSync(spec, readFileSync(spec, "utf8").replace("greets the person running it.", "greets the person running it, as [the greeting](resources/greeting.yaml) says."));
+    const names = () => page.locator(".tree-row .tree-name").allTextContents();
+    await expect.poll(names).toEqual(["resources", "hello.plain"]);
+    await page.locator(".tree-row", { hasText: "resources" }).click();
+    await expect.poll(names).toEqual(["resources", "greeting.yaml", "hello.plain"]);
+    // Linked no more, it goes - and its folder with it.
+    writeFileSync(spec, readFileSync(spec, "utf8").replace(", as [the greeting](resources/greeting.yaml) says.", "."));
+    await expect.poll(names).toEqual(["hello.plain"]);
+  });
+
   test("hides and shows, by the toolbar's button and ⌘B, and stays as it was left", async ({ launched: { app, window: page } }) => {
     const sidebar = page.locator(".sidebar");
     const toggle = page.getByRole("button", { name: "hide the files" });
@@ -149,19 +168,22 @@ test.describe("the files' sidebar", () => {
     await expect(page.getByRole("button", { name: "hide the files" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("hidden, leaves the toolbar's buttons at its left - right of the traffic lights, or at the edge full screen", async ({ launched: { app, window: page } }) => {
-    await page.getByRole("button", { name: "hide the files" }).click();
-    const left = () => page.locator(".sidebar-toggle").evaluate((button) => Math.round(button.getBoundingClientRect().left));
-    const tabs = () => page.locator(".toolbar .segmented").evaluate((tabs) => Math.round(tabs.getBoundingClientRect().left));
-    const lights = process.platform === "darwin" ? 78 : 12;
-    await expect.poll(left).toBe(lights);
-    expect(await tabs()).toBeLessThan(lights + 40);
+  test("leaves the traffic lights their room at the window's left - the chat's header, or the toolbar's with the chat hidden", async ({ launched: { app, window: page } }) => {
+    const left = (selector: string) => () => page.locator(selector).first().evaluate((element) => Math.round(element.getBoundingClientRect().left));
+    const darwin = process.platform === "darwin";
+    // The chat at the window's left, its title right of the traffic lights.
+    await expect.poll(left(".chat-title")).toBe(darwin ? 78 : 16);
+    // The chat hidden, the toolbar's first button is there.
+    await page.locator(".chat button[title^='hide the chat']").click();
+    await expect.poll(left(".toolbar > :first-child")).toBe(darwin ? 78 : 12);
+    expect(await left(".toolbar .segmented")()).toBeLessThan(220);
     // Full screen, as the main process says it: no traffic lights to leave room for.
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send("fullscreen", true));
-    await expect.poll(left).toBe(12);
+    await expect.poll(left(".toolbar > :first-child")).toBe(12);
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send("fullscreen", false));
-    await expect.poll(left).toBe(lights);
-    // The project's settings are in the toolbar: there with the files hidden too.
+    await expect.poll(left(".toolbar > :first-child")).toBe(darwin ? 78 : 12);
+    // The files hidden too, the project's settings are still in the toolbar.
+    await page.getByRole("button", { name: "hide the files" }).click();
     await page.getByRole("button", { name: "project settings" }).click();
     await expect(page.getByRole("dialog", { name: "project settings" })).toBeVisible();
   });

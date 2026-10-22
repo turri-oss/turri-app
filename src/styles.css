@@ -21,6 +21,8 @@
   --accent: #5ce1e6; /* neon */
   --accent-hover: #8eebee;
   --on-accent: #0a0f1a;
+  /* ***plain's mark on the accent: its green is lost on turri-dark's cyan, so there it takes the accent's text colour. */
+  --mark-on-accent: brightness(0);
   --green: #ff5c8d; /* turri's success is pink */
   --pink: #ff5c8d;
   --amber: #e9d8c8; /* siesta tan */
@@ -32,6 +34,8 @@
   /* A pulse's kind and a functional spec's state, alike: regenerated pink, conformance tested cyan. */
   --built: #ff5c8d;
   --tested: #5ce1e6;
+  /* turri at work in the preview, trying the app: the edge round the pane, and its badge. */
+  --testing: #4da3ff;
   --plain-section: #ff7fa6;
   --plain-concept: #5ce1e6;
   --plain-literal: #e9d8c8;
@@ -74,6 +78,7 @@
   --accent: #732553; /* eggplant */
   --accent-hover: #8c2e66;
   --on-accent: #f4f7f9;
+  --mark-on-accent: none;
   --green: #732553;
   --pink: #d63a6f; /* turri's pink, deep enough to read on light */
   --amber: #3e5a6b;
@@ -84,6 +89,7 @@
   --overlay: rgba(10, 15, 26, 0.35);
   --built: #d63a6f;
   --tested: color-mix(in srgb, #5ce1e6 62%, #0a0f1a);
+  --testing: #2f6fe4;
   --plain-section: #3e5a6b;
   --plain-concept: #732553;
   --plain-literal: #1e3442;
@@ -121,6 +127,7 @@
     --accent: #732553;
     --accent-hover: #8c2e66;
     --on-accent: #f4f7f9;
+    --mark-on-accent: none;
     --green: #732553;
     --pink: #d63a6f;
     --amber: #3e5a6b;
@@ -131,6 +138,7 @@
     --overlay: rgba(10, 15, 26, 0.35);
     --built: #d63a6f;
   --tested: color-mix(in srgb, #5ce1e6 62%, #0a0f1a);
+  --testing: #2f6fe4;
   --plain-section: #3e5a6b;
     --plain-concept: #732553;
     --plain-literal: #1e3442;
@@ -209,50 +217,56 @@ code {
 .app {
   position: relative;
   display: grid;
-  grid-template-columns: var(--files-width, 260px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) var(--files-width, 260px);
   height: 100%;
 }
+/* The chat at the left, the views in the middle, the files at the right. */
 .app.with-chat {
-  grid-template-columns: var(--files-width, 260px) minmax(0, 1fr) var(--chat-width, 400px);
+  grid-template-columns: var(--chat-width, 400px) minmax(0, 1fr) var(--files-width, 260px);
 }
 /* The files hidden (⌘B): their column gone, the rest the wider. */
 .app.no-sidebar {
   grid-template-columns: minmax(0, 1fr);
 }
 .app.no-sidebar.with-chat {
-  grid-template-columns: minmax(0, 1fr) var(--chat-width, 400px);
+  grid-template-columns: var(--chat-width, 400px) minmax(0, 1fr);
 }
-/* The files hidden, the toolbar's buttons are at its left: just right of the traffic lights, over it now - or, full
-   screen, where there are none, at its edge. */
-:root[data-platform="darwin"]:not([data-fullscreen="true"]) .app.no-sidebar .toolbar {
+/* What is at the window's left - the chat's header, or the toolbar's buttons with the chat hidden - is just right of
+   the traffic lights, over it - or, full screen, where there are none, at its edge. */
+:root[data-platform="darwin"]:not([data-fullscreen="true"]) .app:not(.with-chat) .toolbar,
+:root[data-platform="darwin"]:not([data-fullscreen="true"]) .chat-top {
   padding-left: 78px;
 }
-.app.no-sidebar .toolbar {
+.app:not(.with-chat) .toolbar {
   padding-left: 12px;
 }
+/* The files' toggle, at the toolbar's right as the files are at the window's: its icon's panel on that side too. */
 .sidebar-toggle {
   color: var(--fg-3);
-  margin-right: -6px;
+}
+.sidebar-toggle svg {
+  transform: scaleX(-1);
 }
 .sidebar-toggle:hover {
   color: var(--fg);
 }
-/* The chat's left edge, a little wider than its border to catch the pointer; lit while hovered or dragged. */
+/* The chat's right edge, against the views, a little wider than its border to catch the pointer; lit while hovered
+   or dragged. */
 .chat-resize {
   position: absolute;
   top: 0;
   bottom: 0;
-  right: calc(var(--chat-width, 400px) - 4px);
+  left: calc(var(--chat-width, 400px) - 3px);
   width: 6px;
   z-index: 5;
   cursor: col-resize;
 }
-/* The files' right edge, the same. */
+/* The files' left edge, against the views, the same. */
 .files-resize {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(var(--files-width, 260px) - 3px);
+  right: calc(var(--files-width, 260px) - 3px);
   width: 6px;
   z-index: 5;
   cursor: col-resize;
@@ -278,7 +292,7 @@ code {
 
 .sidebar {
   background: var(--sidebar);
-  border-right: 1px solid var(--line);
+  border-left: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -286,8 +300,8 @@ code {
   overflow-y: auto;
 }
 
-/* The sidebar's title bar, level with the toolbar: the project's name - on macOS right of the traffic lights, over it -
-   and the files straight below. It moves the window, as a title bar does. */
+/* The sidebar's title bar, level with the toolbar: the project's name, and the files straight below. It moves the
+   window, as a title bar does. */
 .project-name {
   display: flex;
   align-items: center;
@@ -298,9 +312,6 @@ code {
   height: 52px;
   padding: 0 8px;
   -webkit-app-region: drag;
-}
-:root[data-platform="darwin"]:not([data-fullscreen="true"]) .project-name {
-  padding-left: 68px;
 }
 .project-name > span {
   min-width: 0;
@@ -351,9 +362,6 @@ code {
 .tree-row.active {
   background: var(--selected);
 }
-.tree-row.quiet {
-  color: var(--fg-3);
-}
 .tree-row .icon {
   flex: none;
   color: var(--fg-3);
@@ -384,10 +392,14 @@ code {
 .file-sheet {
   --gutter: 34px;
 }
-/* A spec keeps room on the right, in both layers alike, for a collapsed spec's "+n lines" where its line ends. */
+/* The ***plain takes the pane's whole width, wrapping where it must, as far in from the right as its text is from the
+   left - the gutter and the padding: in both layers alike, and room there for a collapsed spec's "+n lines". */
+.editor-sheet:not(.file-sheet) {
+  max-width: none;
+}
 .editor-sheet:not(.file-sheet) textarea,
 .editor-sheet:not(.file-sheet) .editor-colours {
-  padding-right: 90px;
+  padding-right: calc(var(--gutter) + 18px);
 }
 
 .tree-empty {
@@ -665,6 +677,14 @@ code {
 }
 .toast.error {
   color: var(--red);
+}
+/* Said until the engine is started again: above any notice, and not put away by a click. */
+.toast.engine-stopped {
+  bottom: 64px;
+  cursor: auto;
+}
+.toast.engine-stopped .button {
+  margin-left: 8px;
 }
 @keyframes rise {
   from {
@@ -1001,6 +1021,12 @@ code {
   background: color-mix(in srgb, var(--red) 10%, var(--card));
   color: var(--red);
 }
+/* In the ***plain view, as wide as its text: in from the right as from the left. */
+.parse-error,
+.editor-pane:has(.editor-sheet:not(.file-sheet)) .disk-banner {
+  max-width: none;
+  margin-right: 68px;
+}
 .parse-error p {
   margin: 4px 0 0;
   color: var(--fg);
@@ -1201,11 +1227,14 @@ code {
 .job-report.failed .job-report-toggle {
   color: var(--red);
 }
+/* A long report scrolls, within the same ceiling as the ***plain beside it. */
 .job-report .prose {
   margin-top: 6px;
   padding: 8px 10px;
   border-radius: var(--radius);
   background: var(--bg-2);
+  max-height: min(220px, 35vh);
+  overflow-y: auto;
 }
 .diagnosis {
   display: flex;
@@ -1319,153 +1348,6 @@ code {
 .past-more .muted {
   margin-left: -2px;
 }
-.past-detail-title {
-  font-weight: 600;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.past-detail-title .muted {
-  font-weight: 400;
-}
-/* What the ledger says of a pulse, a fact a line - as `turri ledger <pulse>` prints it. */
-.ledger-lines {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-.ledger-lines li {
-  padding: 3px 0;
-  border-bottom: 1px solid var(--line);
-  overflow-wrap: anywhere;
-}
-.ledger-lines li.sub {
-  padding-left: 14px;
-  border-bottom: 0;
-  font: 11.5px/1.55 var(--mono);
-  color: var(--fg-2);
-}
-.ledger-lines li.failed {
-  color: var(--red);
-}
-
-.transcript {
-  width: 46%;
-  min-width: 380px;
-  border-left: 1px solid var(--line);
-  background: var(--bg-2);
-  display: flex;
-  flex-direction: column;
-}
-.transcript-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 14px 40px;
-}
-.toggle {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-}
-.t-stage {
-  text-align: center;
-  font-size: 11px;
-  color: var(--fg-3);
-  margin: 14px 0 8px;
-  font-weight: 600;
-}
-.t-spec {
-  font-size: 12px;
-  padding: 8px 10px;
-  border-left: 3px solid var(--plain-section);
-  background: var(--card);
-  border-radius: var(--radius);
-  margin: 6px 0;
-  white-space: pre-wrap;
-}
-.t-bubble {
-  max-width: 92%;
-  padding: 8px 11px;
-  border-radius: var(--radius);
-  margin: 6px 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.t-bubble.prompt {
-  background: var(--card);
-  border: 1px solid var(--line);
-  cursor: pointer;
-}
-.t-bubble.reply {
-  margin-left: auto;
-  background: color-mix(in srgb, var(--accent) 14%, var(--card));
-}
-.t-who {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--fg-2);
-  margin-bottom: 3px;
-}
-.clamp {
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.t-thinking {
-  font-style: italic;
-  color: var(--fg-3);
-  font-size: 12px;
-  margin: 4px 0;
-  white-space: pre-wrap;
-}
-.t-tool {
-  font: 11.5px/1.5 var(--mono);
-  color: var(--fg-2);
-  margin: 4px 0;
-  cursor: pointer;
-}
-.t-tool pre {
-  white-space: pre-wrap;
-  background: var(--card);
-  padding: 6px 8px;
-  border-radius: var(--radius);
-}
-.t-result pre {
-  margin: 2px 0 6px 18px;
-  font: 11px/1.5 var(--mono);
-  color: var(--fg-3);
-  white-space: pre-wrap;
-  cursor: pointer;
-}
-.t-result.error pre {
-  color: var(--red);
-}
-.t-diff {
-  font: 11.5px/1.5 var(--mono);
-  background: var(--card);
-  border-radius: var(--radius);
-  padding: 8px 0;
-  margin: 6px 0;
-  overflow-x: auto;
-}
-.t-diff div {
-  padding: 0 10px;
-  white-space: pre;
-}
-.t-diff .add {
-  background: var(--diff-add);
-}
-.t-diff .del {
-  background: var(--diff-del);
-}
-.t-diff .hunk {
-  color: var(--plain-section);
-}
-
 /* ---------- another project opening ---------- */
 
 /* Over the project shown, which no longer answers: it is dimmed, and nothing in it can be used until the next one opens. */
@@ -1553,7 +1435,7 @@ code {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
   background: var(--sidebar);
 }
 .chat-top {
@@ -2238,6 +2120,9 @@ code {
   color: var(--on-accent);
   box-shadow: none;
 }
+.segmented button.on .plain-mark {
+  filter: var(--mark-on-accent);
+}
 .job,
 .msg.note,
 .msg.job-note,
@@ -2412,6 +2297,59 @@ code {
 }
 .preview-bar .segmented {
   margin-right: 6px;
+}
+/* turri testing in the preview, with its browser or terminal tools: a blue edge round the pane, glowing, and a badge
+   in the bar above it. The browser's page is a view laid over the window, so it is drawn inside the edge (EDGE in
+   PreviewView.tsx), and the edge is drawn over the terminal. */
+.preview-page,
+.preview-terminal {
+  position: relative;
+}
+.preview-page::after,
+.preview-terminal::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 3px solid transparent;
+  pointer-events: none;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.preview.testing .preview-page::after,
+.preview.testing .preview-terminal::after {
+  border-color: var(--testing);
+  animation: preview-testing 1.8s ease-in-out infinite;
+}
+@keyframes preview-testing {
+  0%,
+  100% {
+    box-shadow: inset 0 0 6px color-mix(in srgb, var(--testing) 50%, transparent), 0 0 10px color-mix(in srgb, var(--testing) 60%, transparent);
+  }
+  50% {
+    box-shadow: inset 0 0 14px color-mix(in srgb, var(--testing) 70%, transparent), 0 0 18px color-mix(in srgb, var(--testing) 80%, transparent);
+  }
+}
+.preview-testing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 22px;
+  margin: 0 4px;
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--testing);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--testing) 16%, transparent);
+  color: var(--testing);
+  font-size: 11px;
+  white-space: nowrap;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--testing) 45%, transparent);
+  animation: preview-testing-in 0.25s ease-out;
+}
+@keyframes preview-testing-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
 }
 .preview-retry {
   display: block;
@@ -2593,12 +2531,26 @@ code {
 
 /* ---------- a pulse's part of the spec ---------- */
 
-/* The pulse's panel heads with its two tabs - the pulse's own name is on its card - and its controls. */
-.transcript-head {
-  text-transform: none;
+/* A pulse's card in two halves: what it is and does on the left, the ***plain it works on on the right - or, with none,
+   the card's whole width for the left. */
+.job:not(.past) {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
 }
-.transcript-tabs {
-  font-weight: 400;
+.job-main {
+  flex: 1;
+  min-width: 0;
+}
+.job > .pulse-spec {
+  flex: 1;
+  min-width: 0;
+}
+/* A long ***plain change keeps the card its own height: it scrolls, within a ceiling. */
+.job .pulse-spec-lines {
+  background: var(--bg);
+  max-height: min(220px, 35vh);
+  overflow-y: auto;
 }
 .pulse-spec section + section {
   margin-top: 18px;

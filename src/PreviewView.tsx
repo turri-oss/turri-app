@@ -3,7 +3,10 @@ import type { PreviewState } from "../electron/preview.ts";
 import type { TerminalState } from "../electron/terminal.ts";
 import { TerminalPane } from "./Terminal.tsx";
 import type { Pane } from "./types.ts";
-import { Empty, Icon } from "./ui.tsx";
+import { Empty, Icon, Jellyfish } from "./ui.tsx";
+
+/** The blue edge round the pane while turri tests in it, in CSS pixels: as wide as `.preview.testing`'s in styles.css. */
+const EDGE = 3;
 
 const BLANK: PreviewState = { url: "", title: "", loading: false, canGoBack: false, canGoForward: false, error: null };
 
@@ -47,9 +50,9 @@ function addressOf(typed: string): string {
  * (electron/preview.ts). Nothing of the window can draw over it, so it is taken away while something should: a sheet
  * open over the window, nothing loaded to show, or the terminal in its place. The terminal: a shell in the project's
  * folder (electron/terminal.ts), for a CLI. turri drives both with its browser and terminal tools, and the window comes
- * to the one it uses.
+ * to the one it uses - edged in blue while it does, and the bar saying so.
  */
-export function PreviewView({ dir, covered, pane, onPane }: { dir: string; covered: boolean; pane: Pane; onPane: (pane: Pane) => void }) {
+export function PreviewView({ dir, covered, pane, onPane, testing }: { dir: string; covered: boolean; pane: Pane; onPane: (pane: Pane) => void; testing: boolean }) {
   const [state, setState] = useState<PreviewState>(BLANK);
   const [shell, setShell] = useState<TerminalState>({ running: false, program: "" });
   const [typed, setTyped] = useState("");
@@ -93,9 +96,11 @@ export function PreviewView({ dir, covered, pane, onPane }: { dir: string; cover
       void window.turri.preview.place(null);
       return;
     }
+    // turri testing in it: the pane is drawn inside the blue edge, which the window draws round it.
+    const inset = testing ? EDGE : 0;
     const place = () => {
       const { x, y, width, height } = box.getBoundingClientRect();
-      void window.turri.preview.place({ x, y, width, height });
+      void window.turri.preview.place({ x: x + inset, y: y + inset, width: width - 2 * inset, height: height - 2 * inset });
     };
     place();
     const observer = new ResizeObserver(place);
@@ -105,7 +110,7 @@ export function PreviewView({ dir, covered, pane, onPane }: { dir: string; cover
       observer.disconnect();
       window.removeEventListener("resize", place);
     };
-  }, [showing]);
+  }, [showing, testing]);
   // Gone from the window - another view, another file - the pane goes too.
   useEffect(() => () => void window.turri.preview.place(null), []);
 
@@ -114,6 +119,13 @@ export function PreviewView({ dir, covered, pane, onPane }: { dir: string; cover
     address.current?.blur();
     void window.turri.preview.open(addressOf(typed));
   };
+
+  // Said in the bar, above the pane it is in.
+  const badge = testing && (
+    <span className="preview-testing" role="status">
+      <Jellyfish size={14} /> turri is testing
+    </span>
+  );
 
   const switcher = (
     <div className="segmented" role="tablist">
@@ -127,12 +139,13 @@ export function PreviewView({ dir, covered, pane, onPane }: { dir: string; cover
 
   if (pane === "terminal") {
     return (
-      <div className="preview">
+      <div className={`preview${testing ? " testing" : ""}`}>
         <div className="preview-bar">
           {switcher}
           <span className="preview-program" title="what runs in the terminal now">
             {shell.running ? shell.program : "no shell running"} · {dir.replace(/^\/Users\/[^/]+/, "~")}
           </span>
+          {badge}
           <button className="icon-button" onClick={() => void window.turri.terminal.restart()} title="a new shell - whatever runs in this one is stopped">
             <Icon name="reload" />
           </button>
@@ -143,7 +156,7 @@ export function PreviewView({ dir, covered, pane, onPane }: { dir: string; cover
   }
 
   return (
-    <div className="preview">
+    <div className={`preview${testing ? " testing" : ""}`}>
       <div className="preview-bar">
         {switcher}
         <button className="icon-button" disabled={!state.canGoBack} onClick={() => void window.turri.preview.go("back")} title="back">
@@ -180,6 +193,7 @@ export function PreviewView({ dir, covered, pane, onPane }: { dir: string; cover
         <button className="icon-button" disabled={!state.url} onClick={() => void window.turri.preview.go("devtools")} title="developer tools for the page">
           <Icon name="code" />
         </button>
+        {badge}
         {state.loading && <span className="preview-loading" />}
       </div>
       <div className="preview-page" ref={page}>

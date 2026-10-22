@@ -75,7 +75,6 @@ export interface Job {
   now?: { label: string; since: number };
   usage: Usage;
   agents: Array<{ label: string; model?: string; turns: number; compactions: number; usage: Usage }>;
-  transcriptLength: number;
   report?: string;
   announce?: string;
   error?: string;
@@ -137,13 +136,6 @@ export interface Status {
   planned: Job[];
 }
 
-export interface TranscriptEntry {
-  kind: "stage" | "spec" | "diff" | "prompt" | "text" | "thinking" | "tool" | "result";
-  text: string;
-  error?: boolean;
-  full?: string;
-  agent?: { label: string; model?: string };
-}
 
 export type View = "spec" | "work" | "preview" | "stdlib";
 
