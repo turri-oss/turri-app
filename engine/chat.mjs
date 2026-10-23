@@ -406,8 +406,8 @@ function skillProgress(factory, theme, emit) {
 }
 
 /**
- * The progress line read back: `brood   ✓ intent ━━━━ ⠋ stack ──── ○ testing ──── ○ product   phase 2 of 4`, and
- * under it `stack - the language, frameworks, storage and architecture`. A skill of one phase is its spinner and name.
+ * The progress line read back: `release   ✓ check ━━━━ ⠋ build ──── ○ publish   phase 2 of 3`, and
+ * under it `build - what this phase does`. A skill of one phase is its spinner and name.
  */
 function readProgress([line = "", under = ""]) {
   const [head = "", bar, where] = line.trim().split(/\s{3,}/);

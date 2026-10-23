@@ -760,13 +760,13 @@ export function Prose({ text }: { text: string }) {
 
 /** turri asking: a sheet over the window, as a native app asks - options to pick, or words to type. */
 /**
- * A skill's phases, above the message box while it runs - brood's intent, stack, testing and product: the ones done
+ * A skill's phases, above the message box while it runs: the ones done
  * ticked, the one it is in turning, the rest to come, joined by a line filled as far as it has got; and under them
  * what the phase it is in does.
  */
 function ProgressBar({ progress }: { progress: SkillProgress }) {
   const current = progress.phases.find((phase) => phase.state === "now")?.name;
-  // "stack - the language, ..." under a bar that already says stack: what it does, alone.
+  // "build - what it does" under a bar that already says build: what it does, alone.
   const about = progress.about && current && progress.about.startsWith(`${current} - `) ? progress.about.slice(current.length + 3) : progress.about;
   return (
     <div className="skill-progress" role="status" aria-label={`${progress.skill}${progress.where ? `, ${progress.where}` : ""}`}>

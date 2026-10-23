@@ -15,7 +15,7 @@ type How = "continue" | "changed" | "again" | "scratch" | "chain";
  * Regenerate, chosen how: on where a module partly built stopped - its functional specs not built yet, and the first
  * choice while there are any - what changed in the spec (the button's own), chosen functional specs again though they did
  * not change, the whole module from scratch, or it and every module it requires from scratch. It says what the person
- * would type: from scratch, turri asks in the chat before it deletes anything. A module with nothing built has one way of its own - all of it, each functional spec built
+ * would type: from scratch starts at once, its code committed first, so its history keeps it. A module with nothing built has one way of its own - all of it, each functional spec built
  * on the ones before it, so none alone and nothing to start over - and, on a chain, its chain from scratch.
  */
 export function RegenerateSheet({ spec, initial, onClose, onRegenerate }: { spec: Spec; initial?: string[]; onClose: () => void; onRegenerate: (regeneration: Regeneration) => void }) {
