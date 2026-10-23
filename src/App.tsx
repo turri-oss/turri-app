@@ -688,7 +688,6 @@ export function App() {
             busy={shownChat.busy}
             working={shownChat.working}
             running={shownChat.tools}
-            pulses={running}
             statuses={shownChat.statuses}
             model={shownChat.model}
             fresh={project.specs.length === 0}

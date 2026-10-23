@@ -2,7 +2,7 @@ import MarkdownIt from "markdown-it";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, Jellyfish, PlainName, Spinner, withPlain } from "./ui.tsx";
 import { keys, MAC } from "./platform.ts";
-import type { Concept, Job } from "./types.ts";
+import type { Concept } from "./types.ts";
 import type { ChatInfo } from "./chats.ts";
 
 /** The concepts the project's ***plain can name, as turri reads them - longest first - to colour where they are said. */
@@ -109,8 +109,6 @@ export function Chat(props: {
   busy: boolean;
   working: string | null;
   running: Map<string, boolean>;
-  /** The pulses running in turri's work loop: their work goes on after a turn ends, and the chat says so. */
-  pulses: Job[];
   statuses: Record<string, string>;
   model: string | null;
   /** A project with no spec yet: the hints start one. */
@@ -261,7 +259,7 @@ export function Chat(props: {
     <aside className="chat">
       <div className="titlebar-space chat-top">
         <span className="chat-title">
-          <Jellyfish size={22} swimming={props.busy || props.pulses.length > 0} /> turri
+          <Jellyfish size={22} swimming={props.busy} /> turri
         </span>
         {props.canOpen ? <ChatTabs {...props} /> : <span className="chat-tabs-room" />}
         <button className="icon-button" onClick={props.onClose} title={`hide the chat (${keys("J")})`}>
@@ -318,17 +316,10 @@ export function Chat(props: {
           ),
         )}
         {props.streaming && <Message item={props.streaming} results={results} running={props.running} live />}
-        {/* turri at work, however it is: its turn - thinking, writing, a tool running - or, the turn over, a pulse. */}
-        {props.busy ? (
+        {props.busy && !props.streaming && (
           <div className="chat-working">
-            <Jellyfish size={20} /> {props.working ?? (props.streaming ? "writing" : "thinking")}
+            <Jellyfish size={20} /> {props.working ?? "thinking"}
           </div>
-        ) : (
-          props.pulses.length > 0 && (
-            <button className="chat-working link" onClick={() => props.onShowPulse(props.pulses[0]!.id)} title="open it in the regen view">
-              <Jellyfish size={20} /> {props.pulses.length === 1 ? `running: ${pulseName(props.pulses[0]!)}` : `${props.pulses.length} pulses running`}
-            </button>
-          )
         )}
         {props.queued.map((text, index) => (
           <div key={index} className="msg user queued">
@@ -508,11 +499,6 @@ function Message({
 }
 
 const SENTINEL_NAME = "sentinel";
-
-/** A running pulse as the chat names it: its module, its number, what it does. */
-function pulseName(job: Job): string {
-  return [job.module, job.pulse !== undefined ? `pulse ${job.pulse}` : null, job.title ?? job.summary].filter(Boolean).join(" · ");
-}
 
 /** How a notice ended, as its card says it. */
 const ENDED: Record<Exclude<NoticeState, "open">, string> = {
