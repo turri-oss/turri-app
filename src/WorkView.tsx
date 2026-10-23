@@ -67,7 +67,10 @@ export function WorkView({
   specs,
   onShowInSpec,
   onInvestigate,
+  opened,
+  onToggle,
   focus,
+  onRevealed,
 }: {
   status: Status;
   jobs: Job[];
@@ -76,26 +79,30 @@ export function WorkView({
   specs: Spec[];
   onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void;
   onInvestigate: (failed: Failed) => void;
-  /** A pulse to bring into view and mark - one the chat says ended. */
-  focus?: { id: string; at: number };
+  /**
+   * The pulses whose cards are open - kept by the window, so they stay so as the view is left and shown again: each
+   * closed, to its head, until it is clicked open, or opened for the person - asked for in the chat, or newly failed.
+   */
+  opened: ReadonlySet<string>;
+  onToggle: (id: string) => void;
+  /** The pulse marked - the one last asked for - and, while `reveal`, to bring into view and focus, once. */
+  focus?: { id: string; at: number; reveal: boolean };
+  onRevealed: () => void;
 }) {
-  // Each pulse's card closed, to its head, until it is clicked open - or the chat says it ended, which opens it.
-  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set(focus ? [focus.id] : []));
-  const toggle = (id: string) =>
-    setOpened((now) => {
-      const next = new Set(now);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+  const toggle = onToggle;
   const [runsShown, setRunsShown] = useState(RUNS_SHOWN);
   useEffect(() => {
-    if (focus === undefined) return;
-    setOpened((now) => new Set(now).add(focus.id));
+    if (focus === undefined || !focus.reveal) return;
+    onRevealed();
     // An earlier pulse in a run not shown yet: the runs down to it are.
     const run = earlier.findIndex((entry) => entry.pulses.some((pulse) => pulse.id === focus.id));
     if (run >= runsShown) setRunsShown(run + 1);
-    requestAnimationFrame(() => document.querySelector(`.job[data-id="${CSS.escape(focus.id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
-  }, [focus?.at]);
+    requestAnimationFrame(() => {
+      const card = document.querySelector(`.job[data-id="${CSS.escape(focus.id)}"]`);
+      card?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      card?.querySelector<HTMLElement>(".job-head[role=button]")?.focus({ preventScroll: true });
+    });
+  }, [focus?.at, focus?.reveal]);
   const anyRunning = jobs.some((job) => job.status === "running");
   useTick(anyRunning);
 

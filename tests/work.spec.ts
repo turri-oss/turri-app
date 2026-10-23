@@ -70,6 +70,43 @@ test.describe("the regen view", () => {
     await expect(card.locator(".pulse-spec-lines")).toContainText("hello, world");
   });
 
+  test("turns a spinner in the regen tab while a pulse runs", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    const send = (job: object) => app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), job);
+    const tab = window.locator(".toolbar").getByRole("tab", { name: /^regen/ });
+    await expect(tab.locator(".spinner")).toHaveCount(0);
+    await send({ ...pulse(), kind: "conformance", status: "running", finishedAt: undefined });
+    await expect(tab.locator(".spinner")).toBeVisible();
+    await send(pulse());
+    await expect(tab.locator(".spinner")).toHaveCount(0);
+  });
+
+  test("marks the regen tab with ! when a pulse fails, and shown, opens that pulse once, in view and focused", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    const send = (job: object) => app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), job);
+    const tab = window.locator(".toolbar").getByRole("tab", { name: /^regen/ });
+    await send({ ...pulse(), status: "running", finishedAt: undefined });
+    await send({ ...pulse(), id: "p2", title: "a later one", summary: "hello: a later one", sequence: 2, queuedAt: Date.now() });
+    await expect(tab.locator(".tab-failed")).toHaveCount(0);
+    await send({ ...pulse(), status: "failed", error: "the tests failed" });
+    await expect(tab.locator(".tab-failed")).toHaveText("!");
+    await tab.click();
+    await expect(tab.locator(".tab-failed")).toHaveCount(0);
+    const card = window.locator(".job", { hasText: "the greeting by name" });
+    await expect(card.locator(".job-head")).toHaveAttribute("aria-expanded", "true");
+    await expect(card.locator(".job-head")).toBeFocused();
+    await expect(window.locator(".job", { hasText: "a later one" }).locator(".job-head")).toHaveAttribute("aria-expanded", "false");
+    // Once: closed, and regen shown again, it stays closed.
+    await card.locator(".job-head").click();
+    await window.locator(".toolbar").getByRole("tab", { name: "***plain" }).click();
+    await tab.click();
+    await expect(card.locator(".job-head")).toHaveAttribute("aria-expanded", "false");
+    // A pulse failing while regen is shown: it is in view, so the tab is not marked.
+    await send({ ...pulse(), id: "p3", title: "a third one", summary: "hello: a third one", status: "failed", sequence: 3, queuedAt: Date.now() });
+    await expect(window.locator(".job", { hasText: "a third one" })).toBeVisible();
+    await expect(tab.locator(".tab-failed")).toHaveCount(0);
+  });
+
   test("lists every pulse the newest first - this session's queued, running and done, and each earlier run and its pulses", async ({ launched: { app, window } }) => {
     await expect(window.locator(".chat-model")).toBeVisible();
     const send = (channel: string, data: unknown) => app.evaluate(({ BrowserWindow }, [channel, data]) => BrowserWindow.getAllWindows()[0]!.webContents.send(channel as string, data), [channel, data] as const);
@@ -217,7 +254,8 @@ test.describe("the regen view", () => {
     const diagnosis = Array.from({ length: 60 }, (_, at) => `Cause ${at + 1}: the greeter was not found.`).join("\n");
     await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), { ...pulse(), status: "failed", diagnosis });
     await window.getByRole("tab", { name: "regen" }).click();
-    const text = (await opened(window.locator(".job", { hasText: "the greeting by name" }))).locator(".diagnosis > div");
+    // Failed while regen was not shown: shown, it is open already.
+    const text = window.locator(".job", { hasText: "the greeting by name" }).locator(".diagnosis > div");
     await expect(text).toContainText("Cause 60");
     const box = await text.evaluate((element) => ({ height: element.clientHeight, content: element.scrollHeight, overflow: getComputedStyle(element).overflowY }));
     expect(box.height).toBeLessThanOrEqual(220);

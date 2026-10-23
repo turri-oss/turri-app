@@ -511,6 +511,27 @@ code {
   color: var(--fg);
   box-shadow: var(--shadow);
 }
+/* The regen tab: a spinner while pulses run, ! once one failed. */
+.segmented button .spinner {
+  width: 10px;
+  height: 10px;
+  margin-left: 6px;
+  vertical-align: -1px;
+}
+.tab-failed {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  color: var(--bg);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: 0;
+}
 
 .content {
   flex: 1;

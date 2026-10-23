@@ -124,7 +124,20 @@ export function App() {
     if (!there) setReveal(null);
   }, [view, selected, template, reveal]);
   // A pulse to open in the work view: one the chat says ended, clicked there.
-  const [focusPulse, setFocusPulse] = useState<{ id: string; at: number } | undefined>(undefined);
+  // The pulse last asked for - marked in regen, and, until regen has brought it into view, to reveal - and the pulses
+  // whose cards are open there, kept as regen is left and shown again.
+  const [focusPulse, setFocusPulse] = useState<{ id: string; at: number; reveal: boolean } | undefined>(undefined);
+  const [openPulses, setOpenPulses] = useState<ReadonlySet<string>>(new Set());
+  const showPulse = (id: string) => {
+    setOpenPulses((now) => new Set(now).add(id));
+    setFocusPulse({ id, at: Date.now(), reveal: true });
+  };
+  // Pulses that failed while regen was not shown, the newest last: the regen tab says ! until it is shown, and then
+  // opens the newest of them, once, and brings it into view - so a failure is looked at.
+  const [unseenFailed, setUnseenFailed] = useState<string[]>([]);
+  const knownFailed = useRef(new Set<string>());
+  const viewNow = useRef<View>("spec");
+  viewNow.current = view;
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const saveRef = useRef<(() => Promise<void>) | null>(null);
@@ -222,6 +235,10 @@ export function App() {
     setTemplate(null);
     setStatus(EMPTY_STATUS);
     setJobs(new Map());
+    knownFailed.current = new Set();
+    setOpenPulses(new Set());
+    setFocusPulse(undefined);
+    setUnseenFailed([]);
     setEarlier([]);
     void window.turri.call<PastRun[]>("earlierPulses").then((runs) => setEarlier(newestRuns(runs)));
     setView("spec");
@@ -553,6 +570,20 @@ export function App() {
   const runningFor = (module: string) => allJobs.find((job) => job.module === module && job.status === "running");
   const running = allJobs.filter((job) => job.status === "running");
 
+  // A pulse newly failed, regen not shown: the tab says so.
+  useEffect(() => {
+    const failed = allJobs.filter((job) => job.status === "failed" && !knownFailed.current.has(job.id)).reverse();
+    if (failed.length === 0) return;
+    for (const job of failed) knownFailed.current.add(job.id);
+    if (viewNow.current !== "work") setUnseenFailed((now) => [...now, ...failed.map((job) => job.id)]);
+  }, [allJobs]);
+  // Regen shown with failures unseen: the newest opened and brought into view, and the tab's ! gone.
+  useEffect(() => {
+    if (view !== "work" || unseenFailed.length === 0) return;
+    showPulse(unseenFailed.at(-1)!);
+    setUnseenFailed([]);
+  }, [view, unseenFailed]);
+
   // In the same place whether a project is open or not, so it is not made again when one opens under it.
   const newProject = creating && <NewProject onOpened={opened} onDone={() => setCreating(false)} />;
   const projectSwitcher = switcher && <ProjectSwitcher onClose={() => setSwitcher(false)} />;
@@ -679,7 +710,9 @@ export function App() {
             onShowPulse={(id) => {
               if (!jobs.has(id) && !earlier.some((run) => run.pulses.some((pulse) => pulse.id === id))) return say("that pulse ran in an earlier session, and the ledger has nothing of it now.");
               setView("work");
-              setFocusPulse({ id, at: Date.now() });
+              // The pulse asked for, not a failure the tab was marked for.
+              setUnseenFailed([]);
+              showPulse(id);
             }}
             onAnswer={(value) => {
               void window.turri.call("answer", { id: shownChat.questions[0]!.id, value });
@@ -697,8 +730,18 @@ export function App() {
             )}
             <div className="segmented" role="tablist">
               {VIEWS.map((name) => (
-                <button key={name} role="tab" aria-selected={view === name} className={view === name ? "on" : ""} onClick={() => setView(name)}>
+                <button
+                  key={name}
+                  role="tab"
+                  aria-selected={view === name}
+                  className={view === name ? "on" : ""}
+                  onClick={() => setView(name)}
+                  title={name === "work" && unseenFailed.length > 0 ? `${unseenFailed.length === 1 ? "a pulse" : `${unseenFailed.length} pulses`} failed - see why` : undefined}
+                >
                   {name === "spec" ? <PlainName /> : name === "work" ? "regen" : name}
+                  {/* While any pulse runs - regenerating or conformance testing - and ! once one failed, until regen is shown. */}
+                  {name === "work" && running.length > 0 && <Spinner />}
+                  {name === "work" && unseenFailed.length > 0 && <span className="tab-failed" aria-label="a pulse failed">!</span>}
                 </button>
               ))}
             </div>
@@ -747,7 +790,16 @@ export function App() {
                 jobs={allJobs}
                 earlier={earlier}
                 specs={project.specs}
+                opened={openPulses}
+                onToggle={(id) =>
+                  setOpenPulses((now) => {
+                    const next = new Set(now);
+                    if (!next.delete(id)) next.add(id);
+                    return next;
+                  })
+                }
                 focus={focusPulse}
+                onRevealed={() => setFocusPulse((now) => now && { ...now, reveal: false })}
                 onInvestigate={(failed) => {
                   setChatOpen(true);
                   window.turri.call("investigate", failed).catch((error) => say(engineSaid(error), "error"));
