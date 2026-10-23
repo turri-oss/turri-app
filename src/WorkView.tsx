@@ -210,6 +210,20 @@ function CardHead({ open, onToggle, children }: { open: boolean; onToggle?: () =
   );
 }
 
+/**
+ * A closed card opened by a click anywhere on it - the line under its head, its edges - as its head opens it: not one on
+ * a button or link of its own (investigate), on the head (which toggles it itself), nor one that ends a selection. Open,
+ * its body is left to what is in it.
+ */
+function opensOnClick(open: boolean, onToggle: (() => void) | undefined) {
+  if (open || onToggle === undefined) return undefined;
+  return (event: React.MouseEvent) => {
+    const at = event.target as HTMLElement;
+    if (at.closest(".job-head, button, a, input, textarea, select") !== null || (window.getSelection()?.toString() ?? "") !== "") return;
+    onToggle();
+  };
+}
+
 function JobCard({ job, open, marked, onToggle, specs, onShowInSpec, onInvestigate }: Shown & { job: Job; specs: Spec[]; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void; onInvestigate: (failed: Failed) => void }) {
   // Open, what a pulse that ended reports, and what it found the ***plain does not say - closed, its head says how it
   // went without them. A failed one's report is not read here: investigate hands it to a chat.
@@ -233,7 +247,7 @@ function JobCard({ job, open, marked, onToggle, specs, onShowInSpec, onInvestiga
       <Icon name="clock" />
     );
   return (
-    <div className={`job ${kind} ${job.status} ${open ? "open" : ""} ${marked ? "marked" : ""}`} data-id={job.id}>
+    <div className={`job openable ${kind} ${job.status} ${open ? "open" : ""} ${marked ? "marked" : ""}`} data-id={job.id} onClick={opensOnClick(open, onToggle)}>
       <CardHead open={open} onToggle={onToggle}>
         <span className={`job-icon ${job.status}`}>{icon}</span>
         <div className="job-title">
@@ -402,7 +416,7 @@ function PastPulseCard({ pulse, open, marked, onToggle, specs, onShowInSpec, onI
       <Icon name="clock" />
     );
   return (
-    <div className={`job past ${kind} ${pulse.status} ${open ? "open" : ""} ${marked ? "marked" : ""}`} data-id={pulse.id}>
+    <div className={`job past ${more ? "openable" : ""} ${kind} ${pulse.status} ${open ? "open" : ""} ${marked ? "marked" : ""}`} data-id={pulse.id} onClick={opensOnClick(open, more ? onToggle : undefined)}>
       <CardHead open={open} onToggle={more ? onToggle : undefined}>
         <span className={`job-icon ${pulse.status}`}>{icon}</span>
         <div className="job-title">

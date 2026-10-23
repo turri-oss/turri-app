@@ -1119,6 +1119,10 @@ code {
   align-items: center;
   gap: 10px;
 }
+/* A closed card that opens: all of it is its head's to click. */
+.job.openable:not(.open) {
+  cursor: pointer;
+}
 .job-head[role="button"] {
   cursor: pointer;
   border-radius: var(--radius-small);
