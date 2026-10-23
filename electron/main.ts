@@ -125,7 +125,10 @@ interface Workspace {
   running: number;
   /** Whether the ***plain open in it has changed since its code was built: Regenerate What Changed has something to do. */
   changed: boolean;
-  /** Its chats open now: ⌘W closes the one shown while there are two or more, the window once there is one. */
+  /**
+   * Its chats open now - as many as ⌘W can close: the one shown while the person has another, or the sentinel's - the
+   * window once it shows the person's last.
+   */
   chats: number;
   /** Whether its turri opens more chats than one: ⌘T is offered only then. */
   manyChats: boolean;
@@ -413,10 +416,14 @@ function createWorkspace(): Workspace {
     if (event === "finished" && data.status === "succeeded") preview.reloadSoon();
     // turri's session ended - ctrl+c in a chat doing nothing, as it leaves turri in a terminal: its window closes.
     if (event === "ended" && !window.isDestroyed()) window.close();
-    // How many chats there are, for ⌘W to close one or the window.
-    if (event === "chats" && (data as unknown[]).length !== workspace.chats) {
-      workspace.chats = (data as unknown[]).length;
-      buildMenu();
+    // How many chats there are, for ⌘W to close one or the window: the sentinel's shown closes, as one of two would.
+    if (event === "chats") {
+      const chats = data as Array<{ shown: boolean; role?: string }>;
+      const count = chats.some((chat) => chat.shown && chat.role !== undefined) ? Math.max(2, chats.length) : chats.filter((chat) => chat.role === undefined).length;
+      if (count !== workspace.chats) {
+        workspace.chats = count;
+        buildMenu();
+      }
     }
     if (event === "status") {
       workspace.running = (data.jobs as Array<{ status: string }>).filter((job) => job.status === "running").length;
@@ -816,8 +823,26 @@ function pickSettings(next: Record<string, unknown>): Partial<ReturnType<typeof 
   };
 }
 
+/** A notice's answer, as the window may give it: one of its actions by index, the person's words, or dismissed. */
+function noticeAnswer(answer: unknown): { action: number } | { steer: string } | { dismiss: true } {
+  const given = (typeof answer === "object" && answer !== null ? answer : {}) as Record<string, unknown>;
+  const keys = Object.keys(given);
+  if (keys.length === 1 && Number.isInteger(given.action) && (given.action as number) >= 0) return { action: given.action as number };
+  if (keys.length === 1 && typeof given.steer === "string" && given.steer.trim() !== "") return { steer: given.steer };
+  if (keys.length === 1 && given.dismiss === true) return { dismiss: true };
+  throw new Error("A notice is answered with one of its actions, the person's words, or dismissed.");
+}
+
+/** What the window asks of its engine, checked where a method takes more than the engine can check itself. */
+function engineParams(method: string, params: unknown): unknown {
+  if (method !== "answerNotice") return params;
+  const { id, answer } = (params ?? {}) as { id?: unknown; answer?: unknown };
+  if (typeof id !== "string" || id === "") throw new Error("Which notice is answered?");
+  return { id, answer: noticeAnswer(answer) };
+}
+
 // Each window asks of its own workspace: its engine, its preview, its terminal.
-ipcMain.handle("engine:call", (event, method: string, params: unknown) => workspaceOf(event.sender).call(method, params));
+ipcMain.handle("engine:call", (event, method: string, params: unknown) => workspaceOf(event.sender).call(method, engineParams(method, params)));
 ipcMain.handle("project:choose", async (event) => {
   const from = workspaceOf(event.sender);
   const dir = await chooseProject(from);

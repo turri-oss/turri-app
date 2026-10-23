@@ -688,6 +688,7 @@ export function App() {
             busy={shownChat.busy}
             working={shownChat.working}
             running={shownChat.tools}
+            pulses={running}
             statuses={shownChat.statuses}
             model={shownChat.model}
             fresh={project.specs.length === 0}
@@ -717,6 +718,25 @@ export function App() {
             onAnswer={(value) => {
               void window.turri.call("answer", { id: shownChat.questions[0]!.id, value });
               chats.answered(chats.shownId!);
+            }}
+            notices={shownChat.notices}
+            noticesOver={shownChat.over}
+            onAnswerNotice={(id, answer) => {
+              const chat = chats.shownId!;
+              return window.turri.call<string>("answerNotice", { id, answer }).then(
+                (did) => {
+                  // Answered already, superseded, or gone with its session: nothing to do, and its card let go.
+                  if (did === "over" || did === "missing") {
+                    chats.noticeGone(chat, id);
+                    say("that notice is over already - nothing was done.");
+                  }
+                  return did;
+                },
+                (error) => {
+                  say(engineSaid(error), "error");
+                  throw error;
+                },
+              );
             }}
           />
         )}

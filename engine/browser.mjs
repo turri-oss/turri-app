@@ -3,19 +3,19 @@
 // process, which drives the pane (electron/preview.ts). They exist only in the app: the terminal has no pane to drive.
 
 /**
- * Tools on the preview, each sent as `request(action, params)` and answered with what came of it. What the model is
- * sent of their screenshots is kept down: only the newest is an image - those before it are a line saying they were
- * there - and none at all once the model has refused one, as some do that their catalogue says take images.
+ * The browser tools - `browserTools`, given every chat and the sentinel's - with what the model is sent of their
+ * screenshots kept down: only the newest is an image - those before it are a line saying they were there - and none at
+ * all once the model has refused one, as some do that their catalogue says take images.
  */
-export function browserExtension(request) {
+export function browserExtension(tools) {
   return (pi) => {
-    const sees = { images: true };
-    for (const tool of tools(request, sees)) pi.registerTool(tool);
-    pi.on("context", ({ messages }) => ({ messages: withScreenshots(messages, sees.images) }));
+    for (const tool of tools) pi.registerTool(tool);
+    pi.on("context", ({ messages }, ctx) => ({ messages: withScreenshots(messages, seesOf(ctx).images) }));
     pi.on("message_end", ({ message }, ctx) => {
       if (message.role !== "assistant" || message.stopReason !== "error" || !IMAGE_REFUSED.test(message.errorMessage ?? "")) return;
       // Refused for the screenshot alone: the turn is tried again - pi retries an error that says it may be, and
       // leaves the refused attempt out - and is sent without it, so turri carries on where it was.
+      const sees = seesOf(ctx);
       const first = sees.images;
       sees.images = false;
       message.errorMessage = `${message.errorMessage}${RETRIED}`;
@@ -34,6 +34,17 @@ export function retriedWithoutImages(message) {
 }
 
 const SCREENSHOT = "browser_screenshot";
+
+/**
+ * Whether a chat's model still takes the preview's screenshots, by the chat - its session's manager, which its tools and
+ * handlers are given: the tools are one set for every chat, a model's refusal its chat's alone.
+ */
+const seen = new WeakMap();
+function seesOf(ctx) {
+  const key = ctx?.sessionManager ?? seen;
+  if (!seen.has(key)) seen.set(key, { images: true });
+  return seen.get(key);
+}
 
 /** The conversation as the model is sent it: the newest screenshot as an image, if it takes them, the rest as words. */
 function withScreenshots(messages, images) {
@@ -58,7 +69,8 @@ const GUIDELINES = [
   "They see only a running app: if nothing answers, start it first (release it, or run it with terminal_run), then open it.",
 ];
 
-function tools(request, sees) {
+/** Tools on the preview, each sent as `request(action, params)` and answered with what came of it. */
+export function browserTools(request) {
   const text = (value) => ({ type: "text", text: value });
   const header = (result) => `${result.title || "(untitled)"} - ${result.url}`;
   return [
@@ -82,6 +94,7 @@ function tools(request, sees) {
       promptSnippet: "See the preview pane as an image",
       parameters: NOTHING,
       execute: async (_id, _params, _signal, _update, ctx) => {
+        const sees = seesOf(ctx);
         if (!sees.images || (ctx.model !== undefined && !ctx.model.input.includes("image"))) {
           sees.images = false;
           throw new Error("This model does not take images: read the page with browser_read instead.");

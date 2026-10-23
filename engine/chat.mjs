@@ -4,14 +4,17 @@
 // (0.1.16 and before) has one, its extension loaded here. What turri would draw in the terminal (dialogs, notices, the
 // working line) comes here as UI calls and goes to the window as events, each with the chat it is of.
 import turri from "./turri.mjs";
-import { browserExtension, retriedWithoutImages } from "./browser.mjs";
-import { terminalExtension } from "./terminal.mjs";
-import { APP_SURFACE, withWhere } from "./app.mjs";
+import { browserExtension, browserTools } from "./browser.mjs";
+import { terminalExtension, terminalTools } from "./terminal.mjs";
+import { APP_SURFACE, SENTINEL, SENTINEL_SURFACE, withWhere } from "./app.mjs";
+import { entryItem, normalise, transcript } from "./entries.mjs";
 
 const { pi } = turri;
 
 /** Whether the turri running holds several chats: the window offers them only then. */
 export const MANY_CHATS = typeof turri.createTurri === "function";
+
+export { SENTINEL };
 
 /**
  * Start turri's session in `cwd`, with its first chat. `host` is what turri tells of its jobs (TurriHost); `emit`
@@ -34,7 +37,12 @@ export async function startSession({ cwd, harnessModel, host, emit, ask, browser
     });
   // turri is told it is in the app: the window's views in place of the terminal's, and what the person has open now.
   const told = { surface: APP_SURFACE, systemPrompt: (prompt) => withWhere(prompt, whereNow()) };
-  const extensions = [browserExtension(browser), terminalExtension(terminal), modelWatch];
+  // The preview's tools, made once: every chat has them, and the sentinel - which turri refuses any tool not its own or
+  // given it - is given the same, to test a release with. pi keeps the first registered under a name, so in its chat
+  // the two are one.
+  const browsing = browserTools(browser);
+  const trying = terminalTools(terminal);
+  const extensions = [browserExtension(browsing), terminalExtension(trying), modelWatch];
   const follow = (id, session) => {
     const chat = followChat({ id, session, harnessModel, emit: says(id), sendWhole: emit, onStep });
     chats.set(id, chat);
@@ -55,11 +63,31 @@ export async function startSession({ cwd, harnessModel, host, emit, ask, browser
     }),
     uiContext: (id) => uiContext({ emit: says(id), ask: (question, signal) => ask(id, question, { signal }) }),
     extensions,
+    // The sentinel's notices - each drawn as a card in the chat it names, and answered there - and its conclusions.
+    ...(SENTINEL
+      ? {
+          // Its tools, and where the person watches it use them: a turri before sentinel.surface takes the tools alone.
+          sentinel: { tools: [...browsing, ...trying], surface: SENTINEL_SURFACE },
+          onNotice: (notice) => emit("chat:notice", { chat: notice.chat, data: notice }),
+          onNoticeOver: (notice) => emit("chat:noticeOver", { chat: notice.chat, data: notice }),
+          onConcluded: (conclusion) => emit("chat:concluded", { chat: conclusion.chat, data: conclusion }),
+        }
+      : {}),
   });
+  // The chats as turri tells of them: one closed let go, and one opened followed - whoever opened it. turri opens the
+  // sentinel's itself, in the background, as a pulse finishes: followed here, or the window would have its tab and none
+  // of what it says. Its model is turri's to choose (models.sentinel), so it is not put on harness-model. One turri
+  // lists while it is still opening - its session not made yet, and something else changing meanwhile - is left out:
+  // the window hears of it once it is followed, and asks of it only then.
+  const followed = () => session.chats().filter((chat) => chats.has(chat.id));
   const tell = () => {
     const now = session.chats();
     for (const id of chats.keys()) if (!now.some((chat) => chat.id === id)) chats.delete(id);
-    onChats(now);
+    for (const info of now) {
+      const opened = chats.has(info.id) ? undefined : session.session?.(info.id);
+      if (opened !== undefined) follow(info.id, opened);
+    }
+    onChats(followed());
   };
   session.onChats(tell);
 
@@ -76,9 +104,9 @@ export async function startSession({ cwd, harnessModel, host, emit, ask, browser
     jobs: () => session.jobs,
     loop: () => loopOf(session),
     canOpen: true,
-    chats: () => session.chats(),
+    chats: followed,
     chat: (id) => chats.get(id),
-    shown: () => chats.get(session.chats().find((chat) => chat.shown)?.id) ?? [...chats.values()][0],
+    shown: () => chats.get(followed().find((chat) => chat.shown)?.id) ?? [...chats.values()][0],
     open,
     close: (id) => session.closeChat(id),
     focus: (id) => session.focus(id),
@@ -87,6 +115,8 @@ export async function startSession({ cwd, harnessModel, host, emit, ask, browser
     // ctrl+c at a question of turri's: declined - on a turri that can (its decline), else not at all.
     canDecline: typeof session.decline === "function",
     decline: (id) => session.decline(id),
+    notices: () => (SENTINEL ? session.notices() : []),
+    answerNotice: (id, answer) => session.answer(id, answer),
     dispose: () => session.dispose(),
   };
 }
@@ -161,6 +191,7 @@ async function oneChat({ cwd, host, told, extensions, ask, says, follow, onChats
     focus: () => {},
     interrupt: (id) => stopOnly(id === ID ? chat : undefined),
     canDecline: false,
+    notices: () => [],
     dispose: async () => session.dispose(),
   };
 }
@@ -246,7 +277,7 @@ function followChat({ id, session, harnessModel, emit, sendWhole, onStep }) {
   return {
     id,
     session,
-    history: () => session.messages.flatMap((message) => [normalise(message)].flat()).filter(Boolean),
+    history: () => transcript(session),
     /** What was said while it answered and it has not heard yet: it hears each after its turn. */
     queued: () => [...session.getSteeringMessages(), ...session.getFollowUpMessages()],
     /**
@@ -290,79 +321,9 @@ function followChat({ id, session, harnessModel, emit, sendWhole, onStep }) {
   };
 }
 
-/** An entry turri's extension writes into the chat, as the window shows it - its terminal renderers' counterparts. */
-function entryItem(entry) {
-  if (entry?.type === "custom_message") return entry.display === false ? null : { role: "note", customType: entry.customType, text: textOf(entry.content) };
-  if (entry?.type !== "custom") return null;
-  const data = entry.data ?? {};
-  switch (entry.customType) {
-    case "turri_command_outcome":
-      // The command as typed, then what it showed - the two in one entry when it was not echoed first.
-      if (data.text === undefined) return { role: "command", text: data.command };
-      return { role: "note", customType: entry.customType, level: data.level, text: data.echoed ? data.text : `${data.command}\n\n${data.text}` };
-    case "turri_job":
-      return { role: "job", id: data.id, summary: data.summary, status: data.incomplete ? "incomplete" : data.status, duration: data.duration, spent: data.spent, text: data.text };
-    case "turri_history":
-      return { role: "note", customType: entry.customType, text: `History of ${data.module}\n\n\`\`\`\n${data.text}\n\`\`\`` };
-    case "turri_skill_message":
-      // Said while a skill ran, and read by the skill's own agent: the person's message, where it was heard.
-      return { role: "user", text: data.text };
-    case "turri_btw":
-      return { role: "note", customType: entry.customType, text: `**By the way:** ${data.question}\n\n${data.answer}` };
-    case "turri_exchange":
-      return { role: "note", customType: entry.customType, text: `**${data.question}**\n\n${data.answer}` };
-    default:
-      return null;
-  }
-}
-
 function splitLevel(spec) {
   const match = /^(.*):(off|minimal|low|medium|high|xhigh|max)$/.exec(spec);
   return match ? [match[1], match[2]] : [spec, undefined];
-}
-
-function textOf(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("");
-}
-
-/** A message as the window shows it - or several, or nothing for what the person never sees. */
-function normalise(message) {
-  if (message === undefined || message === null || retriedWithoutImages(message)) return null;
-  switch (message.role) {
-    case "user":
-      return { role: "user", text: textOf(message.content) };
-    case "assistant": {
-      const parts = Array.isArray(message.content) ? message.content : [];
-      return {
-        role: "assistant",
-        text: parts.filter((part) => part.type === "text").map((part) => part.text).join(""),
-        thinking: parts.filter((part) => part.type === "thinking").map((part) => part.thinking).join(""),
-        tools: parts.filter((part) => part.type === "toolCall").map((part) => ({ id: part.id, name: part.name, args: part.arguments })),
-        error: message.stopReason === "error" ? (message.errorMessage ?? "The model returned an error.") : undefined,
-      };
-    }
-    case "toolResult": {
-      // What turri saw, when it was an image - the preview, as browser_screenshot took it.
-      const image = Array.isArray(message.content) ? message.content.find((part) => part.type === "image") : undefined;
-      return {
-        role: "toolResult",
-        id: message.toolCallId,
-        name: message.toolName,
-        text: textOf(message.content).slice(0, 4000),
-        isError: message.isError === true,
-        ...(image !== undefined ? { image: `data:${image.mimeType};base64,${image.data}` } : {}),
-      };
-    }
-    case "custom":
-      return message.display === false ? null : { role: "note", customType: message.customType, text: textOf(message.content) };
-    default:
-      return null;
-  }
 }
 
 /** What turri's extension asks of the UI, answered by the window - and what only a terminal could do, let pass. */

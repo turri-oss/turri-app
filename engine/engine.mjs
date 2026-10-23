@@ -4,7 +4,7 @@
 // chat shown's slash commands, and what its jobs do is sent to the window as they do it. The app never shells out to
 // `turri`.
 import turri, { turriFrom } from "./turri.mjs";
-import { busy, MANY_CHATS, startSession } from "./chat.mjs";
+import { busy, MANY_CHATS, SENTINEL, startSession } from "./chat.mjs";
 import { createAuth } from "./auth.mjs";
 import { existsSync, readdirSync, readFileSync, statSync, watch, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -673,7 +673,7 @@ function summary() {
       // As turri has it - TURRI_DEBUG over the file's - where the turri running has a debug mode at all.
       ...(turri.debugMode !== undefined ? { debug: turri.debugMode(projectDir) } : {}),
     },
-    offers: { ...offers(), chats: MANY_CHATS },
+    offers: { ...offers(), chats: MANY_CHATS, sentinel: SENTINEL },
     specs: plainFiles(projectDir).map((file) => describeSpec(file)),
   };
 }
@@ -910,11 +910,29 @@ async function configChoices({ typed }) {
   return items.map((item) => item.value.slice(item.value.indexOf(" ") + 1)).filter((value) => value !== "unset");
 }
 
-/** A chat as the window draws it: what was said in it and what waits to be heard, its model, how full it is, and what it asks now. */
+/**
+ * A chat as the window draws it: what was said in it and what waits to be heard, its model, how full it is, what it asks
+ * now, and the sentinel's notices open in it.
+ */
 function chatHistory({ chat }) {
   const shown = chatOf(chat);
   const asking = [...questions.values()].filter((question) => question.chat === shown.id).map((question) => question.asked);
-  return { messages: shown.history(), queued: shown.queued(), model: shown.model(), stats: shown.stats(), questions: asking };
+  const open = session.notices().filter((notice) => notice.chat === shown.id);
+  return { messages: shown.history(), queued: shown.queued(), model: shown.model(), stats: shown.stats(), questions: asking, notices: open };
+}
+
+/** The sentinel's notices open now, each in the chat it names. */
+function notices() {
+  return session.notices();
+}
+
+/**
+ * A notice answered from its card: one of its actions (`{ action }`, by its index), the person's own words (`{ steer }`)
+ * - the chat it is in started on it - or dismissed. turri's `done`, `dismissed`, `over` or `missing`.
+ */
+async function answerNotice({ id, answer }) {
+  if (!SENTINEL) throw new Error("This turri has no sentinel.");
+  return session.answerNotice(id, answer);
 }
 
 /** The chats, in their order: each its id, title, what it is doing and whether it is the one shown. */
@@ -956,9 +974,14 @@ async function openChat() {
   return session.open();
 }
 
-/** A chat closed: its turn stopped and its conversation deleted - its pulses run on. The last one is kept. */
+/**
+ * A chat closed: its turn stopped and its conversation deleted - its pulses run on. The person's last one is kept; the
+ * sentinel's closes whenever, and opens again with the next pulse that finishes.
+ */
 async function closeChat({ chat }) {
-  if (session.chats().length <= 1) throw new Error("This is the only chat.");
+  // The person's chats: those with no role - the sentinel's is `sentinel`.
+  const theirs = session.chats().filter((each) => each.role === undefined);
+  if (theirs.length <= 1 && theirs.some((each) => each.id === chat)) throw new Error("This is the only chat.");
   await session.close(chat);
   return true;
 }
@@ -1017,7 +1040,7 @@ async function doctor({ models = false, dir = projectDir }) {
 
 // ---------- the wire ----------
 
-const methods = { ...auth, chats, openChat, closeChat, focusChat, interruptChat, declineQuestion, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, readFile, writeFile, stdlib, stdlibKinds, plainLinks, concepts, conceptDefinition, linkedResource, conceptBeingTyped, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, investigate, glimpse, earlierPulses, sendChat, abortChat, chatHistory, commands, answer, doctor };
+const methods = { ...auth, chats, openChat, closeChat, focusChat, interruptChat, declineQuestion, notices, answerNotice, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, readFile, writeFile, stdlib, stdlibKinds, plainLinks, concepts, conceptDefinition, linkedResource, conceptBeingTyped, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, investigate, glimpse, earlierPulses, sendChat, abortChat, chatHistory, commands, answer, doctor };
 
 // What the window may ask before a project is open: to open one, to start a new one, whether the machine is ready, or to
 // sign in to the model providers.

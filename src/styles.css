@@ -1588,7 +1588,28 @@ code {
   border-radius: 50%;
   background: var(--accent);
 }
-/* Its ×, on every tab while there are two: the tab shown's as bright as its title, the others' dimmer. */
+/* The sentinel's tab: last, apart from the person's chats, by its eye - held at the strip's right edge however far the
+   person's tabs scroll, on the chat's own colour so they pass under it, and never narrowed: they narrow and scroll
+   instead. The strip's padding is room for a tab's feet: the right one goes. */
+.chat-tab.sentinel {
+  position: sticky;
+  right: -10px;
+  z-index: 2;
+  flex: none;
+  min-width: 0;
+  margin-left: 8px;
+  background: var(--sidebar);
+}
+.chat-tab.sentinel:not(.on) {
+  box-shadow: -8px 0 8px -6px var(--sidebar);
+}
+.chat-tab-eye {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent);
+}
+/* Its ×, on every tab while the person has two chats, and always on the sentinel's: the tab shown's as bright as its
+   title, the others' dimmer. */
 .chat-tab-close {
   display: inline-flex;
   align-items: center;
@@ -1693,6 +1714,16 @@ code {
   animation: breathe 1s infinite;
   color: var(--fg-3);
 }
+/* What turri says outside its replies - a command's outcome, a pulse's end, the sentinel's notices and conclusions - is
+   a message of its own, on the left as wide as what it says, as the person's are on the right: not a band across the
+   chat. */
+.msg.note,
+.msg.job-note,
+.msg.concluded,
+.msg.notice-card {
+  align-self: flex-start;
+  max-width: 88%;
+}
 .msg.note {
   font-size: 12px;
   color: var(--fg-2);
@@ -1743,6 +1774,109 @@ code {
 }
 .job-note-head .muted {
   font-size: 11.5px;
+}
+/* The sentinel's notice: a card in the transcript, edged by how grave it is - red an error, tan a warning, neon for
+   what is only said - its actions as buttons while it is open, and how it ended once it is not. */
+.msg.notice-card {
+  --severity: var(--red);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--severity);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 12.5px;
+  box-shadow: var(--shadow);
+}
+.msg.notice-card.warning {
+  --severity: var(--amber);
+}
+.msg.notice-card.info {
+  --severity: var(--accent);
+}
+.msg.notice-card.over {
+  box-shadow: none;
+  border-left-color: var(--fg-3);
+}
+.notice-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-2);
+  font-size: 11.5px;
+}
+.notice-mark {
+  display: inline-flex;
+  color: var(--severity);
+}
+.notice-card.over .notice-mark {
+  color: var(--fg-3);
+}
+.notice-summary {
+  margin: 4px 0 2px;
+  font-weight: 600;
+}
+.notice-evidence {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  color: var(--fg-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.notice-dismiss {
+  margin-left: auto;
+}
+.notice-steer {
+  margin-top: 8px;
+}
+.notice-steer textarea {
+  width: 100%;
+  resize: none;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: var(--radius-small);
+  padding: 6px 8px;
+  font: inherit;
+  outline: none;
+}
+.notice-steer textarea:focus {
+  border-color: var(--accent);
+}
+.notice-steer .notice-actions {
+  justify-content: flex-end;
+}
+.notice-ended {
+  margin-top: 6px;
+  color: var(--fg-2);
+  font-size: 11.5px;
+}
+/* The sentinel done with a pulse: a line, as a pulse's end is - neon when what it checked holds, red when it does not. */
+.msg.concluded {
+  border-left: 3px solid var(--tested);
+  padding: 4px 10px;
+  font-size: 12.5px;
+}
+.msg.concluded.wrong {
+  border-left-color: var(--red);
+}
+.msg.concluded .icon {
+  color: var(--tested);
+}
+.msg.concluded.wrong .icon {
+  color: var(--red);
+}
+.concluded-summary {
+  margin-top: 2px;
+  color: var(--fg-2);
+  font-size: 12px;
 }
 .msg-error {
   color: var(--red);

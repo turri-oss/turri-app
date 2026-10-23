@@ -3,10 +3,10 @@
 // tools: each tool is a request to the main process, which runs the shell (electron/terminal.ts). They exist only in the
 // app. turri's own bash tool is for its work; these are for trying what it built where the person watches.
 
-/** Tools on the preview's terminal, each sent as `request(action, params)` and answered with what came of it. */
-export function terminalExtension(request) {
+/** The terminal tools - `terminalTools`, given every chat and the sentinel's. */
+export function terminalExtension(tools) {
   return (pi) => {
-    for (const tool of tools(request)) pi.registerTool(tool);
+    for (const tool of tools) pi.registerTool(tool);
   };
 }
 
@@ -20,7 +20,8 @@ const GUIDELINES = [
   "A server started there runs on in the person's terminal: to try it in the browser too, run it with terminal_run, then open it with browser_navigate.",
 ];
 
-function tools(request) {
+/** Tools on the preview's terminal, each sent as `request(action, params)` and answered with what came of it. */
+export function terminalTools(request) {
   const text = (value) => ({ type: "text", text: value });
   /** What the terminal shows since the command, and whether something still runs in it. */
   const said = (result) => {

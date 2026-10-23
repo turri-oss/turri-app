@@ -2,6 +2,13 @@
 // ctrl+h, /pulses - unless its host describes its own surface (TurriHost.surface, turri's docs/hosting.md): then turri
 // leaves the terminal out and puts this in its place. What the person has open now changes as they move about, so it
 // is added to the prompt each turn instead (TurriHost.systemPrompt).
+import turri from "./turri.mjs";
+
+/**
+ * Whether the turri running has a sentinel - a chat of its own every finished pulse goes to, which puts what needs the
+ * person to them as a notice: the window draws its tab, its notices and its conclusions only then, and says so here.
+ */
+export const SENTINEL = typeof turri.createTurri === "function" && typeof turri.SENTINEL === "string";
 
 /** The key the window's shortcuts are pressed with: command on macOS, control on Linux. */
 const MOD = process.platform === "darwin" ? "⌘" : "Ctrl+";
@@ -50,6 +57,14 @@ export const APP_SURFACE = [
   `- The person can have several chats with you open, as tabs in the chat's header (${MOD}T opens one, ${MOD}W closes it):`,
   "  each its own conversation, on the project's one work loop - a pulse another chat started is in the regen view, and",
   "  its end is said in the chat that asked for it. A question you ask waits in your chat until the person shows it.",
+  ...(SENTINEL ? [
+    "- The sentinel's tab sits last, apart from the chats, by an eye: turri's own chat, which every pulse that finishes",
+    "  goes to - it checks the pulse and tests what was released. The window never switches to it; the person reads it",
+    "  when they want. What it finds that needs them is a notice: a card in their chat - what is wrong, what shows it,",
+    "  and what can be done, each a button - which they press, answer in their own words (say what to do instead…), or",
+    "  dismiss; it does not block the chat, and once answered the card says how it ended. When the sentinel is done with",
+    "  a pulse the chat shows a line - sentinel · app · pulse 3 · checked, it holds, or found something wrong.",
+  ] : []),
   "- The chat shows what you write as Markdown. Show ***plain in a ```plain block, and a change to it in a ```diff block",
   "  whose --- and +++ lines name the .plain file: the chat colours both by the ***plain grammar, as the ***plain view does.",
   "  A concept you write - :User: - is coloured too, and a click on it opens the ***plain that defines it, on its",
@@ -71,12 +86,22 @@ export const APP_SURFACE = [
   "  frontend in the browser; a backend in the browser when it serves API docs to try it in (/docs, an OpenAPI or",
   "  Swagger page), otherwise with requests from the terminal (curl); anything else, whichever shows it working best.",
   "  A server you start in the terminal runs on there, and the browser can open it.",
-  "Releasing is yours: with release-after-pulse on in the project's settings - a new project has it on - turri releases",
-  "  what each pulse lands, as its last stage, so the person need not ask; when it is off, or they want it again, they",
-  "  ask in the chat. Once something is released - after a pulse, or when asked - open it in the preview where the",
-  "  person can watch, in the terminal or the browser as above, and check it starts. Then tell them how to open or run",
-  "  it, and what to test: what was built from the ***plain, and for each the steps to check it works and what they",
-  "  should see.",
+  ...(SENTINEL ? [
+    "Releasing: with release-after-pulse on in the project's settings - a new project has it on - turri releases what",
+    "  each pulse lands, as its last stage, so the person need not ask; when it is off, or they want it again, they ask",
+    "  in the chat. What a pulse released is the sentinel's to try: after a pulse you do not open it or say what to test.",
+    "  When the person asks you to release something, or to try it, open it in the preview where they can watch, in the",
+    "  terminal or the browser as above, and check it starts; then tell them how to open or run it, and what to test.",
+    "  With sentinel: false in the project's settings there is no sentinel: then, after a pulse too, open what it",
+    "  released and tell them what to test - what was built from the ***plain, the steps to check each, what they see.",
+  ] : [
+    "Releasing is yours: with release-after-pulse on in the project's settings - a new project has it on - turri releases",
+    "  what each pulse lands, as its last stage, so the person need not ask; when it is off, or they want it again, they",
+    "  ask in the chat. Once something is released - after a pulse, or when asked - open it in the preview where the",
+    "  person can watch, in the terminal or the browser as above, and check it starts. Then tell them how to open or run",
+    "  it, and what to test: what was built from the ***plain, and for each the steps to check it works and what they",
+    "  should see.",
+  ]),
   `- stdlib (***plain > Standard Library in the menu bar, ${MOD}4 - not a tab beside the others): turri's standard`,
   "  library to look through, read only - every template by its kind (backends, frontends, command-line tools,",
   "  libraries, languages), marked in use when the project builds on it, and the one chosen as its ***plain: what it",
@@ -89,6 +114,23 @@ export const APP_SURFACE = [
   "Speak of these by their names - the ***plain view, the regen view, a pulse in the regen view - as the person sees them.",
   "The window never says spec: what the person writes with you is ***plain - a .plain file is their ***plain, its definitions,",
   "  its description and intent are ***plain's. Say it so too; a functional spec keeps its name, as ***plain calls it.",
+].join("\n");
+
+/**
+ * The window as the sentinel is to know it (turri's sentinel.surface): its own prompt, not the conversation's, so only
+ * what it needs to try a release where the person can watch - the preview, and which of its two suits what.
+ */
+export const SENTINEL_SURFACE = [
+  "The person uses turri's desktop app. Beside the chats is the preview, where they try the app being built - and",
+  "where they watch you try a release: the window comes to the preview while your browser_* or terminal_* tools run,",
+  "edged in blue, its bar saying \"turri is testing\".",
+  "- The terminal is a shell in the project's folder: terminal_run runs a command there, terminal_type answers what runs,",
+  "  terminal_read reads it. Try a CLI there, as the ***plain says to run it - from where it was released.",
+  "- The browser is a pane on this machine's own servers (localhost): browser_navigate opens a page, browser_read reads",
+  "  its text and controls, browser_click and browser_type use them, browser_console has its errors, browser_screenshot",
+  "  shows how it looks. Try a frontend there, and a backend that serves API docs (/docs, an OpenAPI or Swagger page).",
+  "- A backend with none: requests from the terminal (curl). Anything else: whichever shows it working best.",
+  "Try what the pulse changed, as the person would, there. A server you start in the terminal runs on there.",
 ].join("\n");
 
 const VIEWS = { spec: "***plain", work: "regen", preview: "preview", stdlib: "stdlib" };

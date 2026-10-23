@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatItem, ChatStats, Question, SkillProgress } from "./Chat.tsx";
+import type { ChatItem, ChatStats, Notice, NoticeState, Question, SkillProgress } from "./Chat.tsx";
 
 /** A chat of turri's session, as the engine lists it: in the order they were opened. */
 export type ChatInfo = {
@@ -9,7 +9,12 @@ export type ChatInfo = {
   /** A turn running, or something said since it was last shown. */
   status: "idle" | "working" | "question" | "unread";
   shown: boolean;
+  /** `sentinel` for turri's sentinel - its tab apart from the person's, last; none for a chat of the person's. */
+  role?: string;
 };
+
+/** The person's chats in their order, then the sentinel's: its tab last, whenever turri opened it. */
+const inOrder = (chats: ChatInfo[]) => [...chats.filter((chat) => chat.role === undefined), ...chats.filter((chat) => chat.role !== undefined)];
 
 /** What the window keeps of each chat: what it said, what it is doing, and what it asks. */
 export type ChatState = {
@@ -27,11 +32,15 @@ export type ChatState = {
   progress: SkillProgress | null;
   model: string | null;
   stats: ChatStats | null;
+  /** The sentinel's notices open in it, by id: their cards' buttons are live only while they are. */
+  notices: Set<string>;
+  /** How each notice of it ended, as turri told the window while it was open. */
+  over: Map<string, NoticeState>;
 };
 
-const EMPTY: ChatState = { items: [], queued: [], restored: null, streaming: null, busy: false, working: null, tools: new Map(), statuses: {}, questions: [], progress: null, model: null, stats: null };
+const EMPTY: ChatState = { items: [], queued: [], restored: null, streaming: null, busy: false, working: null, tools: new Map(), statuses: {}, questions: [], progress: null, model: null, stats: null, notices: new Set(), over: new Map() };
 
-type History = { messages: ChatItem[]; queued?: string[]; model: string | null; stats: ChatStats; questions: Question[] };
+type History = { messages: ChatItem[]; queued?: string[]; model: string | null; stats: ChatStats; questions: Question[]; notices?: Notice[] };
 
 /**
  * turri's chats in the window: each one's state, kept whether it is shown or not - a hidden chat goes on working, and
@@ -55,10 +64,10 @@ export function useChats({ onAsk, onError }: { onAsk: () => void; onError: (text
   const load = useCallback(
     (id: string) =>
       void window.turri.call<History>("chatHistory", { chat: id }).then(
-        ({ messages, queued = [], model, stats, questions }) => {
+        ({ messages, queued = [], model, stats, questions, notices = [] }) => {
           const notes = after.current.get(id) ?? [];
           after.current.delete(id);
-          update(id, () => ({ items: [...messages, ...notes], queued, model, stats, questions }));
+          update(id, () => ({ items: [...messages, ...notes], queued, model, stats, questions, notices: new Set(notices.map((notice) => notice.id)) }));
         },
         () => {},
       ),
@@ -70,7 +79,7 @@ export function useChats({ onAsk, onError }: { onAsk: () => void; onError: (text
     async (notes: ChatItem[] = []) => {
       setStates(new Map());
       after.current.clear();
-      const chats = await window.turri.call<ChatInfo[]>("chats").catch(() => [] as ChatInfo[]);
+      const chats = inOrder(await window.turri.call<ChatInfo[]>("chats").catch(() => [] as ChatInfo[]));
       setList(chats);
       known.current = new Set(chats.map((chat) => chat.id));
       if (chats[0] !== undefined && notes.length > 0) after.current.set(chats[0].id, notes);
@@ -82,7 +91,8 @@ export function useChats({ onAsk, onError }: { onAsk: () => void; onError: (text
   useEffect(() => {
     const on = <T,>(event: string, handle: (id: string, data: T) => void) => window.turri.on(`engine:${event}`, ({ chat, data }: { chat: string; data: T }) => handle(chat, data));
     const off = [
-      window.turri.on("engine:chats", (chats: ChatInfo[]) => {
+      window.turri.on("engine:chats", (told: ChatInfo[]) => {
+        const chats = inOrder(told);
         setList(chats);
         // One opened is read; one closed is let go.
         for (const chat of chats) if (!known.current.has(chat.id)) (known.current.add(chat.id), load(chat.id));
@@ -111,6 +121,10 @@ export function useChats({ onAsk, onError }: { onAsk: () => void; onError: (text
       }),
       // A question over unanswered - declined, its turn stopped: its card put away.
       on<{ id: number }>("chat:unask", (id, { id: asked }) => update(id, (state) => ({ questions: state.questions.filter((question) => question.id !== asked) }))),
+      // The sentinel's notices: open as each is put - its card is the transcript's - and over as it is answered or
+      // superseded. One for a chat not shown waits there, its tab marked by turri: the window never switches to it.
+      on<Notice>("chat:notice", (id, notice) => update(id, (state) => ({ notices: new Set(state.notices).add(notice.id) }))),
+      on<Notice>("chat:noticeOver", (id, notice) => update(id, (state) => ({ notices: without(state.notices, notice.id), over: new Map(state.over).set(notice.id, notice.state) }))),
     ];
     return () => off.forEach((stop) => stop());
   }, [update, load, onAsk, onError]);
@@ -126,5 +140,13 @@ export function useChats({ onAsk, onError }: { onAsk: () => void; onError: (text
     reset,
     /** The chat's first question answered: put away. */
     answered: (id: string) => update(id, (state) => ({ questions: state.questions.slice(1) })),
+    /** A notice turri says is over already - answered elsewhere, superseded, or gone with its session: its card let go. */
+    noticeGone: (id: string, notice: string) => update(id, (state) => ({ notices: without(state.notices, notice) })),
   };
+}
+
+function without<T>(set: Set<T>, value: T): Set<T> {
+  const next = new Set(set);
+  next.delete(value);
+  return next;
 }

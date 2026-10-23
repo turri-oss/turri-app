@@ -38,7 +38,8 @@ export interface Project {
   specs: Spec[];
   /** What of ***plain the turri it runs gives the window: the stdlib view, what a ***plain links, its concepts, its linked resources. */
   /** What the turri running gives the window - several chats among it. */
-  offers: { stdlib: boolean; links: boolean; concepts: boolean; resources: boolean; chats: boolean };
+  /** What the turri running gives the window: its standard library, the graph, concepts, several chats, a sentinel. */
+  offers: { stdlib: boolean; links: boolean; concepts: boolean; resources: boolean; chats: boolean; sentinel?: boolean };
   /** A project just started: what turri said of the config it wrote for it - its models, and how to sign in. */
   setup?: string;
 }
