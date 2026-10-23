@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
 import type { Job, Spec } from "./types.ts";
 import { elapsed, Icon, PlainMark, PlainName, Spinner, useTick, withPlain } from "./ui.tsx";
-import { relocate, stageOf } from "./PulseSpec.tsx";
+import { type Point, pointNow, relocate, stageOf } from "./PulseSpec.tsx";
 import { followAt, PlainLinks, useModHeld, usePlainLinks, type Followed, type OpenLink } from "./PlainLinks.tsx";
 import { keys, withMod } from "./platform.ts";
 
@@ -93,10 +93,13 @@ function renderingLines(job: Job | undefined, spec: Spec, text: string, specLine
     for (const [index, where] of Object.entries(job.diffWhere)) {
       const line = diffLines[Number(index)];
       if (where.file !== spec.rel || line === undefined) continue;
+      // Found by its text as the file has it - a link as a link, where the diff has it as turri reads it - or, from a
+      // turri that does not say it, the diff's own.
+      const text = where.written ?? line.slice(1).trimEnd();
       // Carried unchanged: a line of a functional spec, as context - by its text, as the file may have moved since.
-      const again = line.startsWith(" ") && [...specLines.keys()].some((at) => lines[at] === line.slice(1).trimEnd());
+      const again = line.startsWith(" ") && [...specLines.keys()].some((at) => lines[at] === text);
       if (!line.startsWith("+") && !again) continue;
-      placed.push({ line: where.line, text: line.slice(1).trimEnd() });
+      placed.push({ line: where.line, text });
     }
     placed.sort((a, b) => a.line - b.line);
     const now = relocate(lines, placed.map((each) => each.line), placed.map((each) => each.text));
@@ -121,9 +124,10 @@ export function SpecView(props: {
   running?: Job;
   /**
    * Lines to bring into view and light for a moment, from 1: a pulse's part of the spec, shown from the work - with their
-   * text, to find them by where the ***plain has changed since the pulse ran - or a concept's definition.
+   * text, to find them by where the ***plain has changed since the pulse ran, and the point clicked in it, for the caret
+   * - or a concept's definition.
    */
-  reveal?: { lines: number[]; texts?: string[]; at: number };
+  reveal?: { lines: number[]; texts?: string[]; point?: Point; at: number };
   onSaved: (spec: Spec) => void;
   onDirty: (dirty: boolean) => void;
   saveRef: MutableRefObject<(() => Promise<void>) | null>;
@@ -354,14 +358,34 @@ export function SpecView(props: {
   useEffect(() => {
     if (firstRendering !== undefined && document.activeElement !== areaRef.current) showLine(firstRendering);
   }, [running?.id, firstRendering]);
-  // A pulse's part, shown from the work: in view once the text is here, and lit for a few seconds.
+  /** The caret at the start of line `index`, from 0, the editor focused there - the functional spec folded over it opened. */
+  const putCaret = (index: number) => {
+    const first = hiddenBy.get(index);
+    if (first !== undefined)
+      setFolded((now) => {
+        const next = new Set(now);
+        next.delete(first);
+        return next;
+      });
+    caretRef.current = fullStarts[index] ?? 0;
+    areaRef.current?.focus({ preventScroll: true });
+    requestAnimationFrame(() => {
+      const line = editorRef.current?.querySelector<HTMLElement>(`.editor-colours > div[data-line="${index}"]`);
+      if (line && editorRef.current) editorRef.current.scrollTo({ top: Math.max(0, line.offsetTop - editorRef.current.clientHeight / 3), behavior: "smooth" });
+    });
+  };
+  // A pulse's part, shown from the work: in view once the text is here, and lit for a few seconds - and, clicked at a
+  // point, the caret there, where that point is now.
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   useEffect(() => {
     if (props.reveal === undefined || text === null || props.reveal.lines.length === 0) return;
-    const numbers = props.reveal.texts !== undefined ? relocate(text.split("\n"), props.reveal.lines, props.reveal.texts) : props.reveal.lines;
+    const all = text.split("\n");
+    const { lines: then, texts, point } = props.reveal;
+    const numbers = texts !== undefined ? relocate(all, then, texts) : then;
     const lines = new Set(numbers.map((line) => line - 1));
     setRevealed(lines);
-    requestAnimationFrame(() => showLine(Math.min(...lines)));
+    if (point !== undefined && texts !== undefined) putCaret(pointNow(all, then, texts, point) - 1);
+    else requestAnimationFrame(() => showLine(Math.min(...lines)));
     const timer = setTimeout(() => setRevealed(new Set()), 4000);
     return () => clearTimeout(timer);
   }, [props.reveal?.at, text === null]);
@@ -373,7 +397,7 @@ export function SpecView(props: {
       {hovered && <SpecStatePop {...hovered} module={spec.module} running={running} isNew={dirty && hovered.entry === undefined} />}
       <div className="editor-pane">
         <div className="pane-header">
-          <span>
+          <span className="pane-title" title={spec.file}>
             <PlainMark /> {spec.rel}
           </span>
           <span className="pane-header-right">

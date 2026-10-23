@@ -62,7 +62,11 @@ export interface Job {
   /** The spec change a pulse renders, as a diff of the .plain files. */
   diff?: string;
   /** Where the diff's lines are in the .plain files: by a line's place in the diff, its file and its line there (from 1). */
-  diffWhere?: Record<number, { file: string; line: number; section?: string }>;
+  /**
+   * Where each line of the diff is written: its file and line - and, from a turri that says it, the line as the file has
+   * it (`written`), its links as links, where the diff has them as turri reads them.
+   */
+  diffWhere?: Record<number, { file: string; line: number; section?: string; written?: string }>;
   model?: string;
   status: "queued" | "running" | "succeeded" | "failed" | "stopped";
   sequence: number;

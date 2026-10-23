@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
 import type { PreviewState } from "./preview.ts";
 import type { Settings } from "./settings.ts";
 import type { TerminalState } from "./terminal.ts";
@@ -7,6 +7,13 @@ import type { UpdateState } from "./updates.ts";
 
 /** The settings sheet's: the look - appearance.json's - and the rest, settings.json's. */
 export type AppSettings = Settings & { theme: "dark" | "light" | "system"; zoom: number };
+
+/** A file attached to a message in the chat: where it is, and - for an image - its bytes, to go to the model as one. */
+export interface Attached {
+  name: string;
+  path: string;
+  image?: { mimeType: string; data: string };
+}
 
 /** A package or font the app carries, and its licence. */
 export interface Notice {
@@ -94,6 +101,10 @@ const api = {
   /** The projects open in every window, the one last in front first; and one of their windows brought forward. */
   openProjects: () => ipcRenderer.invoke("projects:list") as Promise<Array<{ id: number; name: string; dir: string; running: number; here: boolean }>>,
   switchProject: (id: number) => ipcRenderer.invoke("projects:switch", id),
+  /** Files to attach to a message, chosen in the open sheet: an image's bytes with it. */
+  attach: () => ipcRenderer.invoke("chat:attach") as Promise<Attached[]>,
+  /** Where a file dropped or pasted into the window is on disk - "" for one that is not a file there, as a pasted image. */
+  pathOf: (file: File) => webUtils.getPathForFile(file),
   reveal: (path: string) => ipcRenderer.invoke("shell:reveal", path),
   openPath: (path: string) => ipcRenderer.invoke("shell:open", path),
   /** Whether the ***plain open has changed since it was built: Regenerate What Changed is offered only then. */

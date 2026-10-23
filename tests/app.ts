@@ -1,5 +1,5 @@
 import { _electron as electron, test as base, type ElectronApplication, type Page } from "@playwright/test";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -35,12 +35,18 @@ interface Options {
    * "reply n".
    */
   stubModel: false | "silent" | "asks" | "replies";
+  /** More of the app's environment, as the person's shell would give it. */
+  env: Record<string, string>;
+  /** turri's debug mode on for the project: `debug: true` in its config.turri.yaml. */
+  debug: boolean;
 }
 
 export const test = base.extend<Options & { launched: Launched; scratch: string }>({
   open: [true, { option: true }],
   recent: [false, { option: true }],
   stubModel: [false, { option: true }],
+  env: [{}, { option: true }],
+  debug: [false, { option: true }],
 
   scratch: async ({}, use) => {
     // Real paths: macOS's tmpdir is a link, and the app names a project by where it really is.
@@ -49,16 +55,18 @@ export const test = base.extend<Options & { launched: Launched; scratch: string 
     rmSync(scratch, { recursive: true, force: true });
   },
 
-  launched: async ({ scratch, open, recent, stubModel }, use) => {
+  launched: async ({ scratch, open, recent, stubModel, env: more, debug }, use) => {
     const project = join(scratch, "hello");
     cpSync(FIXTURE, project, { recursive: true });
+    if (debug) appendFileSync(join(project, "config.turri.yaml"), "debug: true\n");
     const userData = join(scratch, "user-data");
     mkdirSync(userData);
     if (recent) writeFileSync(join(userData, "recent-projects.json"), JSON.stringify([project]));
     const stub = stubModel ? await modelStub(scratch, project, stubModel) : undefined;
 
-    // Not the person's shell's environment (TERM set: shell-env.ts keeps the one given), nor a Vite server's window.
-    const { VITE_DEV_SERVER_URL, TURRI_APP_SCREENSHOT, TURRI_APP_VIEW, TURRI_APP_OPEN, TURRI_APP_HIDDEN, ...env } = process.env;
+    // Not the person's shell's environment (TERM set: shell-env.ts keeps the one given), nor a Vite server's window - nor
+    // their TURRI_DEBUG, which would decide debug over the project's config.
+    const { VITE_DEV_SERVER_URL, TURRI_APP_SCREENSHOT, TURRI_APP_VIEW, TURRI_APP_OPEN, TURRI_APP_HIDDEN, TURRI_DEBUG, ...env } = process.env;
     const app = await electron.launch({
       args: [ROOT, `--user-data-dir=${userData}`],
       cwd: ROOT,
@@ -71,6 +79,7 @@ export const test = base.extend<Options & { launched: Launched; scratch: string 
         // Its windows drawn but never shown, and out of the Dock: a run takes neither the screen nor the focus.
         TURRI_APP_HIDDEN: "1",
         ...(open ? { TURRI_APP_OPEN: project } : {}),
+        ...more,
       },
     });
     const window = await app.firstWindow();
@@ -104,7 +113,7 @@ async function modelStub(scratch: string, project: string, mode: "silent" | "ask
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as { port: number };
   mkdirSync(join(scratch, "pi"), { recursive: true });
-  const provider = { baseUrl: `http://127.0.0.1:${port}/v1`, api: "openai-completions", apiKey: "test", models: [{ id: "silent" }] };
+  const provider = { baseUrl: `http://127.0.0.1:${port}/v1`, api: "openai-completions", apiKey: "test", models: [{ id: "silent", input: ["text", "image"] }] };
   writeFileSync(join(scratch, "pi", "models.json"), JSON.stringify({ providers: { stub: provider } }));
   const config = join(project, "config.turri.yaml");
   writeFileSync(config, readFileSync(config, "utf8").replace(/^harness-model: .*$/m, "harness-model: stub/silent"));

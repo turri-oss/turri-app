@@ -63,7 +63,7 @@ export function Welcome({ onOpened, onNew, onDoctor, onSignIn, guide = false }: 
         ))}
       </div>
       <div className="welcome-card">
-        <Jellyfish size={150} lifecycle />
+        <Jellyfish size={150} swimming={false} />
         <p className="tagline">
           the first coding agent with the power of <em>regenerative software</em>
         </p>

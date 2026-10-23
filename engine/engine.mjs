@@ -9,6 +9,12 @@ import { createAuth } from "./auth.mjs";
 import { existsSync, readdirSync, readFileSync, statSync, watch, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
+// The person's NODE_OPTIONS, kept from Electron's Node (electron/main.ts): back for the programs turri runs.
+if (process.env.TURRI_NODE_OPTIONS !== undefined) {
+  process.env.NODE_OPTIONS = process.env.TURRI_NODE_OPTIONS;
+  delete process.env.TURRI_NODE_OPTIONS;
+}
+
 // turri writes progress to the console as it would to a terminal; here it is only a log line for the app.
 for (const level of ["log", "info", "warn", "error"]) {
   console[level] = (...args) => emit("log", { level, text: args.map(String).join(" ") });
@@ -298,6 +304,11 @@ function listFiles({ dir }) {
     .filter((entry) => !UNLISTED.has(entry.name) && (entry.isDirectory() || entry.isFile()) && wanted(join(at, entry.name), entry.isDirectory()))
     .map((entry) => ({ name: entry.name, path: join(at, entry.name), dir: entry.isDirectory() }));
   return entries.sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name));
+}
+
+/** Every file the tree shows, relative to the project and sorted: what tab completes in the chat. */
+function treeFiles() {
+  return [...shownInTree()].map((file) => relative(projectDir, file).split(sep).join("/")).sort((a, b) => a.localeCompare(b));
 }
 
 /** A file's text - or, for one that is not text or too large to read here, why not. */
@@ -729,7 +740,7 @@ function describeSpec(file) {
   } catch (error) {
     return { ...base, ok: false, error: error instanceof Error ? error.message : String(error), functionalSpecs: [] };
   }
-  // Whether its code is regenerated from the spec as it is now: what the Regenerate button would have to do.
+  // Whether its code is regenerated from the spec as it is now: what regenerating what changed would have to do.
   let drifted = false;
   try {
     drifted = looker.drift(file).some((report) => report.code !== null);
@@ -855,9 +866,19 @@ function look({ view, file, pane }) {
  * Something said in a chat. /new - pi's terminal's, which would go to the model as words here - opens a chat beside it,
  * as it does in turri's terminal.
  */
-async function sendChat({ chat, text }) {
+/** The images a message can carry, as the model takes them. */
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+/**
+ * A message said in a chat - with what is attached to it: its images, for the model to see, and other files by their
+ * paths, below what was typed, for turri to read with its tools.
+ */
+async function sendChat({ chat, text, images = [], files = [] }) {
   if (/^\/new\s*$/.test(text.trim()) && session.canOpen) return (await openChat(), true);
-  chatOf(chat).send(text);
+  const seen = images.filter((image) => IMAGE_TYPES.has(image?.mimeType) && typeof image.data === "string").map(({ mimeType, data }) => ({ type: "image", mimeType, data }));
+  const named = files.filter((file) => typeof file === "string" && isAbsolute(file));
+  const said = named.length === 0 ? text : [text, named.map((file) => `Attached file: ${file}`).join("\n")].filter(Boolean).join("\n\n");
+  chatOf(chat).send(said, seen);
   return true;
 }
 
@@ -1040,7 +1061,7 @@ async function doctor({ models = false, dir = projectDir }) {
 
 // ---------- the wire ----------
 
-const methods = { ...auth, chats, openChat, closeChat, focusChat, interruptChat, declineQuestion, notices, answerNotice, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, readFile, writeFile, stdlib, stdlibKinds, plainLinks, concepts, conceptDefinition, linkedResource, conceptBeingTyped, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, investigate, glimpse, earlierPulses, sendChat, abortChat, chatHistory, commands, answer, doctor };
+const methods = { ...auth, chats, openChat, closeChat, focusChat, interruptChat, declineQuestion, notices, answerNotice, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, treeFiles, readFile, writeFile, stdlib, stdlibKinds, plainLinks, concepts, conceptDefinition, linkedResource, conceptBeingTyped, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, investigate, glimpse, earlierPulses, sendChat, abortChat, chatHistory, commands, answer, doctor };
 
 // What the window may ask before a project is open: to open one, to start a new one, whether the machine is ready, or to
 // sign in to the model providers.

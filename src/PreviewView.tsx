@@ -107,7 +107,7 @@ export function PreviewView({ dir, covered, pane, panes, onPane, testing }: { di
   // Said in the bar, above the pane it is in.
   const badge = testing && (
     <span className="preview-testing" role="status">
-      <Jellyfish size={14} /> turri is testing
+      <Jellyfish size={14} swimming={false} /> turri is testing
     </span>
   );
 

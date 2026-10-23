@@ -8,7 +8,7 @@ What turri desktop sends, and where - and what stays on your machine. The window
 
 turri is an agent: to write your \*\*\*plain with you and build its code, it sends what it works on to the models your project's `config.turri.yaml` names - with your subscription or API key, under that provider's terms:
 
-- what you say in the chat, and the conversation so far;
+- what you say in the chat, and the conversation so far - with the images you attach to it, and the files you attach when turri reads them;
 - your \*\*\*plain files, and the files of the project turri and its agents read - code, tests, templates, config;
 - what commands and test runs print, and what the preview's terminal shows when turri reads it;
 - the preview's pages when turri tries them - their text, controls and console, and screenshots of them.

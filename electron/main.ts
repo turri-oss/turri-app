@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, s
 import { fork, spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { createPreview } from "./preview.ts";
 import { readSettings, writeSettings, type Settings } from "./settings.ts";
 import { loadShellEnvironment } from "./shell-env.ts";
@@ -41,8 +41,33 @@ let theme: Theme = readTheme();
 let zoom = readAppearance().zoom ?? 0;
 const ZOOM_MIN = -3;
 const ZOOM_MAX = 5;
-/** How long the preview stays marked as testing after turri's last browser or terminal tool, in ms. */
-const TESTING_LINGERS = 4000;
+/**
+ * How long the preview stays marked as testing after turri's last browser or terminal tool, in ms: long enough to hold
+ * while its model reads what came back and thinks between them, or the mark - and the pane inside its edge - flickers.
+ */
+const TESTING_LINGERS = 12000;
+
+/** A screenshot wider than this is scaled down before turri sees it, as the preview page's are (electron/preview.ts). */
+const TERMINAL_SHOT_WIDTH = 1280;
+
+/**
+ * The preview's terminal as the window draws it, for terminal_screenshot: the window's pixels over xterm's screen, in
+ * its CSS pixels - none while the window does not show it.
+ */
+async function captureTerminal(window: BrowserWindow): Promise<{ data: string; mimeType: string } | null> {
+  if (window.isDestroyed()) return null;
+  const box = (await window.webContents.executeJavaScript(
+    `(() => { const screen = document.querySelector(".preview-terminal .xterm"); if (screen === null) return null; const box = screen.getBoundingClientRect(); return box.width > 0 && box.height > 0 ? { x: box.x, y: box.y, width: box.width, height: box.height } : null; })()`,
+  )) as { x: number; y: number; width: number; height: number } | null;
+  if (box === null) return null;
+  // The window's zoom scales its CSS pixels; a capture is in its own.
+  const zoom = window.webContents.getZoomFactor();
+  const rect = { x: Math.round(box.x * zoom), y: Math.round(box.y * zoom), width: Math.round(box.width * zoom), height: Math.round(box.height * zoom) };
+  let image = await window.webContents.capturePage(rect);
+  const width = Math.min(Math.round(box.width), TERMINAL_SHOT_WIDTH);
+  if (image.getSize().width !== width) image = image.resize({ width });
+  return { data: image.toJPEG(80).toString("base64"), mimeType: "image/jpeg" };
+}
 
 function readAppearance(): { theme?: Theme; zoom?: number } {
   try {
@@ -276,7 +301,7 @@ function createWorkspace(): Workspace {
     if (!window.isDestroyed()) window.webContents.send(channel, data);
   };
   const preview = createPreview({ windowOf: () => (window.isDestroyed() ? undefined : window), send });
-  const terminal = createTerminal({ send });
+  const terminal = createTerminal({ send, capture: () => captureTerminal(window) });
   // turri's browser and terminal tools at work in the preview: the window marks it as testing ("preview:testing") from
   // the first until a moment after the last - turri thinks between them, and the mark would flicker otherwise.
   let testing = 0;
@@ -349,16 +374,23 @@ function createWorkspace(): Workspace {
     pending.clear();
     // Electron's own Node runs it: turri comes compiled, from the @turri-dev/cli package, so no other Node is needed.
     // As installed it is always the package's turri: a TURRI_DEV in the person's shell is left out.
-    const { TURRI_DEV, ...env } = process.env;
+    // The person's NODE_OPTIONS are for their own Node, not Electron's, which exits (9) on a flag it does not take - as
+    // --openssl-legacy-provider: the engine starts without them, and gives them back to what turri runs.
+    const { TURRI_DEV, NODE_OPTIONS, ...env } = process.env;
     const child = fork(join(ROOT, "engine", "engine.mjs"), [], {
       execPath: process.execPath,
       execArgv: [],
-      env: { ...(DEV ? process.env : env), ELECTRON_RUN_AS_NODE: "1" },
+      env: { ...env, ...(DEV && TURRI_DEV !== undefined ? { TURRI_DEV } : {}), ...(NODE_OPTIONS !== undefined ? { TURRI_NODE_OPTIONS: NODE_OPTIONS } : {}), ELECTRON_RUN_AS_NODE: "1" },
       stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
     engine = child;
+    // The last line it said on stderr - not a stack frame, nor Node's version after a crash: why, when it exits.
+    let said = "";
     child.stdout?.on("data", (chunk) => send("engine:log", { level: "stdout", text: String(chunk) }));
-    child.stderr?.on("data", (chunk) => send("engine:log", { level: "stderr", text: String(chunk) }));
+    child.stderr?.on("data", (chunk) => {
+      said = String(chunk).split("\n").map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith("at ") && !/^Node\.js v/.test(line)).at(-1) ?? said;
+      send("engine:log", { level: "stderr", text: String(chunk) });
+    });
     return new Promise((resolve, reject) => {
       child.on("message", (message: { id?: number; result?: unknown; error?: string; event?: string; data?: unknown; browser?: string; terminal?: string; params?: unknown }) => {
         if (message.event === "ready") {
@@ -385,7 +417,7 @@ function createWorkspace(): Workspace {
         else call.resolve(message.result);
       });
       child.on("exit", (code) => {
-        reject(new Error(`The turri engine exited (${code}).${!DEV ? "" : TURRI_DEV ? ` Is TURRI_DEV=${TURRI_DEV} a turri clone, with its packages installed (npm install there)?` : " Is @turri-dev/cli installed (npm install)?"}`));
+        reject(new Error(`The turri engine exited (${code})${said !== "" ? `: ${said}` : ""}.${!DEV ? "" : TURRI_DEV ? ` Is TURRI_DEV=${TURRI_DEV} a turri clone, with its packages installed (npm install there)?` : " Is @turri-dev/cli installed (npm install)?"}`));
         // One replaced by another, or stopped with its window, was stopped on purpose: only the current one's end is news.
         if (engine !== child || closed) return;
         engine = undefined;
@@ -500,6 +532,9 @@ function createWorkspace(): Workspace {
   }
 
   workspaces.set(window.id, workspace);
+  // For the tests: a browser or terminal tool's request, made of the newest window's preview as the engine makes it -
+  // as no test has a model call them.
+  if (HIDDEN) (globalThis as unknown as { turriTool: unknown }).turriTool = (kind: "browser" | "terminal", action: string, params: unknown) => (kind === "browser" ? preview : terminal).request(action, params);
   window.once("ready-to-show", () => bringForward(window, false));
   window.on("focus", () => {
     lastFocused = workspace;
@@ -843,6 +878,20 @@ function engineParams(method: string, params: unknown): unknown {
 
 // Each window asks of its own workspace: its engine, its preview, its terminal.
 ipcMain.handle("engine:call", (event, method: string, params: unknown) => workspaceOf(event.sender).call(method, engineParams(method, params)));
+// Files attached to a message in the chat, chosen in the open sheet - from the project's folder at first. An image goes
+// with its bytes, for the model to see; any other file, and an image too large to send, by its path, for turri to read.
+const IMAGE_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp" };
+const ATTACHED_IMAGE_SIZE = 20 * 1024 * 1024;
+ipcMain.handle("chat:attach", async (event) => {
+  const workspace = workspaceOf(event.sender);
+  const result = await dialog.showOpenDialog(workspace.window, { title: "Attach to the message", properties: ["openFile", "multiSelections"], buttonLabel: "Attach", defaultPath: workspace.dir });
+  if (result.canceled) return [];
+  return result.filePaths.map((path) => {
+    const mimeType = IMAGE_TYPES[extname(path).toLowerCase()];
+    const image = mimeType !== undefined && statSync(path).size <= ATTACHED_IMAGE_SIZE ? { mimeType, data: readFileSync(path).toString("base64") } : undefined;
+    return { name: basename(path), path, ...(image ? { image } : {}) };
+  });
+});
 ipcMain.handle("project:choose", async (event) => {
   const from = workspaceOf(event.sender);
   const dir = await chooseProject(from);

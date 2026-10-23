@@ -43,15 +43,16 @@ const LOGO_BELOW = 48;
 
 /**
  * The jellyfish turri is named after, from turri's pixel kit (src/pixels/, public/jellyfish/). Large: at rest the hero
- * hangs still; `swimming` it bobs, its tentacles swaying - while turri works; `lifecycle`, it grows from the polyp,
- * sinks and grows again, then sways on. Small: the logo mark at rest, and the mascot, bobbing, while turri works.
+ * hangs still; `swimming` it bobs, its tentacles swaying; `lifecycle`, it grows from the polyp, sinks and grows again,
+ * then sways on. Small: the logo mark, still at rest and jumping a pixel at a time, swimming. Only the chat's move - the empty
+ * chat's lifecycle, and the line that says what turri is doing: everywhere else it stays still (`swimming={false}`).
  */
 export function Jellyfish({ size = 48, swimming = true, lifecycle = false, className = "" }: { size?: number; swimming?: boolean; lifecycle?: boolean; className?: string }) {
   if (size < LOGO_BELOW) {
     return (
       <img
         className={`jellyfish logo-mark ${swimming ? "swimming" : ""} ${className}`}
-        src={swimming ? "./jellyfish/jelly-mascot.svg" : "./jellyfish/logo-mark.svg"}
+        src="./jellyfish/logo-mark.svg"
         width={size}
         height={size}
         alt=""
@@ -84,6 +85,7 @@ function Pixels({ size, width, height, mount, className }: { size: number; width
 const PATHS: Record<string, string> = {
   doc: "M6 2.5h5.5L15 6v11.5H6zM11.5 2.5V6H15",
   file: "M6 2.5h5.5L15 6v11.5H6zM11.5 2.5V6H15M8.5 10h4M8.5 13h4",
+  clip: "M14.5 9.5l-5.3 5.3a3.2 3.2 0 01-4.5-4.5l6.2-6.2a2.1 2.1 0 013 3l-6.2 6.2a1 1 0 01-1.5-1.5l5.3-5.3",
   chevron: "M8 5.5l4.5 4.5L8 14.5",
   play: "M7 4.5v11l9-5.5z",
   stop: "M6 6h8v8H6z",
@@ -142,6 +144,35 @@ export function withPlain(text: string): React.ReactNode {
   const parts = text.split("***plain");
   // One span, so that a flex parent - a notice, a pulse's line in work - lays it out as the one run of words it is.
   return parts.length === 1 ? text : <span>{parts.flatMap((part, at) => (at === 0 ? [part] : [<PlainName key={at} />, part]))}</span>;
+}
+
+/** Whether a fold is open, and how it is opened and closed - kept by what holds it, to outlast its being drawn again. */
+export interface Folded {
+  open: boolean;
+  onToggle: () => void;
+}
+
+/**
+ * A part of something that opens on its own - a pulse's ***plain, its trace, its report: closed to a line of what it is,
+ * and opened, and closed again, by a click on that line. Closed until it is opened, so what holds it is read a piece at
+ * a time. Whether it is open is its own, unless `folded` says.
+ */
+export function Fold({ title, summary, className = "", folded, children }: { title: React.ReactNode; summary?: React.ReactNode; className?: string; folded?: Folded; children: React.ReactNode }) {
+  const [own, setOwn] = useState(false);
+  const open = folded?.open ?? own;
+  const setOpen = (next: boolean) => (folded ? folded.onToggle() : setOwn(next));
+  return (
+    <section className={`part ${className} ${open ? "open" : ""}`}>
+      <button className="part-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="part-chevron">
+          <Icon name="chevron" size={12} />
+        </span>
+        <span className="part-title">{title}</span>
+        {summary !== undefined && <span className="part-summary">{summary}</span>}
+      </button>
+      {open && <div className="part-body">{children}</div>}
+    </section>
+  );
 }
 
 /** Working: four pixels chasing each other round a square. */

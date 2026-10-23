@@ -8,6 +8,7 @@ How the app is put together, and how to run it from source. For what the window 
 electron/main.ts     the windows - one per project - native menus, notifications, dock - and the bridge to each window's engine
 electron/preview.ts  the preview pane, and what turri's browser tools do in it
 electron/terminal.ts the preview's terminal - a shell on a pty - and what turri's terminal tools do in it
+electron/terminal-input.ts  the keys and the mouse as an xterm sends them, the modes a program turns on, text found on the screen
 electron/preload.ts  what the window may ask of the app (window.turri)
 electron/settings.ts the app's settings beyond its look: settings.json in its userData
 scripts/notices.mjs  the third-party notices About lists, written to dist-electron/ as the app is built

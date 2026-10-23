@@ -33,14 +33,16 @@ export function retriedWithoutImages(message) {
   return message?.role === "assistant" && message.stopReason === "error" && (message.errorMessage ?? "").endsWith(RETRIED);
 }
 
-const SCREENSHOT = "browser_screenshot";
+/** The tools whose results are screenshots - the preview page's, and its terminal's (engine/terminal.mjs). */
+const SCREENSHOTS = new Set(["browser_screenshot", "terminal_screenshot"]);
+const isScreenshot = (message) => message.role === "toolResult" && SCREENSHOTS.has(message.toolName);
 
 /**
  * Whether a chat's model still takes the preview's screenshots, by the chat - its session's manager, which its tools and
  * handlers are given: the tools are one set for every chat, a model's refusal its chat's alone.
  */
 const seen = new WeakMap();
-function seesOf(ctx) {
+export function seesOf(ctx) {
   const key = ctx?.sessionManager ?? seen;
   if (!seen.has(key)) seen.set(key, { images: true });
   return seen.get(key);
@@ -48,10 +50,11 @@ function seesOf(ctx) {
 
 /** The conversation as the model is sent it: the newest screenshot as an image, if it takes them, the rest as words. */
 function withScreenshots(messages, images) {
-  const newest = images ? messages.findLastIndex((message) => message.role === "toolResult" && message.toolName === SCREENSHOT) : -1;
+  const newest = images ? messages.findLastIndex(isScreenshot) : -1;
   return messages.map((message, index) => {
-    if (message.role !== "toolResult" || message.toolName !== SCREENSHOT || index === newest || !Array.isArray(message.content)) return message;
-    const said = images ? "[an earlier screenshot of the preview, left out: take another to see it now]" : "[the screenshot is left out: this model does not take images - use browser_read]";
+    if (!isScreenshot(message) || index === newest || !Array.isArray(message.content)) return message;
+    const read = message.toolName === "terminal_screenshot" ? "terminal_read" : "browser_read";
+    const said = images ? "[an earlier screenshot of the preview, left out: take another to see it now]" : `[the screenshot is left out: this model does not take images - use ${read}]`;
     return { ...message, content: message.content.map((part) => (part.type === "image" ? { type: "text", text: said } : part)) };
   });
 }
@@ -66,6 +69,7 @@ const GUIDELINES = [
   "The browser_* tools drive the preview pane in the person's window, on the app as it runs on this machine (localhost): the person watches what you do there.",
   "Use them to check what you built works as the ***plain says: open it, read the page, try a flow, read the console for errors.",
   "Prefer browser_read to browser_screenshot: it is text, and costs less. Take a screenshot when how the page looks matters.",
+  "browser_click clicks what browser_read numbered, or the text a page shows when it has no number; a point of the screenshot (x and y) for a canvas, or what nothing else reaches.",
   "They see only a running app: if nothing answers, start it first (release it, or run it with terminal_run), then open it.",
 ];
 
@@ -129,11 +133,26 @@ export function browserTools(request) {
     {
       name: "browser_click",
       label: "Click in the preview",
-      description: "Click an element of the preview page - by its number from browser_read, or a CSS selector - and wait for what it loads.",
+      description: "Click an element of the preview page - by its number from browser_read, a CSS selector or the text it shows - or a point of the page, and wait for what it loads.",
       promptSnippet: "Click an element in the preview pane",
-      parameters: { type: "object", properties: ELEMENT, additionalProperties: false },
-      execute: async (_id, { ref, selector }) => {
-        const result = await request("click", { ref, selector });
+      parameters: {
+        type: "object",
+        properties: {
+          ...ELEMENT,
+          text: { type: "string", description: "Text the page shows, to click on - a link's or button's words, a label - when it has no number." },
+          occurrence: { type: "integer", minimum: 1, description: "Which one, in reading order, when the text shows more than once. 1 unless said." },
+          x: { type: "integer", description: "A point of the page in pixels from the top left of what browser_screenshot shows - for a canvas, or what nothing else reaches." },
+          y: { type: "integer", description: "A point of the page in pixels from the top left of what browser_screenshot shows - for a canvas, or what nothing else reaches." },
+          button: { type: "string", enum: ["left", "middle", "right"], description: "left unless said." },
+          double: { type: "boolean", description: "A double click." },
+          modifiers: { type: "array", items: { type: "string", enum: ["shift", "alt", "ctrl", "meta"] }, description: "Keys held while clicking." },
+        },
+        additionalProperties: false,
+      },
+      execute: async (_id, { ref, selector, text: shows, occurrence, x, y, button, double, modifiers }) => {
+        const ways = [ref !== undefined, Boolean(selector), Boolean(shows), x !== undefined || y !== undefined].filter(Boolean).length;
+        if (ways !== 1 || (x === undefined) !== (y === undefined)) throw new Error("Say what to click - one of: ref, selector, text, or x and y.");
+        const result = await request("click", { ref, selector, text: shows, occurrence, x, y, button, double, modifiers });
         return { content: [text(`${result.did}\nNow: ${header(result)}`)], details: undefined };
       },
     },

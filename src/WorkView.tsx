@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Failure, Job, PastPulse, PastRun, Spec, Status } from "./types.ts";
-import { cost, elapsed, Empty, Icon, PlainName, Spinner, tokens, useTick, withPlain } from "./ui.tsx";
-import { PulseSpec, stageOf, turriSays } from "./PulseSpec.tsx";
+import { cost, elapsed, Empty, Fold, type Folded, Icon, PlainName, Spinner, tokens, useTick, withPlain } from "./ui.tsx";
+import { PulseSpec, type ReadPlain, type ShowInSpec, turriSays } from "./PulseSpec.tsx";
 import { Prose } from "./Chat.tsx";
 
 /** Earlier sessions' runs shown at first: the last few, and more on asking. */
@@ -66,6 +66,8 @@ export function WorkView({
   earlier,
   specs,
   onShowInSpec,
+  readPlain,
+  debug,
   onInvestigate,
   opened,
   onToggle,
@@ -77,11 +79,15 @@ export function WorkView({
   earlier: PastRun[];
   /** The project's ***plain files as they are now: a pulse's lines open in one only while they are still there. */
   specs: Spec[];
-  onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void;
+  onShowInSpec: ShowInSpec;
+  readPlain: ReadPlain;
+  /** turri's debug mode on (config.turri.yaml's debug): a pulse's report shown - otherwise left out. */
+  debug: boolean;
   onInvestigate: (failed: Failed) => void;
   /**
-   * The pulses whose cards are open - kept by the window, so they stay so as the view is left and shown again: each
-   * closed, to its head, until it is clicked open, or opened for the person - asked for in the chat, or newly failed.
+   * The pulses whose cards are open, and the parts of them - `<id>/<part>` - kept by the window, so they stay so as the
+   * view is left and shown again: each closed, to its head, until it is clicked open - a card opened for the person too,
+   * asked for in the chat, or newly failed.
    */
   opened: ReadonlySet<string>;
   onToggle: (id: string) => void;
@@ -90,6 +96,7 @@ export function WorkView({
   onRevealed: () => void;
 }) {
   const toggle = onToggle;
+  const partOf = (id: string) => (name: string) => ({ open: opened.has(`${id}/${name}`), onToggle: () => toggle(`${id}/${name}`) });
   const [runsShown, setRunsShown] = useState(RUNS_SHOWN);
   useEffect(() => {
     if (focus === undefined || !focus.reveal) return;
@@ -109,7 +116,7 @@ export function WorkView({
   if (jobs.length === 0 && status.modules.length === 0 && earlier.length === 0)
     return (
       <Empty icon="layers" title="nothing has run yet">
-        press regenerate and turri plans the work into pulses and starts them. each one shows up here, live.
+        ask turri in the chat to regenerate, or choose <PlainName /> &gt; regenerate…: turri plans the work into pulses and starts them. each one shows up here, live.
       </Empty>
     );
 
@@ -147,7 +154,7 @@ export function WorkView({
           </div>
         )}
         {jobs.map((job) => (
-          <JobCard key={job.id} job={job} open={opened.has(job.id)} marked={job.id === focus?.id} onToggle={() => toggle(job.id)} specs={specs} onShowInSpec={onShowInSpec} onInvestigate={onInvestigate} />
+          <JobCard key={job.id} job={job} open={opened.has(job.id)} marked={job.id === focus?.id} onToggle={() => toggle(job.id)} part={partOf(job.id)} debug={debug} specs={specs} onShowInSpec={onShowInSpec} readPlain={readPlain} onInvestigate={onInvestigate} />
         ))}
 
         {earlier.length > 0 && <div className="sidebar-section inline">earlier sessions</div>}
@@ -160,7 +167,7 @@ export function WorkView({
               {runCost(run) && <span className="muted">· {runCost(run)}</span>}
             </div>
             {run.pulses.map((pulse) => (
-              <PastPulseCard key={pulse.id} pulse={pulse} open={opened.has(pulse.id)} marked={pulse.id === focus?.id} onToggle={() => toggle(pulse.id)} specs={specs} onShowInSpec={onShowInSpec} onInvestigate={onInvestigate} />
+              <PastPulseCard key={pulse.id} pulse={pulse} open={opened.has(pulse.id)} marked={pulse.id === focus?.id} onToggle={() => toggle(pulse.id)} part={partOf(pulse.id)} specs={specs} onShowInSpec={onShowInSpec} readPlain={readPlain} onInvestigate={onInvestigate} />
             ))}
           </div>
         ))}
@@ -179,6 +186,8 @@ interface Shown {
   open: boolean;
   marked: boolean;
   onToggle: () => void;
+  /** A part of its card, by its name - its ***plain file, trace, report - open or not, as the window keeps it. */
+  part: (name: string) => Folded;
 }
 
 /**
@@ -224,7 +233,7 @@ function opensOnClick(open: boolean, onToggle: (() => void) | undefined) {
   };
 }
 
-function JobCard({ job, open, marked, onToggle, specs, onShowInSpec, onInvestigate }: Shown & { job: Job; specs: Spec[]; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void; onInvestigate: (failed: Failed) => void }) {
+function JobCard({ job, open, marked, onToggle, part, debug, specs, onShowInSpec, readPlain, onInvestigate }: Shown & { job: Job; debug: boolean; specs: Spec[]; onShowInSpec: ShowInSpec; readPlain: ReadPlain; onInvestigate: (failed: Failed) => void }) {
   // Open, what a pulse that ended reports, and what it found the ***plain does not say - closed, its head says how it
   // went without them. A failed one's report is not read here: investigate hands it to a chat.
   const gaps = job.specGaps.length;
@@ -253,8 +262,8 @@ function JobCard({ job, open, marked, onToggle, specs, onShowInSpec, onInvestiga
         <div className="job-title">
           <strong title={summary}>{short(summary)}</strong>
           <span className="muted">
-            {job.module}
-            {job.pulse !== undefined ? ` · pulse ${job.pulse}` : ""} <span className="kind-tag">{job.kind}</span>
+            {/* Two spaces after its module - the first one that does not collapse - then its kind. */}
+            {job.module}{"\u00a0"} · <span className="kind-tag">{job.kind}</span>
           </span>
         </div>
         <div className="job-meta">
@@ -262,14 +271,6 @@ function JobCard({ job, open, marked, onToggle, specs, onShowInSpec, onInvestiga
           {cost(job.usage) && <span className="muted">{cost(job.usage)}</span>}
         </div>
       </CardHead>
-      {/* Closed, a running pulse still says what it is doing now, in a line. */}
-      {!open && job.status === "running" && job.now && (
-        <div className="job-live">
-          <div className="now">
-            <span className="pulse-dot" /> {withPlain(turriSays(job.now.label))} <span className="muted">· {elapsed(job.now.since)}</span>
-          </div>
-        </div>
-      )}
       {/* Failed, said under the head, open or closed - and investigate beside it, a chat of its own to find out why. */}
       {failed && (
         <div className="job-outcome failed">
@@ -279,72 +280,89 @@ function JobCard({ job, open, marked, onToggle, specs, onShowInSpec, onInvestiga
       )}
       {open && (
         <div className="job-body">
-          <div className="job-main">
-            {job.status === "running" && (
-              <div className="job-live">
-                {stageOf(job) && <div className="stage">{stageOf(job)}</div>}
-                {job.now && (
-                  <div className="now">
-                    <span className="pulse-dot" /> {withPlain(turriSays(job.now.label))} <span className="muted">· {elapsed(job.now.since)}</span>
-                  </div>
-                )}
-                {job.building && <div className="building">building {withPlain(turriSays(job.building.label))}</div>}
-                <ul className="activity">
-                  {job.activity.slice(-5).map((line, index) => (
-                    <li key={index}>{withPlain(turriSays(line))}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {((!failed && report !== "") || gaps > 0) && (
-              <div className={`job-report ${job.status}`}>
-                {!failed && report !== "" && (
-                  <>
-                    <div className="job-report-head">report</div>
-                    <Prose text={report} />
-                  </>
-                )}
-                {gaps > 0 && (
-                  <div className="job-report-head">
-                    <span className="gaps-count">{gaps}</span> <PlainName /> gap{gaps === 1 ? "" : "s"}
-                  </div>
-                )}
-                {gaps > 0 && (
-                  <ul className="gaps">
-                    {job.specGaps.map((gap, index) => (
-                      <li key={index}>
-                        <div>
-                          <strong>the <PlainName /> does not say:</strong> {gap.question}
-                        </div>
-                        <div className="muted">Meanwhile, the pulse assumed: {gap.assumption}</div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-            {job.diagnosis && (
-              <div className="diagnosis">
-                <div>{job.diagnosis}</div>
-              </div>
-            )}
-            <FailureMarks failures={job.failures} />
-            {job.agents.length > 0 && (
-              <div className="agents">
-                {job.agents.map((agent) => (
-                  <span key={agent.label} className="agent-chip" title={agent.model}>
-                    {withPlain(turriSays(agent.label))} · {agent.turns} turn{agent.turns === 1 ? "" : "s"}
-                    {tokens(agent.usage) && ` · ${tokens(agent.usage)}`}
-                  </span>
+          {/* The ***plain it works on: what it renders, or the functional spec a conformance run builds. */}
+          <PulseSpec job={job} specs={specs} onShowInSpec={onShowInSpec} readPlain={readPlain} part={part} />
+          {/* What its agents are doing, while it runs: once it has ended, there is no trace. */}
+          {job.status === "running" && <Trace job={job} folded={part("trace")} />}
+          {debug && !failed && report !== "" && (
+            <Fold className="job-report" title="report" folded={part("report")}>
+              <Prose text={report} />
+            </Fold>
+          )}
+          {gaps > 0 && (
+            <Fold
+              className="job-gaps"
+              folded={part("gaps")}
+              title={
+                <>
+                  <span className="gaps-count">{gaps}</span> <PlainName /> gap{gaps === 1 ? "" : "s"}
+                </>
+              }
+            >
+              <ul className="gaps">
+                {job.specGaps.map((gap, index) => (
+                  <li key={index}>
+                    <div>
+                      <strong>the <PlainName /> does not say:</strong> {gap.question}
+                    </div>
+                    <div className="muted">Meanwhile, the pulse assumed: {gap.assumption}</div>
+                  </li>
                 ))}
-              </div>
-            )}
-          </div>
-          {/* The ***plain it works on, in the card's right half: what it renders, or the functional spec a conformance run builds. */}
-          <PulseSpec job={job} specs={specs} onShowInSpec={onShowInSpec} />
+              </ul>
+            </Fold>
+          )}
+          <Failures diagnosis={job.diagnosis} failures={job.failures} folded={part("failure")} />
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * What a running pulse's agents are doing, opened: its steps, and its agents, by the turns they have taken and what
+ * they have spent. Its line says no more than that it is there.
+ */
+function Trace({ job, folded }: { job: Job; folded: Folded }) {
+  return (
+    <Fold className="job-trace" title="agent trace" folded={folded}>
+      {job.building && <div className="building">building {withPlain(turriSays(job.building.label))}</div>}
+      {job.activity.length > 0 && (
+        <ul className="activity">
+          {job.activity.map((line, index) => (
+            <li key={index}>{withPlain(turriSays(line))}</li>
+          ))}
+        </ul>
+      )}
+      {job.agents.length > 0 && (
+        <div className="agents">
+          {job.agents.map((agent) => (
+            <span key={agent.label} className="agent-chip" title={agent.model}>
+              {withPlain(turriSays(agent.label))} · {agent.turns} turn{agent.turns === 1 ? "" : "s"}
+              {tokens(agent.usage) && ` · ${tokens(agent.usage)}`}
+            </span>
+          ))}
+        </div>
+      )}
+    </Fold>
+  );
+}
+
+/**
+ * What went wrong in a pulse: why it failed, as turri's diagnosis says, and what failed that the work went on past - a
+ * healer, the model provider, a commit. Nothing, no line.
+ */
+function Failures({ diagnosis, failures, folded }: { diagnosis?: string; failures: Failure[]; folded: Folded }) {
+  if (!diagnosis && failures.length === 0) return null;
+  const summary = [diagnosis && "diagnosis", failures.length > 0 && failures.map((failure) => failure.mark).join(", ")].filter(Boolean).join(" · ");
+  return (
+    <Fold className="job-failure" title="failure" summary={summary} folded={folded}>
+      {diagnosis && (
+        <div className="diagnosis">
+          <div>{diagnosis}</div>
+        </div>
+      )}
+      <FailureMarks failures={failures} />
+    </Fold>
   );
 }
 
@@ -400,7 +418,7 @@ function outcome(pulse: PastPulse): string {
  * A pulse of an earlier session: read only - how it ended, how long, what it cost, a failed one with investigate beside
  * that, and, open, the ***plain it regenerated, as the ledger keeps it, in its right half.
  */
-function PastPulseCard({ pulse, open, marked, onToggle, specs, onShowInSpec, onInvestigate }: Shown & { pulse: PastPulse; specs: Spec[]; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void; onInvestigate: (failed: Failed) => void }) {
+function PastPulseCard({ pulse, open, marked, onToggle, part, specs, onShowInSpec, readPlain, onInvestigate }: Shown & { pulse: PastPulse; specs: Spec[]; onShowInSpec: ShowInSpec; readPlain: ReadPlain; onInvestigate: (failed: Failed) => void }) {
   const kind = pulse.kind === "conformance" ? "conformance" : "regenerate";
   const summary = pulse.title ?? pulse.summary;
   // Nothing more than its head says - no marks, no ***plain kept of it: a card that does not open.
@@ -422,8 +440,8 @@ function PastPulseCard({ pulse, open, marked, onToggle, specs, onShowInSpec, onI
         <div className="job-title">
           <strong title={summary}>{short(summary)}</strong>
           <span className="muted">
-            {pulse.module ?? ""}
-            {pulse.pulse !== null ? ` · pulse ${pulse.pulse}` : ""} <span className="kind-tag">{pulse.kind}</span>
+            {pulse.module ? `${pulse.module}\u00a0 · ` : ""}
+            <span className="kind-tag">{pulse.kind}</span>
           </span>
         </div>
         <div className="job-meta">
@@ -437,10 +455,8 @@ function PastPulseCard({ pulse, open, marked, onToggle, specs, onShowInSpec, onI
       </div>
       {open && more && (
         <div className="job-body">
-          <div className="job-main">
-            <FailureMarks failures={pulse.failures} />
-          </div>
-          <PulseSpec job={{ diff: pulse.diff ?? undefined, diffWhere: pulse.diffWhere ?? undefined }} specs={specs} onShowInSpec={onShowInSpec} />
+          <PulseSpec job={{ diff: pulse.diff ?? undefined, diffWhere: pulse.diffWhere ?? undefined, kind: pulse.kind, status: pulse.status }} specs={specs} onShowInSpec={onShowInSpec} readPlain={readPlain} part={part} />
+          <Failures failures={pulse.failures} folded={part("failure")} />
         </div>
       )}
     </div>

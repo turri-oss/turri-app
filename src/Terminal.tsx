@@ -71,6 +71,22 @@ export function TerminalPane({ onState }: { onState: (state: TerminalState) => v
     };
     const sizeWatch = new ResizeObserver(resize);
 
+    // Where turri clicks or turns the wheel: the cell marked a moment, so the person sees where.
+    const point = ({ row, column, kind }: { row: number; column: number; kind: "click" | "scroll" }) => {
+      const screen = element.querySelector(".xterm-screen");
+      if (screen === null) return;
+      term.scrollToBottom();
+      const box = screen.getBoundingClientRect();
+      const outer = element.getBoundingClientRect();
+      const width = box.width / term.cols;
+      const height = box.height / term.rows;
+      const mark = document.createElement("div");
+      mark.className = `terminal-pointer ${kind}`;
+      Object.assign(mark.style, { left: `${box.left - outer.left + (column - 1) * width}px`, top: `${box.top - outer.top + (row - 1) * height}px`, width: `${width}px`, height: `${height}px` });
+      element.appendChild(mark);
+      setTimeout(() => mark.remove(), 900);
+    };
+
     void (async () => {
       if (gone) return;
       term.open(element);
@@ -80,6 +96,7 @@ export function TerminalPane({ onState }: { onState: (state: TerminalState) => v
       offs.push(window.turri.on("terminal:data", (data: string) => replayed && term.write(data)));
       offs.push(window.turri.on("terminal:reset", () => term.reset()));
       offs.push(window.turri.on("terminal:state", (state: TerminalState) => onState(state)));
+      offs.push(window.turri.on("terminal:pointer", (at: { row: number; column: number; kind: "click" | "scroll" }) => point(at)));
       const opened = await window.turri.terminal.open();
       if (gone) return;
       replayed = true;

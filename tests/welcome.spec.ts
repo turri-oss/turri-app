@@ -5,6 +5,17 @@ import { expect, test } from "./app.ts";
 test.describe("the welcome screen", () => {
   test.use({ open: false, recent: true });
 
+  test("keeps its jellyfish still - only the chat's move - and the empty chat's grows from the polyp", async ({ launched: { window } }) => {
+    const card = window.locator(".welcome-card");
+    await expect(card.locator("img.jellyfish")).toBeVisible();
+    await expect(card.locator(".jellyfish.pixels")).toHaveCount(0);
+    await window.locator(".recents button", { hasText: "hello" }).click();
+    await expect(window.locator(".chat-empty .jellyfish.pixels")).toBeVisible();
+    // The chat's header has no jellyfish, nor turri's name: its tabs alone.
+    await expect(window.locator(".chat-top .jellyfish")).toHaveCount(0);
+    await expect(window.locator(".project-name .jellyfish")).toHaveCount(0);
+  });
+
   test("lists a recent project and opens it", async ({ launched: { window, project } }) => {
     await expect(window.getByRole("button", { name: "start a new project…" })).toBeVisible();
     await expect(window.getByRole("button", { name: "open a project…" })).toBeVisible();

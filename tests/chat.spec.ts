@@ -1,3 +1,5 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { clickMenu, expect, offers, tellChat, test } from "./app.ts";
 
 // Only what calls no model: slash commands that print, and the window's own.
@@ -41,6 +43,28 @@ test.describe("the chat", () => {
     await expect(offered).toHaveCount(0);
   });
 
+  test("completes a file the tree shows with tab - the one it fits, or a choice of those it fits", async ({ launched: { window, project } }) => {
+    const box = window.getByPlaceholder("talk to turri - or / for a command");
+    await box.fill("/regenerate hel");
+    await box.press("Tab");
+    await expect(box).toHaveValue("/regenerate hello.plain ");
+    // Nothing it fits: tab leaves the draft as it is.
+    await box.fill("/regenerate xyz");
+    await box.press("Tab");
+    await expect(box).toHaveValue("/regenerate xyz");
+    // Two it fits: both offered, the arrows choose and enter takes one.
+    writeFileSync(join(project, "helper.plain"), "***definitions***\n\n- :Helper: helps.\n");
+    await expect(window.locator(".sidebar")).toContainText("helper.plain");
+    await box.fill("/regenerate hel");
+    await box.press("Tab");
+    const offered = window.getByRole("listbox", { name: "files" });
+    await expect(offered.getByRole("option")).toHaveText(["hello.plain", "helper.plain"]);
+    await box.press("ArrowDown");
+    await box.press("Enter");
+    await expect(box).toHaveValue("/regenerate helper.plain ");
+    await expect(offered).toHaveCount(0);
+  });
+
   test("runs a slash command that only prints", async ({ launched: { window } }) => {
     const box = window.getByPlaceholder("talk to turri - or / for a command");
     await box.fill("/stdlib");
@@ -58,6 +82,19 @@ test.describe("the chat", () => {
     await box.fill("/login");
     await box.press("Enter");
     await expect(window.locator(".sheet.auth h2")).toHaveText("sign in to your models");
+    await expect(window.locator(".chat-body .msg.assistant")).toHaveCount(0);
+  });
+
+  test("leaves /pulses, the terminal's side panel, out of what / offers, and shows regen for it, rather than sending it", async ({ launched: { window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    const box = window.getByPlaceholder("talk to turri - or / for a command");
+    await box.fill("/");
+    await expect(window.locator(".suggestions li", { hasText: "/regenerate" })).toBeVisible();
+    await expect(window.locator(".suggestions")).not.toContainText("/pulses");
+    await expect(window.locator(".suggestions")).not.toContainText("ctrl+h");
+    await box.fill("/pulses");
+    await box.press("Enter");
+    await expect(window.locator(".toolbar").getByRole("tab", { name: "regen", selected: true })).toBeVisible();
     await expect(window.locator(".chat-body .msg.assistant")).toHaveCount(0);
   });
 
@@ -180,6 +217,9 @@ test.describe("the chat", () => {
     await expect(window.locator(".question-card")).toHaveCount(0);
     await tabs.nth(0).click();
     await expect(window.locator(".question-card h2")).toHaveText("which colour?");
+    // The question alone heads it: no jellyfish, nor "turri asks", above it.
+    await expect(window.locator(".question-card .jellyfish")).toHaveCount(0);
+    await expect(window.locator(".question-card")).not.toContainText("turri asks");
   });
 
   test("clears the draft with ctrl+c in a chat doing nothing", async ({ launched: { window } }) => {
@@ -250,6 +290,17 @@ test.describe("a turn at work", () => {
       await expect(stop, `stopped with the focus on ${focus}`).toHaveCount(0);
     }
     expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+  });
+
+  test("says it is thinking with the turri icon jumping, a pixel at a time", async ({ launched: { window } }) => {
+    const box = window.locator(".composer textarea");
+    await box.fill("hello");
+    await box.press("Enter");
+    const jelly = window.locator(".chat-working img.jellyfish");
+    await expect(jelly).toBeVisible();
+    await expect(jelly).toHaveAttribute("src", /logo-mark\.svg$/);
+    await expect(window.locator(".chat-working")).toContainText("thinking");
+    expect(await jelly.evaluate((image) => [getComputedStyle(image).animationName, getComputedStyle(image).animationTimingFunction])).toEqual(["bob", "steps(1)"]);
   });
 
   test("shows what is said meanwhile at once, waiting, and runs a slash command at once", async ({ launched: { window, requests } }) => {
@@ -337,3 +388,43 @@ test.describe("turri's questions", () => {
   });
 });
 
+
+test.describe("what is attached to a message", () => {
+  test.use({ stubModel: "replies" });
+  // A PNG of one pixel.
+  const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+  test("takes an image pasted into the message box, and sends it with the message for the model to see", async ({ launched: { window, requests } }) => {
+    const box = window.locator(".composer textarea");
+    await box.fill("what is in this?");
+    await box.evaluate((element, png) => {
+      const data = new DataTransfer();
+      data.items.add(new File([Uint8Array.from(atob(png), (char) => char.charCodeAt(0))], "dot.png", { type: "image/png" }));
+      element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    }, PNG);
+    const attached = window.getByRole("list", { name: "attached" });
+    await expect(attached).toContainText("dot.png");
+    // Taken off with its ×, and pasted again.
+    await attached.getByRole("button", { name: "remove dot.png" }).click();
+    await expect(attached).toHaveCount(0);
+    await box.evaluate((element, png) => {
+      const data = new DataTransfer();
+      data.items.add(new File([Uint8Array.from(atob(png), (char) => char.charCodeAt(0))], "dot.png", { type: "image/png" }));
+      element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    }, PNG);
+    await expect(attached).toContainText("dot.png");
+    await expect(box).toHaveValue("what is in this?");
+    await box.press("Enter");
+    await expect(attached).toHaveCount(0);
+    await expect(window.locator(".chat-body .msg.user", { hasText: "what is in this?" }).locator("img")).toBeVisible();
+    await expect.poll(() => requests.some((request) => request.includes(PNG))).toBe(true);
+  });
+
+  test("names a file attached by its path, for turri to read", async ({ launched: { window, requests } }) => {
+    await window.locator(".composer textarea").waitFor();
+    await window.evaluate(() =>
+      (window as unknown as { turri: { call: (method: string, params: unknown) => Promise<unknown> } }).turri.call("sendChat", { text: "read this", files: ["/tmp/notes.txt"] }),
+    );
+    await expect.poll(() => requests.some((request) => request.includes("read this\\n\\nAttached file: /tmp/notes.txt"))).toBe(true);
+  });
+});

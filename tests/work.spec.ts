@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Locator } from "@playwright/test";
+import type { ElectronApplication, Locator, Page } from "@playwright/test";
 import { expect, offers, tellChat, test } from "./app.ts";
 
 /** A pulse as the engine sends it, done: it rendered one line of hello.plain, its functional specs' second. */
@@ -33,6 +33,43 @@ async function opened(card: Locator): Promise<Locator> {
   return card;
 }
 
+/** A part of an open card unfolded by its line - its ***plain (by its file's name), trace, report, gaps or failure. */
+async function unfold(card: Locator, part: string): Promise<Locator> {
+  const head = card.locator(".part-head", { hasText: part });
+  await head.click();
+  await expect(head).toHaveAttribute("aria-expanded", "true");
+  return card;
+}
+
+/**
+ * A pulse that rendered repos.plain's two functional specs, its card opened on them in regen - since when a definition
+ * was added above them, so they are two lines further down now.
+ */
+async function reposPulse({ app, window, project }: { app: ElectronApplication; window: Page; project: string }): Promise<Locator> {
+    // Since the pulse ran, a definition was added above what it rendered: its lines are two further down now.
+    writeFileSync(
+      join(project, "repos.plain"),
+      "---\ndescription: Repos.\n---\n\n***definitions***\n\n- :Repo: is a store.\n\n- :Owner: is who owns a :Repo:.\n\n***implementation reqs***\n\n- :Implementation: is in Java.\n\n***functional specs***\n\n- An :Owner: creates a :Repo:.\n  - A missing token returns `401`.\n\n- An :Owner: lists their :Repo: items.\n  - A missing token returns `401`.\n",
+    );
+    await expect(window.locator(".tree-row", { hasText: "repos.plain" })).toBeVisible();
+    const diff = [
+      "diff --git a/repos.plain b/repos.plain",
+      "--- a/repos.plain",
+      "+++ b/repos.plain",
+      "@@ @@",
+      " ***functional specs***",
+      "+- An :Owner: creates a :Repo:.",
+      "+  - A missing token returns `401`.",
+      "+- An :Owner: lists their :Repo: items.",
+      "+  - A missing token returns `401`.",
+    ].join("\n");
+    const where = Object.fromEntries([13, 15, 16, 18, 19].map((line, at) => [at + 4, { file: "repos.plain", line }]));
+    const job = { ...pulse(), id: "p2", module: "repos", summary: "repos: create and list", title: "create and list", diff, diffWhere: where };
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), job);
+    await window.getByRole("tab", { name: "regen" }).click();
+    return unfold(await opened(window.locator(".job", { hasText: "create and list" })), "repos.plain");
+}
+
 test.describe("the regen view", () => {
   test("shows each pulse closed, to its head, and opens and closes it on a click", async ({ launched: { app, window } }) => {
     await expect(window.locator(".chat-model")).toBeVisible();
@@ -47,16 +84,83 @@ test.describe("the regen view", () => {
     await expect(head).toHaveAttribute("aria-expanded", "false");
     await expect(card.locator(".pulse-spec")).toHaveCount(0);
     await expect(card.locator(".job-report")).toHaveCount(0);
-    // Open: the ***plain it renders, its report and its gaps, all in view - nothing more to unfold.
+    // Open: a line for each part of it - its ***plain, its gaps - each closed until it is unfolded. Its report is for
+    // debugging turri: with debug off, not shown.
     await head.click();
+    await expect(card.locator(".part-head")).toHaveText([/^regenerated.*hello\.plain$/, /1.*plain gap/]);
+    await expect(card.locator(".part-head[aria-expanded=true]")).toHaveCount(0);
+    await expect(card.locator(".pulse-spec-lines")).toHaveCount(0);
+    await unfold(card, "hello.plain");
     await expect(card.locator(".pulse-spec-lines")).toContainText(':Greeter: prints "hello, world" and exits with 0.');
-    await expect(card.locator(".job-report .prose")).toContainText("The greeter now greets by name.");
+    await unfold(card, "gap");
     await expect(card.locator(".gaps")).toContainText("What if no name is given?");
+    // Unfolded, a part folds again by its line.
+    await card.locator(".part-head", { hasText: "gap" }).click();
+    await expect(card.locator(".gaps")).toHaveCount(0);
     // From the keyboard too, and closed again.
     await head.focus();
     await window.keyboard.press("Enter");
     await expect(head).toHaveAttribute("aria-expanded", "false");
     await expect(card.locator(".pulse-spec")).toHaveCount(0);
+  });
+
+  test("traces a running pulse with debug off, and has no trace once it has ended", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    const send = (job: object) => app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), job);
+    const running = {
+      ...pulse(),
+      status: "running",
+      finishedAt: undefined,
+      now: { label: "waiting for the model", since: Date.now() - 9_000 },
+      activity: ["read hello.plain"],
+      agents: [{ label: "coder", turns: 1, compactions: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 } }],
+    };
+    await send(running);
+    await window.getByRole("tab", { name: "regen" }).click();
+    const card = window.locator(".job", { hasText: "the greeting by name" });
+    // Closed, its head says nothing of what it is on now.
+    await expect(card).not.toContainText("waiting for the model");
+    await opened(card);
+    await expect(card.locator(".part-head", { hasText: "agent trace" })).toHaveCount(1);
+    await send({ ...running, status: "succeeded", finishedAt: Date.now() });
+    await expect(card).toHaveClass(/\bsucceeded\b/);
+    await expect(card.locator(".part-head", { hasText: "agent trace" })).toHaveCount(0);
+    await expect(card.locator(".agent-chip")).toHaveCount(0);
+  });
+
+  test("heads a pulse by its module and kind, not its number", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), pulse());
+    await window.getByRole("tab", { name: "regen" }).click();
+    await expect(window.locator(".job", { hasText: "the greeting by name" }).locator(".job-title .muted")).toHaveText("hello · regenerate");
+    expect(await window.locator(".job-title .muted").first().evaluate((element) => element.textContent)).toBe("hello\u00a0 · regenerate");
+  });
+
+  test("folds a running pulse's trace - its steps and agents - and what failed that it went on past", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    const usage = { input: 1200, output: 300, cacheRead: 0, cacheWrite: 0, cost: 0.01 };
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), {
+      ...pulse(),
+      status: "running",
+      finishedAt: undefined,
+      now: { label: "writing the greeter", since: Date.now() - 5_000 },
+      activity: ["read hello.plain", "wrote greeter.py"],
+      agents: [{ label: "coder", turns: 3, compactions: 0, usage }],
+      failures: [{ mark: "debugger failed", text: "The debugger could not start." }],
+    });
+    await window.getByRole("tab", { name: "regen" }).click();
+    const card = await opened(window.locator(".job", { hasText: "the greeting by name" }));
+    const trace = card.locator(".part-head", { hasText: "agent trace" });
+    // Its line says no more than that it is there: not the stage the pulse is at.
+    await expect(trace).toHaveText("agent trace");
+    await expect(card.locator(".activity")).toHaveCount(0);
+    await unfold(card, "agent trace");
+    await expect(card.locator(".activity li")).toHaveText(["read hello.plain", "wrote greeter.py"]);
+    await expect(card.locator(".agent-chip")).toContainText("coder · 3 turns");
+    await expect(card.locator(".part-head", { hasText: "failure" })).toContainText("debugger failed");
+    await expect(card.locator(".failure-mark")).toHaveCount(0);
+    await unfold(card, "failure");
+    await expect(card.locator(".failure-mark")).toHaveText("debugger failed");
   });
 
   test("opens a pulse clicked in the chat, in the regen view", async ({ launched: { app, window } }) => {
@@ -67,7 +171,7 @@ test.describe("the regen view", () => {
     await expect(window.locator(".toolbar").getByRole("tab", { name: "regen", selected: true })).toBeVisible();
     const card = window.locator(".job", { hasText: "the greeting by name" });
     await expect(card.locator(".job-head")).toHaveAttribute("aria-expanded", "true");
-    await expect(card.locator(".pulse-spec-lines")).toContainText("hello, world");
+    await expect(card.locator(".part-head", { hasText: "hello.plain" })).toHaveAttribute("aria-expanded", "false");
   });
 
   test("turns a spinner in the regen tab while a pulse runs", async ({ launched: { app, window } }) => {
@@ -129,19 +233,15 @@ test.describe("the regen view", () => {
     await expect(window.locator(".chat-model")).toBeVisible();
     await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), pulse());
     await window.getByRole("tab", { name: "regen" }).click();
-    // In the card itself, nothing to open: no panel beside it, and no conversation.
+    // In the card itself, nothing to open: no panel beside it, and no conversation - and its lines, unfolded, open in the ***plain.
     const card = await opened(window.locator(".job", { hasText: "the greeting by name" }));
+    await expect(card.locator(".opens-in-plain")).toHaveCount(0);
+    await unfold(card, "hello.plain");
     await expect(card.locator(".pulse-spec-lines")).toContainText(':Greeter: prints "hello, world" and exits with 0.');
-    // In the card's right half, beside what the pulse is and did.
-    const main = (await card.locator(".job-main").boundingBox())!;
-    const plain = (await card.locator(".pulse-spec").boundingBox())!;
-    const whole = (await card.boundingBox())!;
-    expect(plain.x).toBeGreaterThan(main.x + main.width);
-    expect(plain.x).toBeGreaterThanOrEqual(whole.x + whole.width / 2 - 20);
     await card.locator(".job-body").click({ position: { x: 4, y: 4 } });
     await expect(window.locator(".transcript")).toHaveCount(0);
     await expect(window.getByRole("tab", { name: "conversation" })).toHaveCount(0);
-    await card.getByRole("button", { name: "open", exact: true }).click();
+    await card.locator(".opens-in-plain").click();
     await expect(window.locator(".toolbar").getByRole("tab", { name: "***plain", selected: true })).toBeVisible();
     await expect(window.locator(".editor-pane .pane-header")).toContainText("hello.plain");
   });
@@ -160,29 +260,16 @@ test.describe("the regen view", () => {
       diffWhere: { 4: { file: "gone.plain", line: 13 }, 5: { file: "gone.plain", line: 15 } },
     });
     await window.getByRole("tab", { name: "regen" }).click();
-    const card = await opened(window.locator(".job", { hasText: "the greeting by name" }));
-    const open = card.getByRole("button", { name: "open", exact: true });
+    const card = await unfold(await opened(window.locator(".job", { hasText: "the greeting by name" })), "hello.plain");
+    const open = card.locator(".opens-in-plain");
     await expect(open).toBeVisible();
-    const removed = await opened(window.locator(".job", { hasText: "a file since removed" }));
+    const removed = await unfold(await opened(window.locator(".job", { hasText: "a file since removed" })), "gone.plain");
     await expect(removed.locator(".pulse-spec-lines")).toContainText("hello, world");
-    await expect(removed.getByRole("button", { name: "open", exact: true })).toHaveCount(0);
+    await expect(removed.locator(".opens-in-plain")).toHaveCount(0);
     // Its line edited away since: the button goes.
     const file = join(project, "hello.plain");
     writeFileSync(file, readFileSync(file, "utf8").replace('prints "hello, world" and exits with 0.', "prints a greeting."));
     await expect(open).toHaveCount(0);
-  });
-
-  test("stops the pulses that were running once the engine stops", async ({ launched: { app, window } }) => {
-    await expect(window.locator(".chat-model")).toBeVisible();
-    const send = (channel: string, data: unknown) => app.evaluate(({ BrowserWindow }, [channel, data]) => BrowserWindow.getAllWindows()[0]!.webContents.send(channel as string, data), [channel, data] as const);
-    await send("engine:job", { ...pulse(), status: "running", finishedAt: undefined });
-    await window.getByRole("tab", { name: "regen" }).click();
-    const card = window.locator(".job", { hasText: "the greeting by name" });
-    await expect(card).toHaveClass(/\brunning\b/);
-    await send("engine:exit", { code: 1 });
-    await expect(card).toHaveClass(/\bstopped\b/);
-    await opened(card);
-    await expect(card.locator(".job-report .prose")).toContainText("The turri engine stopped under this pulse.");
   });
 
   test("keeps a long ***plain change within a ceiling, to scroll", async ({ launched: { app, window } }) => {
@@ -191,7 +278,7 @@ test.describe("the regen view", () => {
     const diff = `diff --git a/hello.plain b/hello.plain\n--- a/hello.plain\n+++ b/hello.plain\n@@ -13,1 +13,${added.length + 1} @@\n ***functional specs***\n${added.join("\n")}\n`;
     await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), { ...pulse(), diff, diffWhere: {} });
     await window.getByRole("tab", { name: "regen" }).click();
-    const lines = (await opened(window.locator(".job", { hasText: "the greeting by name" }))).locator(".pulse-spec-lines");
+    const lines = (await unfold(await opened(window.locator(".job", { hasText: "the greeting by name" })), "hello.plain")).locator(".pulse-spec-lines");
     await expect(lines).toContainText("greets visitor 80.");
     const box = await lines.evaluate((element) => ({ height: element.clientHeight, content: element.scrollHeight, overflow: getComputedStyle(element).overflowY }));
     expect(box.height).toBeLessThanOrEqual(220);
@@ -254,8 +341,10 @@ test.describe("the regen view", () => {
     const diagnosis = Array.from({ length: 60 }, (_, at) => `Cause ${at + 1}: the greeter was not found.`).join("\n");
     await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), { ...pulse(), status: "failed", diagnosis });
     await window.getByRole("tab", { name: "regen" }).click();
-    // Failed while regen was not shown: shown, it is open already.
-    const text = window.locator(".job", { hasText: "the greeting by name" }).locator(".diagnosis > div");
+    // Failed while regen was not shown: shown, it is open already - and its failure folded, until unfolded.
+    const card = window.locator(".job", { hasText: "the greeting by name" });
+    await expect(card.locator(".diagnosis")).toHaveCount(0);
+    const text = (await unfold(card, "failure")).locator(".diagnosis > div");
     await expect(text).toContainText("Cause 60");
     const box = await text.evaluate((element) => ({ height: element.clientHeight, content: element.scrollHeight, overflow: getComputedStyle(element).overflowY }));
     expect(box.height).toBeLessThanOrEqual(220);
@@ -263,43 +352,8 @@ test.describe("the regen view", () => {
     expect(box.overflow).toBe("auto");
   });
 
-  test("keeps a long report within a ceiling, to scroll", async ({ launched: { app, window } }) => {
-    await expect(window.locator(".chat-model")).toBeVisible();
-    const report = Array.from({ length: 60 }, (_, at) => `Step ${at + 1}: the greeting was checked again.`).join("\n\n");
-    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), { ...pulse(), report });
-    await window.getByRole("tab", { name: "regen" }).click();
-    const card = await opened(window.locator(".job", { hasText: "the greeting by name" }));
-    const prose = card.locator(".job-report .prose");
-    await expect(prose).toContainText("Step 60:");
-    const box = await prose.evaluate((element) => ({ height: element.clientHeight, content: element.scrollHeight, overflow: getComputedStyle(element).overflowY }));
-    expect(box.height).toBeLessThanOrEqual(220);
-    expect(box.content).toBeGreaterThan(box.height);
-    expect(box.overflow).toBe("auto");
-  });
-
   test("finds a pulse's lines where they are now, and shows the blank line between two of its functional specs", async ({ launched: { app, window, project } }) => {
-    // Since the pulse ran, a definition was added above what it rendered: its lines are two further down now.
-    writeFileSync(
-      join(project, "repos.plain"),
-      "---\ndescription: Repos.\n---\n\n***definitions***\n\n- :Repo: is a store.\n\n- :Owner: is who owns a :Repo:.\n\n***implementation reqs***\n\n- :Implementation: is in Java.\n\n***functional specs***\n\n- An :Owner: creates a :Repo:.\n  - A missing token returns `401`.\n\n- An :Owner: lists their :Repo: items.\n  - A missing token returns `401`.\n",
-    );
-    await expect(window.locator(".tree-row", { hasText: "repos.plain" })).toBeVisible();
-    const diff = [
-      "diff --git a/repos.plain b/repos.plain",
-      "--- a/repos.plain",
-      "+++ b/repos.plain",
-      "@@ @@",
-      " ***functional specs***",
-      "+- An :Owner: creates a :Repo:.",
-      "+  - A missing token returns `401`.",
-      "+- An :Owner: lists their :Repo: items.",
-      "+  - A missing token returns `401`.",
-    ].join("\n");
-    const where = Object.fromEntries([13, 15, 16, 18, 19].map((line, at) => [at + 4, { file: "repos.plain", line }]));
-    const job = { ...pulse(), id: "p2", module: "repos", summary: "repos: create and list", title: "create and list", diff, diffWhere: where };
-    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), job);
-    await window.getByRole("tab", { name: "regen" }).click();
-    const card = await opened(window.locator(".job", { hasText: "create and list" }));
+    const card = await reposPulse({ app, window, project });
 
     // Two functional specs, and the blank lines turri's diff leaves out - after the section's header, and between them -
     // drawn, numbered.
@@ -309,7 +363,7 @@ test.describe("the regen view", () => {
     await expect(panel.nth(5)).toContainText("lists their :Repo: items");
 
     // Both lit in the ***plain view, where they are now - not where they were.
-    await card.getByRole("button", { name: "open", exact: true }).click();
+    await card.locator(".opens-in-plain").click();
     const line = (index: number) => window.locator(`.editor-colours [data-line="${index}"]`);
     await expect(line(16)).toHaveClass(/rendering/);
     await expect(line(19)).toHaveClass(/rendering/);
@@ -326,6 +380,110 @@ test.describe("the regen view", () => {
     expect(await window.locator(".editor-colours .rendering").count()).toBe(0);
   });
 
+  test("shows each file a pulse's ***plain comes from on its own line - its module's, and what it takes from the standard library", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    // As turri gives it: the ***plain the pulse renders, under its module's file, and where each line of it is.
+    const diff = [
+      "diff --git a/hello.plain b/hello.plain",
+      "--- a/hello.plain",
+      "+++ b/hello.plain",
+      "@@ @@",
+      " ***definitions***",
+      "+- :Greeter: is the command-line tool.",
+      "@@ @@",
+      " ***implementation reqs***",
+      "+- :Implementation: is written in Python.",
+      "+- :Implementation: manages dependencies with uv.",
+      "+- :Implementation: greets in English.",
+      "@@ @@",
+      " ***test reqs***",
+      "+- :ConformanceTests: run with pytest.",
+      "@@ @@",
+      " ***functional specs***",
+      "+- :Greeter: prints hello.",
+    ].join("\n");
+    const diffWhere = {
+      4: { file: "hello.plain", line: 7 },
+      5: { file: "hello.plain", line: 9 },
+      8: { file: "stdlib/lang/python.plain", line: 7 },
+      9: { file: "stdlib/lang/python.plain", line: 8 },
+      10: { file: "hello.plain", line: 13 },
+      // A section of the module's whose lines are all the standard library's: its header placed in the module's file.
+      12: { file: "hello.plain", line: 15 },
+      13: { file: "stdlib/lang/python.plain", line: 11 },
+      15: { file: "hello.plain", line: 17 },
+      16: { file: "hello.plain", line: 19 },
+    };
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), { ...pulse(), diff, diffWhere });
+    await window.getByRole("tab", { name: "regen" }).click();
+    const card = await opened(window.locator(".job", { hasText: "the greeting by name" }));
+    await expect(card.locator(".part-head")).toHaveText([/^regenerated.*hello\.plain$/, /^regenerated.*stdlib\/lang\/python\.plain$/]);
+    // Its module's own lines, each section headed - and nothing of the standard library's.
+    await unfold(card, "hello.plain");
+    const own = card.locator(".pulse-spec-lines").first();
+    await expect(own).toContainText("greets in English");
+    await expect(own).toContainText("***implementation reqs***");
+    await expect(own).not.toContainText("written in Python");
+    // A section none of whose lines are the module's own is not headed in it.
+    await expect(own).not.toContainText("***test reqs***");
+    // The standard library's, under the section they are in, numbered as they are in its file.
+    await unfold(card, "python.plain");
+    const taken = card.locator(".pulse-spec-lines").nth(1).locator("> div");
+    await expect(taken).toHaveText([/^\*\*\*implementation reqs\*\*\*$/, /^7.*written in Python\.$/, /^8.*uv\.$/, "⋯", /^\*\*\*test reqs\*\*\*$/, /^11.*pytest\.$/]);
+  });
+
+  test("opens a template's lines the pulse rendered as its file, named in the title, the caret on the line clicked", async ({ launched: { app, window, project } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    mkdirSync(join(project, "template"), { recursive: true });
+    writeFileSync(join(project, "template", "greeter_stack.plain"), "***implementation reqs***\n\n- :Implementation: is written in Python.\n\n- :Implementation: manages dependencies with uv.\n");
+    const diff = ["diff --git a/hello.plain b/hello.plain", "--- a/hello.plain", "+++ b/hello.plain", "@@ @@", " ***implementation reqs***", "+- :Implementation: is written in Python.", "+- :Implementation: manages dependencies with uv."].join("\n");
+    const diffWhere = { 4: { file: "template/greeter_stack.plain", line: 1 }, 5: { file: "template/greeter_stack.plain", line: 3 }, 6: { file: "template/greeter_stack.plain", line: 5 } };
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), { ...pulse(), diff, diffWhere });
+    await window.getByRole("tab", { name: "regen" }).click();
+    const card = await unfold(await opened(window.locator(".job", { hasText: "the greeting by name" })), "greeter_stack.plain");
+    await card.locator(".pulse-spec-lines > div", { hasText: "uv." }).click();
+    await expect(window.locator(".toolbar").getByRole("tab", { name: "***plain", selected: true })).toBeVisible();
+    await expect(window.locator(".pane-title")).toHaveText(/template\/greeter_stack\.plain$/);
+    await expect
+      .poll(() => window.locator(".editor-pane textarea").evaluate((area: HTMLTextAreaElement) => document.activeElement === area && area.value.slice(0, area.selectionStart).split("\n").length))
+      .toBe(5);
+  });
+
+  test("puts the caret in the ***plain on the line clicked in a pulse's ***plain, where it is now - a blank one too, and one taken out since", async ({ launched: { app, window, project } }) => {
+    const card = await reposPulse({ app, window, project });
+    const rows = card.locator(".pulse-spec-lines > div");
+    // The caret's line in the editor, and the line after it - as the editor shows them, a functional spec folded or not.
+    const caret = () =>
+      window.locator(".editor-pane textarea").evaluate((area: HTMLTextAreaElement) => {
+        const lines = area.value.split("\n");
+        const at = area.value.slice(0, area.selectionStart).split("\n").length - 1;
+        return { focused: document.activeElement === area, line: lines[at], next: lines[at + 1] };
+      });
+    const back = () => window.getByRole("tab", { name: "regen" }).click();
+    // A line of text: there, two lines down from where it was.
+    await rows.filter({ hasText: "lists their" }).click();
+    await expect.poll(caret).toEqual({ focused: true, line: "- An :Owner: lists their :Repo: items.", next: expect.any(String) });
+    await expect(window.locator(".pane-title")).toHaveText(/repos\.plain$/);
+    // A blank line, between the two: the blank still between them.
+    await back();
+    // Unfolded, it stays so.
+    await expect(card.locator(".part-head", { hasText: "repos.plain" })).toHaveAttribute("aria-expanded", "true");
+    await card.locator(".opens-in-plain").waitFor();
+    await rows.nth(4).click();
+    await expect.poll(caret).toMatchObject({ focused: true, line: "", next: "- An :Owner: lists their :Repo: items." });
+    // A line taken out since: where it was, below what was above it.
+    const file = join(project, "repos.plain");
+    writeFileSync(file, readFileSync(file, "utf8").replace("- An :Owner: lists their :Repo: items.\n  - A missing token returns `401`.\n", ""));
+    await back();
+    // Unfolded, it stays so.
+    await expect(card.locator(".part-head", { hasText: "repos.plain" })).toHaveAttribute("aria-expanded", "true");
+    await card.locator(".opens-in-plain").waitFor();
+    await rows.filter({ hasText: "lists their" }).click();
+    await expect.poll(async () => (await caret()).focused).toBe(true);
+    const before = await window.locator(".editor-pane textarea").evaluate((area: HTMLTextAreaElement) => area.value.slice(0, area.selectionStart));
+    expect(before).toContain("creates a :Repo:");
+  });
+
   test("keeps what a running pulse renders lit in the ***plain view as a functional spec is added above it", async ({ launched: { app, window, spec } }) => {
     // Running: it renders hello.plain's functional spec, line 15 when it started.
     const diff = ["diff --git a/hello.plain b/hello.plain", "--- a/hello.plain", "+++ b/hello.plain", "@@ @@", " ***functional specs***", '+- :Greeter: prints "hello, world" and exits with 0.'].join("\n");
@@ -340,6 +498,28 @@ test.describe("the regen view", () => {
     await expect(line(16)).toContainText("prints");
     await expect(line(16)).toHaveClass(/rendering/);
     await expect(line(14)).not.toHaveClass(/rendering/);
+  });
+
+  test("lights a line with a link a running pulse renders - found by its text as the file has it, not as turri reads it", async ({ launched: { app, window, spec } }) => {
+    // A definition with a nested line linking a resource: the diff has its link as turri reads it, `written` as the file has it.
+    const linked = "  - It is described in [resources/greeting spec.yaml](resources/greeting spec.yaml).";
+    writeFileSync(spec, readFileSync(spec, "utf8").replace("greets the person running it.", `greets the person running it.\n${linked}`));
+    const line = (index: number) => window.locator(`.editor-colours [data-line="${index}"]`);
+    await expect(line(7)).toContainText("It is described in");
+    const read = "  - It is described in `[resource]resources/greeting spec.yaml`.";
+    const diff = ["diff --git a/hello.plain b/hello.plain", "--- a/hello.plain", "+++ b/hello.plain", "@@ @@", " ***definitions***", "+- :Greeter: is a command-line program that greets the person running it.", `+${read}`].join("\n");
+    const where = { 4: { file: "hello.plain", line: 5 }, 5: { file: "hello.plain", line: 7 }, 6: { file: "hello.plain", line: 8, written: linked } };
+    const running = { ...pulse(), id: "p4", status: "running", finishedAt: undefined, diff, diffWhere: where };
+    await expect(window.locator(".chat-model")).toBeVisible();
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), running);
+    await expect(line(6)).toHaveClass(/rendering/);
+    await expect(line(7)).toHaveClass(/rendering/);
+
+    // A line written in above them: both move down one, and stay lit there.
+    writeFileSync(spec, readFileSync(spec, "utf8").replace("***definitions***\n", "***definitions***\n\n- :Visitor: is whoever runs it.\n"));
+    await expect(line(9)).toContainText("It is described in");
+    await expect(line(9)).toHaveClass(/rendering/);
+    await expect(line(8)).toHaveClass(/rendering/);
   });
 
   test("shows an earlier session's pulse with nothing more to it as a card that does not open", async ({ launched: { app, window } }) => {
@@ -376,14 +556,53 @@ test.describe("the regen view", () => {
     await window.getByRole("tab", { name: "regen" }).click();
     const card = window.locator(".job.past", { hasText: "the root endpoint" });
     await expect(card.locator(".pulse-spec")).toHaveCount(0);
-    await opened(card);
+    await unfold(await opened(card), "hello.plain");
     await expect(card.locator(".pulse-spec-lines")).toContainText(':Greeter: prints "hello, world" and exits with 0.');
-    const main = (await card.locator(".job-main").boundingBox())!;
-    const plain = (await card.locator(".pulse-spec").boundingBox())!;
-    expect(plain.x).toBeGreaterThan(main.x + main.width);
-    await card.getByRole("button", { name: "open", exact: true }).click();
+    await card.locator(".opens-in-plain").click();
     await expect(window.locator(".toolbar").getByRole("tab", { name: "***plain", selected: true })).toBeVisible();
     await expect(window.locator(".editor-pane .pane-header")).toContainText("hello.plain");
+  });
+});
+
+test.describe("a pulse's report, with debug on", () => {
+  test.use({ debug: true });
+
+  test("shows a pulse's report, folded", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), { ...pulse(), report: "The greeter now greets by name." });
+    await window.getByRole("tab", { name: "regen" }).click();
+    const card = await opened(window.locator(".job", { hasText: "the greeting by name" }));
+    await expect(card.locator(".part-head")).toHaveText([/^regenerated.*hello\.plain$/, "report"]);
+    await expect(card.locator(".job-report .prose")).toHaveCount(0);
+    await unfold(card, "report");
+    await expect(card.locator(".job-report .prose")).toContainText("The greeter now greets by name.");
+  });
+
+  test("stops the pulses that were running once the engine stops", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    const send = (channel: string, data: unknown) => app.evaluate(({ BrowserWindow }, [channel, data]) => BrowserWindow.getAllWindows()[0]!.webContents.send(channel as string, data), [channel, data] as const);
+    await send("engine:job", { ...pulse(), status: "running", finishedAt: undefined });
+    await window.getByRole("tab", { name: "regen" }).click();
+    const card = window.locator(".job", { hasText: "the greeting by name" });
+    await expect(card).toHaveClass(/\brunning\b/);
+    await send("engine:exit", { code: 1 });
+    await expect(card).toHaveClass(/\bstopped\b/);
+    await unfold(await opened(card), "report");
+    await expect(card.locator(".job-report .prose")).toContainText("The turri engine stopped under this pulse.");
+  });
+
+  test("keeps a long report within a ceiling, to scroll", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    const report = Array.from({ length: 60 }, (_, at) => `Step ${at + 1}: the greeting was checked again.`).join("\n\n");
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), { ...pulse(), report });
+    await window.getByRole("tab", { name: "regen" }).click();
+    const card = await unfold(await opened(window.locator(".job", { hasText: "the greeting by name" })), "report");
+    const prose = card.locator(".job-report .prose");
+    await expect(prose).toContainText("Step 60:");
+    const box = await prose.evaluate((element) => ({ height: element.clientHeight, content: element.scrollHeight, overflow: getComputedStyle(element).overflowY }));
+    expect(box.height).toBeLessThanOrEqual(220);
+    expect(box.content).toBeGreaterThan(box.height);
+    expect(box.overflow).toBe("auto");
   });
 });
 

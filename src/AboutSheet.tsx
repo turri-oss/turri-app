@@ -54,7 +54,7 @@ function Privacy() {
         subscription or API key, under that provider's terms. that is:
       </p>
       <ul>
-        <li>what you say in the chat, and the conversation so far;</li>
+        <li>what you say in the chat, and the conversation so far - with the images you attach to it, and the files you attach when turri reads them;</li>
         <li>your <PlainName />, and the files of the project turri and its agents read - code, tests, templates, config;</li>
         <li>what commands and test runs print, and what the preview's terminal shows when turri reads it;</li>
         <li>the preview's pages when turri tries them - their text, controls and console, and screenshots of them.</li>

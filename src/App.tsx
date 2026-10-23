@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./types.ts";
-import type { Concept, Job, Pane, PastRun, Project, Spec, Status, View } from "./types.ts";
+import type { Concept, Job, Pane, PastRun, Project, Spec, Status, StdlibModule, View } from "./types.ts";
 import { Welcome } from "./Welcome.tsx";
 import { SpecView } from "./SpecView.tsx";
 import { newestJobs, newestRuns, WorkView } from "./WorkView.tsx";
 import { PlanSheet, type Plan } from "./PlanSheet.tsx";
+import type { Point } from "./PulseSpec.tsx";
 import { DoctorSheet, problems, toSeeTo } from "./DoctorSheet.tsx";
 import { AuthSheet } from "./AuthSheet.tsx";
 import { AboutSheet, type AboutTab } from "./AboutSheet.tsx";
@@ -115,7 +116,7 @@ export function App() {
   // Regenerate, chosen how - open with the functional specs it starts on, if any.
   const [choosing, setChoosing] = useState<string[] | null>(null);
   // Lines of a spec to bring into view and light: a pulse's part of it, shown from the work.
-  const [reveal, setReveal] = useState<{ file: string; lines: number[]; texts?: string[]; at: number } | null>(null);
+  const [reveal, setReveal] = useState<{ file: string; lines: number[]; texts?: string[]; point?: Point; at: number } | null>(null);
   // Lit once, where it was asked for: gone as the person looks elsewhere - another view, file or template - so coming back
   // lights nothing again.
   useEffect(() => {
@@ -125,7 +126,7 @@ export function App() {
   }, [view, selected, template, reveal]);
   // A pulse to open in the work view: one the chat says ended, clicked there.
   // The pulse last asked for - marked in regen, and, until regen has brought it into view, to reveal - and the pulses
-  // whose cards are open there, kept as regen is left and shown again.
+  // whose cards are open there, and the parts of them (`<id>/<part>`), kept as regen is left and shown again.
   const [focusPulse, setFocusPulse] = useState<{ id: string; at: number; reveal: boolean } | undefined>(undefined);
   const [openPulses, setOpenPulses] = useState<ReadonlySet<string>>(new Set());
   const showPulse = (id: string) => {
@@ -138,7 +139,6 @@ export function App() {
   const knownFailed = useRef(new Set<string>());
   const viewNow = useRef<View>("spec");
   viewNow.current = view;
-  const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const saveRef = useRef<(() => Promise<void>) | null>(null);
   // The conversation with turri.
@@ -206,6 +206,17 @@ export function App() {
     const read = () => void window.turri.call<Concept[]>("concepts").then(setConcepts, () => {});
     read();
     const offFiles = window.turri.on("engine:files", ({ paths }: { paths: string[] }) => paths.some((path) => path.endsWith(".plain")) && read());
+    const offSpec = window.turri.on("engine:spec", read);
+    return () => (offFiles(), offSpec());
+  }, [project?.dir]);
+
+  /** The files the tree shows, relative to the project, for tab to complete in the chat: read again as files change. */
+  const [treeFiles, setTreeFiles] = useState<string[]>([]);
+  useEffect(() => {
+    if (project === null) return setTreeFiles([]);
+    const read = () => void window.turri.call<string[]>("treeFiles").then(setTreeFiles, () => {});
+    read();
+    const offFiles = window.turri.on("engine:files", read);
     const offSpec = window.turri.on("engine:spec", read);
     return () => (offFiles(), offSpec());
   }, [project?.dir]);
@@ -307,6 +318,8 @@ export function App() {
       window.turri.on("preview:testing", (now: boolean) => setTesting(now)),
       // /login typed in the chat: pi's terminal would sign in there, the window does it in its sheet.
       window.turri.on("engine:auth:open", ({ provider }: { provider: string | null }) => setSignIn({ provider })),
+      // /pulses typed in the chat: turri's side panel in a terminal, the regen view here.
+      window.turri.on("engine:regen:open", () => setView("work")),
     ];
     return () => off.forEach((stop) => stop());
   }, [opened, refreshProject, say]);
@@ -315,7 +328,6 @@ export function App() {
     async (how?: Regeneration) => {
       if (spec === null) return;
       if (dirty) await saveRef.current?.();
-      setBusy(true);
       setChatOpen(true);
       try {
         await window.turri.call("regenerate", {
@@ -328,8 +340,6 @@ export function App() {
         });
       } catch (error) {
         say(String((error as Error).message ?? error), "error");
-      } finally {
-        setBusy(false);
       }
     },
     [spec, dirty, say],
@@ -338,14 +348,11 @@ export function App() {
   const conform = useCallback(
     async (frids?: string[]) => {
       if (spec === null) return;
-      setBusy(true);
       setChatOpen(true);
       try {
         await window.turri.call("conform", { file: spec.file, frids });
       } catch (error) {
         say(String((error as Error).message ?? error), "error");
-      } finally {
-        setBusy(false);
       }
     },
     [spec, say],
@@ -508,6 +515,28 @@ export function App() {
   useEffect(() => {
     if (view === "stdlib" && project !== null && !project.offers.stdlib) setView("spec");
   }, [view, project]);
+
+  /**
+   * The text of a file a pulse's ***plain comes from, as turri's diff names it: the project's by its path in it, the
+   * standard library's (`stdlib/...`) from turri's - the templates read once a project - or null when it is not there.
+   */
+  const stdlibTexts = useRef<{ dir: string; texts: Promise<Map<string, string>> } | null>(null);
+  const readPlain = useCallback(
+    async (rel: string): Promise<string | null> => {
+      if (project === null) return null;
+      if (rel.startsWith("stdlib/")) {
+        if (!project.offers.stdlib) return null;
+        if (stdlibTexts.current?.dir !== project.dir)
+          stdlibTexts.current = { dir: project.dir, texts: window.turri.call<StdlibModule[]>("stdlib").then((all) => new Map(all.map((module) => [`${module.name}.plain`, module.text]))) };
+        return (await stdlibTexts.current.texts).get(rel) ?? null;
+      }
+      return window.turri.call<{ text: string }>("readSpec", { file: `${project.dir}/${rel}` }).then(
+        ({ text }) => text,
+        () => null,
+      );
+    },
+    [project?.dir, project?.offers.stdlib],
+  );
 
   /** A module a ***plain names, or one that names it: the standard library's in the stdlib view, the project's in intent. */
   /** A place in the ***plain opened, its line in view and lit: a template of the standard library in stdlib, the project's in intent. */
@@ -694,7 +723,15 @@ export function App() {
             changed={project.specs.some((entry) => entry.ok && entry.drifted !== false)}
             commands={commands}
             concepts={concepts}
-            onSend={(text) => void window.turri.call("sendChat", { chat: chats.shownId, text })}
+            files={treeFiles}
+            onSend={(text, attached = []) =>
+              void window.turri.call("sendChat", {
+                chat: chats.shownId,
+                text,
+                images: attached.flatMap((each) => (each.image ? [each.image] : [])),
+                files: attached.flatMap((each) => (each.image ? [] : [each.path])),
+              })
+            }
             onAbort={() => void window.turri.call("abortChat", { chat: chats.shownId })}
             onInterrupt={(draft) => window.turri.call<string>("interruptChat", { chat: chats.shownId, draft })}
             onDecline={(id) =>
@@ -765,23 +802,6 @@ export function App() {
               ))}
             </div>
             <div className="toolbar-actions">
-              {/* Only turri halts a pulse: while one regenerates this module, Regenerate waits for it. */}
-              <button
-                className="button primary"
-                disabled={spec === null || !spec.ok || busy || runningFor(spec.module) !== undefined}
-                onClick={() => setChoosing([])}
-                title={
-                  spec && runningFor(spec.module)
-                    ? "turri is regenerating this module"
-                    : spec && !spec.functionalSpecs.some((entry) => entry.built)
-                      ? "regenerate all of it - nothing is built yet"
-                      : changed
-                        ? "regenerate - what changed, chosen functional specs, or from scratch"
-                        : "regenerate - chosen functional specs again, or from scratch: nothing has changed since it was built"
-                }
-              >
-                {busy || (spec && runningFor(spec.module)) ? <Spinner /> : <Icon name="play" />} regenerate…
-              </button>
               <button className="icon-button sidebar-toggle" onClick={toggleSidebar} title={`${sidebarOpen ? "hide" : "show"} the files (${keys("B")})`} aria-label={sidebarOpen ? "hide the files" : "show the files"} aria-pressed={sidebarOpen}>
                 <Icon name="sidebar" />
               </button>
@@ -823,13 +843,23 @@ export function App() {
                   setChatOpen(true);
                   window.turri.call("investigate", failed).catch((error) => say(engineSaid(error), "error"));
                 }}
-                onShowInSpec={(rel, lines) => {
-                  const shown = project.specs.find((entry) => entry.rel === rel);
-                  if (shown === undefined) return say(`${rel} is not one of the project's ***plain files now.`, "error");
-                  setSelected(shown.file);
+                readPlain={readPlain}
+                debug={project.settings.debug === true}
+                onShowInSpec={(rel, lines, point) => {
+                  // Where the pulse's lines are now - the ***plain may have changed since it ran - and the point clicked.
+                  const lit = { lines: lines.map((each) => each.line), texts: lines.map((each) => each.text), point, at: Date.now() };
+                  // The standard library's, in stdlib.
+                  if (rel.startsWith("stdlib/")) {
+                    const name = rel.replace(/\.plain$/, "");
+                    setTemplate(name);
+                    setReveal({ file: name, ...lit });
+                    return setView("stdlib");
+                  }
+                  // The project's: a module in the ***plain view, a template as its file.
+                  const file = project.specs.find((entry) => entry.rel === rel)?.file ?? `${project.dir}/${rel}`;
+                  setSelected(file);
+                  setReveal({ file, ...lit });
                   setView("spec");
-                  // Where the pulse's lines are now: the ***plain may have changed since it ran.
-                  setReveal({ file: shown.file, lines: lines.map((each) => each.line), texts: lines.map((each) => each.text), at: Date.now() });
                 }}
               />
             ) : file !== null ? (
@@ -895,7 +925,6 @@ export function App() {
         {sidebarOpen && (
           <aside className="sidebar">
             <div className="project-name" title={project.dir}>
-              <Jellyfish size={18} swimming={running.length > 0} />
               <span>{project.name}</span>
             </div>
             <div className="sidebar-section">files</div>
@@ -910,13 +939,6 @@ export function App() {
               }}
             />
             <div className="sidebar-footer">
-              {running.length > 0 ? (
-                <button className="link" onClick={() => setView("work")}>
-                  <Jellyfish size={22} /> {running.length} pulse{running.length === 1 ? "" : "s"} running
-                </button>
-              ) : (
-                <span className="muted">idle</span>
-              )}
               {problems(machine).length > 0 && (
                 <button className="link machine-wanting" onClick={() => (setDoctorModels(false), setDoctorOpen(true))} title={problems(machine).map((check) => `${check.name}: ${check.detail}`).join("\n")}>
                   <Icon name="warn" size={12} /> {toSeeTo(problems(machine))}

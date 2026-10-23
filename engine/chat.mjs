@@ -284,17 +284,20 @@ function followChat({ id, session, harnessModel, emit, sendWhole, onStep }) {
      * Say something to turri: a slash command runs at once, even while it is answering, as in pi's terminal; anything
      * else said while it answers waits, and it hears it after its turn. /login
      * and /logout are pi's terminal's alone - typed here they would go to the model as words - so they open the
-     * window's sign-in sheet instead, on the provider named if one is.
+     * window's sign-in sheet instead, on the provider named if one is. /pulses opens turri's side panel, drawn only in a
+     * terminal: the window shows its regen view instead. Images attached go with it, for the model to see.
      */
-    send: (text) => {
+    send: (text, images = []) => {
       const signIn = /^\/(?:login|logout)(?:\s+(\S+))?\s*$/.exec(text.trim());
       if (signIn !== null) return sendWhole("auth:open", { provider: signIn[1] ?? null });
-      const run = session.prompt(text, { streamingBehavior: "followUp" });
+      if (text.trim() === "/pulses") return sendWhole("regen:open", null);
+      const run = session.prompt(text, { streamingBehavior: "followUp", ...(images.length > 0 ? { images } : {}) });
       Promise.resolve(run).catch((error) => emit("chat:notify", { level: "error", text: error instanceof Error ? error.message : String(error) }));
     },
     /**
      * The commands typing / offers, as pi has them: the extension's - /turri-config, /regenerate, /stack - its prompt
      * templates, and its skills as /skill:<name>. /halt is left out: halting a pulse is turri's alone, not the window's.
+     * So is /pulses, whose description speaks of the terminal's side panel and its key: the regen view is the window's.
      */
     commands: () =>
       [
@@ -302,7 +305,7 @@ function followChat({ id, session, harnessModel, emit, sendWhole, onStep }) {
         ...session.promptTemplates.map((template) => ({ name: template.name, description: template.description })),
         ...session.resourceLoader.getSkills().skills.map((skill) => ({ name: `skill:${skill.name}`, description: skill.description })),
       ]
-        .filter((command) => command.name !== "halt")
+        .filter((command) => command.name !== "halt" && command.name !== "pulses")
         .map((command) => ({ name: `/${command.name}`, description: command.description ?? "" }))
         .concat({ name: "/login", description: "sign in to a model provider - with an API key, or a subscription in the browser" }),
     /** What a command offers as its argument is typed - /turri-config's settings and their values - as pi's editor has it. */

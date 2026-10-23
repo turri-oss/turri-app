@@ -31,7 +31,7 @@ export function isLocal(url: string): boolean {
 const CONSOLE_KEPT = 200;
 /** The most of a page's text browser_read gives: a long page is cut, not sent whole. */
 const TEXT_KEPT = 20000;
-/** A screenshot wider than this is scaled down before turri sees it: it costs less, and reads the same. */
+/** A screenshot wider than this, in the page's CSS pixels, is scaled down before turri sees it: it costs less, and reads the same. */
 const SCREENSHOT_WIDTH = 1280;
 
 /** Each pane's own browser session, kept in memory: a project opened starts with no cookies, storage or cache of another's - in any window. */
@@ -199,11 +199,35 @@ export function createPreview({ windowOf, send }: { windowOf: () => BrowserWindo
   }
 
   /** What runs in the page, run: what it says it did, or why it could not - an element no longer there, say. */
-  async function inPage(page: Electron.WebContents, source: string): Promise<string> {
+  async function inPage<Said extends { did?: string }>(page: Electron.WebContents, source: string): Promise<Said> {
     // As a gesture of the person's: the page treats it as theirs - a page it opens is one Back returns from.
-    const said = (await page.executeJavaScript(source, true)) as { did?: string; error?: string };
+    const said = (await page.executeJavaScript(source, true)) as Said & { error?: string };
     if (said.error !== undefined) throw new Error(said.error);
-    return said.did ?? "";
+    return said;
+  }
+
+  /**
+   * How many of the page's CSS pixels a pixel of browser_screenshot's image is: one, unless the page is wider than a
+   * screenshot is kept and it was scaled down.
+   */
+  async function shotScale(page: Electron.WebContents): Promise<number> {
+    const width = (await page.executeJavaScript("window.innerWidth")) as number;
+    return width > SCREENSHOT_WIDTH ? width / SCREENSHOT_WIDTH : 1;
+  }
+
+  /** A click as the person's mouse makes it, at a point of the page in its CSS pixels: moved there, pressed and let go. */
+  async function mouseClick(page: Electron.WebContents, point: { x: number; y: number }, { button, double, modifiers }: Clicking) {
+    const zoom = page.getZoomFactor();
+    const at = { x: Math.round(point.x * zoom), y: Math.round(point.y * zoom) };
+    const held = modifiers.map((modifier) => (modifier === "ctrl" ? "control" : modifier));
+    page.focus();
+    page.sendInputEvent({ type: "mouseMove", ...at, modifiers: held });
+    for (let count = 1; count <= (double ? 2 : 1); count++) {
+      page.sendInputEvent({ type: "mouseDown", ...at, button, clickCount: count, modifiers: held });
+      page.sendInputEvent({ type: "mouseUp", ...at, button, clickCount: count, modifiers: held });
+    }
+    // The page hears them in its own time: a moment, before what it did is looked for.
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
   const where = () => {
@@ -223,7 +247,10 @@ export function createPreview({ windowOf, send }: { windowOf: () => BrowserWindo
       const page = loaded().webContents;
       await reveal();
       let image = await page.capturePage();
-      if (image.getSize().width > SCREENSHOT_WIDTH) image = image.resize({ width: SCREENSHOT_WIDTH });
+      // In the page's own CSS pixels - not the display's, twice as many on a Retina one - so a point of it is a point
+      // of the page for browser_click; a page wider than a screenshot is kept, scaled down, and its points with it.
+      const width = Math.min((await page.executeJavaScript("window.innerWidth")) as number, SCREENSHOT_WIDTH);
+      if (image.getSize().width !== width) image = image.resize({ width });
       return { ...where(), mimeType: "image/jpeg", data: image.toJPEG(80).toString("base64") };
     },
     read: async () => {
@@ -232,19 +259,44 @@ export function createPreview({ windowOf, send }: { windowOf: () => BrowserWindo
       return { ...where(), ...(await page.executeJavaScript(script(readPage, TEXT_KEPT))) };
     },
     console: async () => ({ ...where(), lines: [...logs] }),
-    click: async ({ ref, selector }: { ref?: number; selector?: string }) => {
+    click: async ({ ref, selector, text, occurrence, x, y, button = "left", double, modifiers = [] }: { ref?: number; selector?: string; text?: string; occurrence?: number; x?: number; y?: number } & Partial<Clicking>) => {
+      const ways = [ref !== undefined, Boolean(selector), Boolean(text), x !== undefined || y !== undefined].filter(Boolean).length;
+      if (ways !== 1) throw new Error("Say what to click - one of: ref, selector, text, or x and y.");
+      if ((x === undefined) !== (y === undefined)) throw new Error("Say both x and y: a point of the page, from the top left of what browser_screenshot shows.");
+      if (!["left", "middle", "right"].includes(button)) throw new Error(`No such button: ${button}. It is left, middle or right.`);
       const page = loaded().webContents;
       await reveal();
-      const said = await inPage(page, script(clickOn, target(ref, selector)));
+      const clicking = { button, double: double === true, modifiers };
+      let did: string;
+      if (x !== undefined && y !== undefined) {
+        const scale = await shotScale(page);
+        const point = { x: x * scale, y: y * scale };
+        const on = await inPage(page, script(elementAt, point.x, point.y, x, y));
+        await mouseClick(page, point, clicking);
+        did = `${double === true ? "Double-clicked" : "Clicked"} at ${x}, ${y} on ${on.did}.`;
+      } else if (text) {
+        const found = await inPage<{ did: string; x: number; y: number }>(page, script(textAt, text, Math.max(1, Math.round(occurrence ?? 1))));
+        await mouseClick(page, found, clicking);
+        did = `${double === true ? "Double-clicked" : "Clicked"} ${found.did}.`;
+      } else if (button === "left" && double !== true && modifiers.length === 0) {
+        did = (await inPage(page, script(clickOn, target(ref, selector)))).did ?? "";
+      } else {
+        // Another button, a double click, keys held: the mouse's own, at the element's middle.
+        const found = await inPage<{ did: string; x: number; y: number }>(page, script(middleOf, target(ref, selector)));
+        await mouseClick(page, found, clicking);
+        did = `${double === true ? "Double-clicked" : "Clicked"} ${found.did}.`;
+      }
+      if (button !== "left") did = did.replace(/^(Double-clicked|Clicked)/, `$1 with the ${button} button`);
+      if (modifiers.length > 0) did = did.replace(/\.$/, `, holding ${modifiers.join("+")}.`);
       await settle(page);
-      return { ...where(), did: said };
+      return { ...where(), did };
     },
     type: async ({ ref, selector, text, submit }: { ref?: number; selector?: string; text: string; submit?: boolean }) => {
       const page = loaded().webContents;
       await reveal();
       const said = await inPage(page, script(typeInto, target(ref, selector), text, submit === true));
       await settle(page);
-      return { ...where(), did: said };
+      return { ...where(), did: said.did ?? "" };
     },
   };
 
@@ -256,6 +308,13 @@ export function createPreview({ windowOf, send }: { windowOf: () => BrowserWindo
   }
 
   return { place, open, go, state, dispose, reloadSoon, request };
+}
+
+/** How a click is made: browser_click's button, a double click, the keys held. */
+interface Clicking {
+  button: "left" | "middle" | "right";
+  double: boolean;
+  modifiers: Array<"shift" | "alt" | "ctrl" | "meta">;
 }
 
 /** The element an action is on: by the number browser_read gave it, or by a CSS selector. */
@@ -303,6 +362,62 @@ function clickOn(selector: string) {
   return { did: `Clicked ${element.tagName.toLowerCase()} ${JSON.stringify((element.innerText || element.getAttribute("aria-label") || "").trim().slice(0, 60))}` };
 }
 
+/** The middle of an element, brought into view - for the mouse to click on. */
+function middleOf(selector: string) {
+  const element = findElement(selector);
+  if (typeof element === "string") return { error: element };
+  element.scrollIntoView({ block: "center", inline: "center" });
+  const box = element.getBoundingClientRect();
+  return { x: box.left + box.width / 2, y: box.top + box.height / 2, did: describe(element) };
+}
+
+/**
+ * The middle of the element showing a piece of text, brought into view: of the visible elements whose own text is it -
+ * exactly, or else containing it, ignoring case and spacing - the innermost, and of those the clickable ones if any are.
+ */
+function textAt(wanted: string, occurrence: number) {
+  const CLICKABLE = 'a, button, [role="button"], input, label, summary, [onclick], [tabindex]';
+  const loose = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
+  const visible = (element: Element) => {
+    const box = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return box.width > 0 && box.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+  };
+  const shows = (element: HTMLElement) => {
+    const input = element as HTMLInputElement;
+    const own = element.tagName === "INPUT" ? (["button", "submit", "reset"].includes(input.type) ? input.value : input.placeholder) : element.innerText;
+    return [own ?? "", element.getAttribute("aria-label") ?? ""];
+  };
+  const elements = [...document.body.querySelectorAll<HTMLElement>("*")].filter(visible);
+  const matching = (match: (text: string) => boolean) => {
+    const all = elements.filter((element) => shows(element).some((text) => text !== "" && match(text)));
+    // The innermost: an element is left out when one inside it matches too.
+    return all.filter((element) => !all.some((other) => other !== element && element.contains(other)));
+  };
+  let found = matching((text) => text.trim() === wanted);
+  if (found.length === 0) found = matching((text) => loose(text).includes(loose(wanted)));
+  // The clickable thing each is, or is in: a button's label clicks the button.
+  let targets = [...new Set(found.map((element) => element.closest<HTMLElement>(CLICKABLE) ?? element))];
+  if (targets.some((element) => element.matches(CLICKABLE))) targets = targets.filter((element) => element.matches(CLICKABLE));
+  const saw = targets.map((element) => describe(element));
+  if (targets.length === 0) {
+    const candidates = [...document.querySelectorAll<HTMLElement>(CLICKABLE)].filter(visible).slice(0, 40).map((element) => describe(element));
+    return { error: `Nothing visible on the page shows \`${wanted}\`.${candidates.length > 0 ? ` What can be clicked: ${candidates.join(", ")}.` : ""}` };
+  }
+  if (occurrence > targets.length) return { error: `\`${wanted}\` shows ${targets.length === 1 ? "once" : `${targets.length} times`} on the page, not ${occurrence}: ${saw.join(", ")}.` };
+  const element = targets[occurrence - 1]!;
+  element.scrollIntoView({ block: "center", inline: "center" });
+  const box = element.getBoundingClientRect();
+  return { x: box.left + box.width / 2, y: box.top + box.height / 2, did: saw[occurrence - 1] };
+}
+
+/** What is at a point of the page, in its CSS pixels - or why nothing is: the point is off it. `x` and `y` are as turri said them. */
+function elementAt(left: number, top: number, x: number, y: number) {
+  if (left < 0 || top < 0 || left >= innerWidth || top >= innerHeight) return { error: `${x}, ${y} is off the page as browser_screenshot shows it.` };
+  const element = document.elementFromPoint(left, top) as HTMLElement | null;
+  return { did: element === null ? "the page" : describe(element) };
+}
+
 /** Typed as a person would leave it: the value set the way the page's framework hears it, then input and change. */
 function typeInto(selector: string, text: string, submit: boolean) {
   const element = findElement(selector);
@@ -332,7 +447,15 @@ function findElement(selector: string): HTMLElement | string {
   }
 }
 
-/** A function of the page's, as source to run there with these arguments - and findElement beside it, which it may use. */
+/** An element as turri is told it was clicked: <button> `Save`, <canvas#board>. */
+function describe(element: HTMLElement): string {
+  const tag = `<${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ""}>`;
+  const input = element as HTMLInputElement;
+  const name = (element.getAttribute("aria-label") || element.innerText || (element.tagName === "INPUT" ? input.value || input.placeholder : "") || "").trim().replace(/\s+/g, " ").slice(0, 60);
+  return name ? `${tag} \`${name}\`` : tag;
+}
+
+/** A function of the page's, as source to run there with these arguments - and findElement and describe beside it, which it may use. */
 function script(run: (...args: any[]) => unknown, ...args: unknown[]): string {
-  return `(() => { ${findElement.toString()}; return (${run.toString()})(${args.map((arg) => JSON.stringify(arg)).join(", ")}); })()`;
+  return `(() => { ${findElement.toString()}; ${describe.toString()}; return (${run.toString()})(${args.map((arg) => JSON.stringify(arg)).join(", ")}); })()`;
 }

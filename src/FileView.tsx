@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { Empty, Icon, Spinner } from "./ui.tsx";
+import { Empty, Icon, PlainMark, Spinner } from "./ui.tsx";
+import { type Point, pointNow, relocate } from "./PulseSpec.tsx";
 import { MAC, withMod } from "./platform.ts";
 import { highlightCode, languageOf } from "./highlight.ts";
 import { followAt, PlainLinks, useModHeld, usePlainLinks, type Followed, type OpenLink } from "./PlainLinks.tsx";
@@ -22,8 +23,11 @@ function kilobytes(size: number) {
 export function FileView(props: { root: string; file: string; onDirty: (dirty: boolean) => void; saveRef: MutableRefObject<(() => Promise<void>) | null>; say: (text: string, tone?: "info" | "error") => void; onOpen: OpenLink;
   /** A module, concept or linked resource ⌘-clicked in a .plain: to open what it names. */
   onFollow: (followed: Followed, point: { x: number; y: number }) => void;
-  /** Lines to bring into view and light for a moment, from 1: a concept's definition, clicked in the chat. */
-  reveal?: { lines: number[]; at: number };
+  /**
+   * Lines to bring into view and light for a moment, from 1: a concept's definition, clicked in the chat - or a pulse's
+   * lines of a template, with their text to find them by where it has changed since, and the point clicked, for the caret.
+   */
+  reveal?: { lines: number[]; texts?: string[]; point?: Point; at: number };
 }) {
   const { root, file } = props;
   const rel = file.slice(root.length + 1);
@@ -38,14 +42,24 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
   const [lines, setLines] = useState<Token[][]>([]);
   const [onDisk, setOnDisk] = useState<string | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
-  // Lines shown from elsewhere: in view once the text is here, and lit for a few seconds.
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+  // Lines shown from elsewhere: in view once the text is here, and lit for a few seconds - a pulse's where they are now,
+  // and, clicked at a point, the caret there.
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   useEffect(() => {
     if (props.reveal === undefined || text === null || props.reveal.lines.length === 0) return;
-    const lines = new Set(props.reveal.lines.map((line) => line - 1));
+    const all = text.split("\n");
+    const { lines: then, texts, point } = props.reveal;
+    const lines = new Set((texts !== undefined ? relocate(all, then, texts) : then).map((line) => line - 1));
     setRevealed(lines);
+    const to = point !== undefined && texts !== undefined ? pointNow(all, then, texts, point) - 1 : Math.min(...lines);
+    if (point !== undefined && areaRef.current !== null) {
+      const at = all.slice(0, to).reduce((sum, line) => sum + line.length + 1, 0);
+      areaRef.current.focus({ preventScroll: true });
+      areaRef.current.setSelectionRange(at, at);
+    }
     requestAnimationFrame(() => {
-      const line = editorRef.current?.querySelector<HTMLElement>(`.editor-colours > div:nth-child(${Math.min(...lines) + 1})`);
+      const line = editorRef.current?.querySelector<HTMLElement>(`.editor-colours > div:nth-child(${to + 1})`);
       if (line && editorRef.current) editorRef.current.scrollTo({ top: Math.max(0, line.offsetTop - editorRef.current.clientHeight / 3), behavior: "smooth" });
     });
     const timer = setTimeout(() => setRevealed(new Set()), 4000);
@@ -109,21 +123,23 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
   };
   props.saveRef.current = save;
 
-  // Only for a file not shown here: the app that opens it, or where it is.
-  const header = (
+  // What file it is, the pane's title - and, for a file not shown here, the app that opens it, or where it is.
+  const header = (shown: boolean) => (
     <div className="pane-header">
-      <span>
-        <Icon name="file" /> {rel}
+      <span className="pane-title" title={file}>
+        {plain ? <PlainMark /> : <Icon name="file" />} {rel}
       </span>
-      <span className="pane-header-right">
-        <button className="link" onClick={() => void window.turri.openPath(file)} title="open it in the app your mac opens it with">
-          open
-        </button>
-        <span className="muted">·</span>
-        <button className="link" onClick={() => void window.turri.reveal(file)}>
-          reveal
-        </button>
-      </span>
+      {!shown && (
+        <span className="pane-header-right">
+          <button className="link" onClick={() => void window.turri.openPath(file)} title="open it in the app your mac opens it with">
+            open
+          </button>
+          <span className="muted">·</span>
+          <button className="link" onClick={() => void window.turri.reveal(file)}>
+            reveal
+          </button>
+        </span>
+      )}
     </div>
   );
 
@@ -144,7 +160,7 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
   if (text === null)
     return (
       <div className="editor-pane">
-        {header}
+        {header(false)}
         <Empty icon="file" title={read.reason === "large" ? `too large to show here (${kilobytes(read.size)})` : "not a text file"}>
           {MAC ? "open it in the app your Mac opens it with, or reveal it in Finder." : "open it in the app your computer opens it with, or show it in the file manager."}
         </Empty>
@@ -153,6 +169,7 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
 
   return (
     <div className="editor-pane">
+      {header(true)}
       {plain && <PlainLinks links={links} onOpen={props.onOpen} />}
       {onDisk !== null && (
         <div className="disk-banner">
@@ -181,6 +198,7 @@ export function FileView(props: { root: string; file: string; onDirty: (dirty: b
             })}
           </pre>
           <textarea
+            ref={areaRef}
             spellCheck={false}
             value={text}
             readOnly={readOnly}

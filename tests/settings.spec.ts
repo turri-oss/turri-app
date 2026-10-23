@@ -176,8 +176,8 @@ test.describe("the files' sidebar", () => {
   test("leaves the traffic lights their room at the window's left - the chat's header, or the toolbar's with the chat hidden", async ({ launched: { app, window: page } }) => {
     const left = (selector: string) => () => page.locator(selector).first().evaluate((element) => Math.round(element.getBoundingClientRect().left));
     const darwin = process.platform === "darwin";
-    // The chat at the window's left, its title right of the traffic lights.
-    await expect.poll(left(".chat-title")).toBe(darwin ? 78 : 16);
+    // The chat at the window's left, its tabs right of the traffic lights.
+    await expect.poll(left(".chat-top > :first-child")).toBe(darwin ? 78 : 16);
     // The chat hidden, the toolbar's first button is there.
     await page.locator(".chat button[title^='hide the chat']").click();
     await expect.poll(left(".toolbar > :first-child")).toBe(darwin ? 78 : 12);
@@ -214,7 +214,6 @@ test.describe("the window's text", () => {
     for (const [where, text] of [
       [page.locator(".sidebar-section", { hasText: "files" }), "files"],
       [page.locator(".project-name span"), "hello"],
-      [page.locator(".chat-title"), "turri"],
       [page.locator(".chat-model"), "claude-sonnet-5-5"],
       [page.locator(".editor-pane .pane-header").getByText("hello.plain", { exact: true }), "hello.plain"],
       [page.locator(".editor-pane .pane-header").getByText("0 of 1 built"), "0 of 1 built"],

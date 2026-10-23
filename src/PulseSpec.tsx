@@ -1,42 +1,93 @@
 import { useEffect, useState } from "react";
 import type { Job, Spec } from "./types.ts";
-import { Icon, PlainMark } from "./ui.tsx";
+import { Fold, type Folded, Icon, PlainMark } from "./ui.tsx";
+
+/** A pulse's lines when it ran, each by its number in the file and its text. */
+export type PulseLines = Array<{ line: number; text: string }>;
+/**
+ * Where a click on a pulse's ***plain puts the caret in the ***plain view: the line clicked, as numbered when the pulse
+ * ran, and the nearest line of text to it - itself, unless it is blank or was taken out - to find where it is now.
+ */
+export interface Point {
+  line: number;
+  anchor: { line: number; text: string };
+}
+/**
+ * A pulse's lines opened where their file is shown, lit - and the caret where it was clicked, if it was: a module in the
+ * ***plain view, a template of the project's as its file, the standard library's in stdlib. `file` is as turri's diff
+ * names it: its path in the project, or `stdlib/...`.
+ */
+export type ShowInSpec = (file: string, lines: PulseLines, point?: Point) => void;
+/** The text of a file a pulse's ***plain comes from, as `ShowInSpec` names it, as it is now - null if it is not there. */
+export type ReadPlain = (file: string) => Promise<string | null>;
 
 type Token = { text: string; role: string | null };
-type Line = { kind: "context" | "add" | "del" | "gap"; text: string; line?: number };
+/** A line of a pulse's ***plain: its text as the diff has it, and - placed - its line and its text as its file has it. */
+type Line = { kind: "context" | "add" | "del" | "gap"; text: string; line?: number; written?: string };
 type File = { file: string; lines: Line[] };
 
+/** A section's header in ***plain: `***functional specs***`. */
+const SECTION = /^\*\*\*.*\*\*\*$/;
+
 /**
- * A pulse's spec change, file by file, as its diff says it: the lines it renders, the sections around them, and what it
- * takes out - each where it is in the file, when turri placed it there.
+ * A pulse's spec change, file by file. turri's diff is of the ***plain the pulse renders - its module's own and what it
+ * takes from the modules it requires and the standard library - under its module's file; where each line of it is,
+ * `where` says, file by file. Each file's lines are kept together, in the diff's order, each run of them under its
+ * section's header, a gap between runs. A line `where` does not place stays in the file of the line it is among - a
+ * section's header, with the line it heads.
  */
 function filesOf(diff: string, where: Job["diffWhere"]): File[] {
-  const files: File[] = [];
-  let current: File | undefined;
+  // The diff's lines, each with the file it is in - or, a section's header turri did not place, none yet.
+  const rows: Array<Line & { file?: string }> = [];
+  let named = "";
   let header = false;
-  const raws = diff.replace(/\n$/, "").split("\n");
-  raws.forEach((raw, index) => {
-    if (raw.startsWith("diff --git ")) {
-      current = { file: raw.split(" b/").at(-1) ?? "", lines: [] };
-      files.push(current);
-      header = true;
-      return;
-    }
-    // A file's header, up to its first hunk: not the spec's. A spec line taken out that starts with --- is a hunk's.
-    if (header && !raw.startsWith("@@")) return;
-    if (raw.startsWith("@@")) {
-      header = false;
-      if (current !== undefined && current.lines.length > 0) current.lines.push({ kind: "gap", text: "" });
-      return;
-    }
-    if (current === undefined) {
-      current = { file: where?.[index]?.file ?? "", lines: [] };
-      files.push(current);
-    }
-    const kind = raw.startsWith("+") ? "add" : raw.startsWith("-") ? "del" : "context";
-    current.lines.push({ kind, text: raw.slice(1), ...(where?.[index] !== undefined ? { line: where[index]!.line } : {}) });
+  diff
+    .replace(/\n$/, "")
+    .split("\n")
+    .forEach((raw, index) => {
+      if (raw.startsWith("diff --git ")) {
+        named = raw.split(" b/").at(-1) ?? "";
+        header = true;
+        return;
+      }
+      // A file's header, up to its first hunk: not the spec's. A spec line taken out that starts with --- is a hunk's.
+      if (header && !raw.startsWith("@@")) return;
+      if (raw.startsWith("@@")) {
+        header = false;
+        rows.push({ kind: "gap", text: "" });
+        return;
+      }
+      const kind = raw.startsWith("+") ? "add" : raw.startsWith("-") ? "del" : "context";
+      const placed = where?.[index];
+      const text = raw.slice(1);
+      rows.push({ kind, text, ...(placed !== undefined ? { line: placed.line, file: placed.file, ...(placed.written !== undefined ? { written: placed.written } : {}) } : kind === "context" && SECTION.test(text.trim()) ? {} : { file: named }) });
+    });
+  // What is not placed goes with what follows it - a header with the line it heads - or else what is before it.
+  for (let at = rows.length - 1, next: string | undefined; at >= 0; at--) rows[at]!.file === undefined ? (rows[at]!.file = next) : (next = rows[at]!.file);
+  for (let at = 0, before = named; at < rows.length; at++) rows[at]!.file === undefined ? (rows[at]!.file = before) : (before = rows[at]!.file!);
+
+  const files = new Map<string, File & { last: number; section?: string }>();
+  let section: string | undefined;
+  rows.forEach((row, at) => {
+    if (row.kind === "context" && SECTION.test(row.text.trim())) section = row.text.trim();
+    if (row.kind === "gap") return;
+    const name = row.file!;
+    let file = files.get(name);
+    if (file === undefined) files.set(name, (file = { file: name, lines: [], last: -1 }));
+    // A run of this file's lines after another file's, or a hunk's gap: apart from its last, and under its section.
+    if (file.last !== at - 1 && file.lines.length > 0) file.lines.push({ kind: "gap", text: "" });
+    const heads = row.kind === "context" && SECTION.test(row.text.trim());
+    if (!heads && section !== undefined && (file.section !== section || file.last !== at - 1) && file.lines.at(-1)?.text.trim() !== section) file.lines.push({ kind: "context", text: section });
+    file.lines.push({ kind: row.kind, text: row.text, ...(row.line !== undefined ? { line: row.line } : {}), ...(row.written !== undefined ? { written: row.written } : {}) });
+    file.section = section;
+    file.last = at;
   });
-  return files;
+  // A section's header none of whose lines are this file's - all from another - is left out of it, and the gaps it leaves
+  // made one.
+  return [...files.values()].map(({ file, lines }) => {
+    const kept = lines.filter((line, at) => !(line.kind === "context" && SECTION.test(line.text.trim()) && (lines[at + 1] === undefined || lines[at + 1]!.kind === "gap" || SECTION.test(lines[at + 1]!.text.trim()))));
+    return { file, lines: kept.filter((line, at) => line.kind !== "gap" || (at > 0 && at < kept.length - 1 && kept[at - 1]!.kind !== "gap")) };
+  });
 }
 
 /**
@@ -58,6 +109,23 @@ export function relocate(all: string[], lines: number[], texts: string[]): numbe
     }
     return run.map((at) => lines[at]! + best.offset);
   });
+}
+
+/**
+ * Where a point clicked in a pulse's ***plain is in the ***plain now, from 1: moved as its nearest line of text moved,
+ * with the pulse's lines around it (`relocate`) - so a blank line keeps its place beside the text it was beside, and a
+ * line edited away or taken out since is where it was among them.
+ */
+export function pointNow(all: string[], lines: number[], texts: string[], point: Point): number {
+  const pairs = lines.map((line, at) => ({ line, text: texts[at]! }));
+  let at = pairs.findIndex((pair) => pair.line === point.anchor.line && pair.text === point.anchor.text);
+  if (at < 0) {
+    pairs.push(point.anchor);
+    pairs.sort((a, b) => a.line - b.line);
+    at = pairs.indexOf(point.anchor);
+  }
+  const now = relocate(all, pairs.map((pair) => pair.line), pairs.map((pair) => pair.text))[at]!;
+  return Math.min(Math.max(point.line + now - point.anchor.line, 1), all.length);
 }
 
 /** The functional spec a conformance run builds, as its label says it: `frontend functionality 2 of 5`. */
@@ -100,48 +168,50 @@ export function stageOf(job: Job): string | undefined {
 
 /**
  * The ***plain a pulse works on: its spec change, coloured by turri's grammar - the lines it renders lit, as the spec
- * lights them while it runs - or, for a conformance run, the functional spec it builds. Each file's part opens in the
- * spec, its lines lit there.
+ * lights them while it runs - or, for a conformance run, the functional spec it builds. A click on a file's lines opens
+ * them in the ***plain view, lit there.
  */
-export function PulseSpec({ job, specs, onShowInSpec }: { job: Pick<Job, "diff" | "diffWhere" | "building">; specs: Spec[]; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void }) {
+export function PulseSpec({ job, specs, onShowInSpec, readPlain, part }: { job: Pick<Job, "diff" | "diffWhere" | "building"> & { kind?: string; status?: string }; specs: Spec[]; onShowInSpec: ShowInSpec; readPlain: ReadPlain; part?: (name: string) => Folded }) {
   const files = job.diff?.trim() ? filesOf(job.diff, job.diffWhere) : [];
   const building = buildingOf(job);
+  const verb = didTo(job.kind, job.status);
   // None yet - a pulse being planned - or none at all: the card says what the pulse does without it.
   if (files.length === 0 && building === null) return null;
   return (
     <div className="pulse-spec">
       {building && (
-        <section>
-          <div className="pulse-spec-head">
-            <span>
-              <Icon name="test" size={13} /> functional spec {building.frid}
-            </span>
-          </div>
+        <Fold
+          folded={part?.(`functional spec ${building.frid}`)}
+          title={
+            <>
+              {verb} <Icon name="test" size={13} /> functional spec {building.frid}
+            </>
+          }
+        >
           <Coloured lines={building.text.split("\n").map((text) => ({ kind: "add" as const, text }))} />
-        </section>
+        </Fold>
       )}
       {files.map((shown) => {
         // A spec change that changes nothing in the file - a functional spec regenerated again - carries the functional
         // spec as it is, unchanged: that is what the pulse builds, again.
         const again = !shown.lines.some((line) => line.kind === "add" || line.kind === "del");
         const file = again ? { ...shown, lines: shown.lines.map((line) => (line.kind === "context" && !/^\*\*\*.*\*\*\*$/.test(line.text.trim()) && line.text.trim() !== "" ? { ...line, kind: "add" as const } : line)) } : shown;
-        const lines = file.lines.flatMap((line) => (line.kind === "add" && line.line !== undefined ? [{ line: line.line, text: line.text }] : []));
-        const added = file.lines.filter((line) => line.kind === "add").length;
-        const taken = file.lines.filter((line) => line.kind === "del").length;
+        // Each found in the ***plain by its text as the file has it, where turri says it.
+        const lines = file.lines.flatMap((line) => (line.kind === "add" && line.line !== undefined ? [{ line: line.line, text: line.written ?? line.text }] : []));
         return (
-          <section key={file.file}>
-            <div className="pulse-spec-head">
-              <span>
-                <PlainMark size={14} /> {file.file}
-                <span className="muted">
-                  {" "}
-                  · {added} line{added === 1 ? "" : "s"} to render{again ? " again, unchanged" : ""}{taken > 0 ? `, ${taken} taken out` : ""}
-                </span>
-              </span>
-              <OpenInPlain spec={specs.find((entry) => entry.rel === file.file)} lines={lines} onShow={(shown) => onShowInSpec(file.file, shown)} />
-            </div>
-            <Coloured lines={file.lines} />
-          </section>
+          <Fold
+            key={file.file}
+            folded={part?.(file.file)}
+            title={
+              <>
+                {verb} <PlainMark size={14} /> {file.file}
+              </>
+            }
+          >
+            <OpensInPlain read={() => readPlain(file.file)} stamp={specs.find((entry) => entry.rel === file.file)} lines={lines} onShow={(shown, row) => onShowInSpec(file.file, shown, row && pointAt(file.lines, row.at, row.blank))}>
+              <Coloured lines={file.lines} />
+            </OpensInPlain>
+          </Fold>
         );
       })}
     </div>
@@ -149,32 +219,81 @@ export function PulseSpec({ job, specs, onShowInSpec }: { job: Pick<Job, "diff" 
 }
 
 /**
- * Open in ***plain, for a pulse's lines that are still in the ***plain: not for a file gone since, or lines edited away -
- * there would be nothing of the pulse's to light. Looked for again each time the file changes.
+ * A pulse's lines that open where their file is shown on a click - while they are still in it: not for a file gone
+ * since, or lines edited away, as there would be nothing of the pulse's to light. Looked for again each time a module's
+ * ***plain changes (`stamp`). A click that ends a selection leaves them be, so they can be copied.
  */
-function OpenInPlain({ spec, lines, onShow }: { spec: Spec | undefined; lines: Array<{ line: number; text: string }>; onShow: (lines: Array<{ line: number; text: string }>) => void }) {
+function OpensInPlain({ read, stamp, lines, onShow, children }: { read: () => Promise<string | null>; stamp: unknown; lines: PulseLines; onShow: (lines: PulseLines, row?: { at: number; blank: boolean }) => void; children: React.ReactNode }) {
   const [there, setThere] = useState(false);
   const key = lines.map((each) => `${each.line}:${each.text}`).join("\n");
   useEffect(() => {
     setThere(false);
-    if (spec === undefined || lines.length === 0) return;
+    if (lines.length === 0) return;
     let alive = true;
-    void window.turri
-      .call<{ text: string }>("readSpec", { file: spec.file })
-      .then(({ text }) => {
+    void read()
+      .then((text) => {
+        if (text === null) return;
         const all = text.split("\n");
         const now = relocate(all, lines.map((each) => each.line), lines.map((each) => each.text));
         if (alive) setThere(now.some((line, at) => all[line - 1] === lines[at]!.text));
       })
       .catch(() => alive && setThere(false));
     return () => void (alive = false);
-  }, [spec, key]);
-  if (!there) return null;
+  }, [stamp, key]);
+  if (!there) return <>{children}</>;
   return (
-    <button className="link" onClick={() => onShow(lines)} title="light these lines in the ***plain view, where they are now">
-      open
-    </button>
+    <div
+      className="opens-in-plain"
+      role="link"
+      tabIndex={0}
+      title="open in the ***plain view, these lines lit where they are now"
+      onClick={(event) => {
+        if ((window.getSelection()?.toString() ?? "") !== "") return;
+        // The row clicked (Coloured's data-at): the caret goes there.
+        const row = (event.target as HTMLElement).closest<HTMLElement>("[data-at]");
+        onShow(lines, row ? { at: Number(row.dataset.at), blank: row.dataset.blank !== undefined } : undefined);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        onShow(lines);
+      }}
+    >
+      {children}
+    </div>
   );
+}
+
+/** What a pulse does to a ***plain file, as its line says: regenerating it, or validating it in a conformance run, and once done regenerated or validated - and, not done, what it was to do. */
+function didTo(kind?: string, status?: string): string {
+  const conformance = kind === "conformance";
+  if (status === "running") return conformance ? "validating" : "regenerating";
+  if (status === "succeeded") return conformance ? "validated" : "regenerated";
+  return conformance ? "validate" : "regenerate";
+}
+
+/**
+ * Where a click on row `at` of a pulse's ***plain puts the caret: that row's line when the pulse ran - a blank drawn
+ * above a row, the line before it; a line taken out, or a gap, where the nearest line above it was - found by the nearest
+ * line of text, outward from the row: its own, unless it is blank. None when the pulse has no line of text numbered.
+ */
+function pointAt(lines: Line[], at: number, blank: boolean): Point | undefined {
+  const numbered = (index: number) => {
+    const row = lines[index];
+    return row !== undefined && row.line !== undefined && (row.kind === "add" || row.kind === "context") ? row : undefined;
+  };
+  const texted = (index: number) => {
+    const row = numbered(index);
+    return row !== undefined && row.text.trim() !== "" ? row : undefined;
+  };
+  // Outward from the row - a blank, drawn above row `at`, from between the row above and that one.
+  const above = blank ? at - 1 : at;
+  let anchor: Line | undefined;
+  for (let away = 0; away < lines.length && anchor === undefined; away++) anchor = texted(above - away) ?? texted(at + away);
+  if (anchor === undefined) return undefined;
+  let line = blank ? lines[at]!.line! - 1 : numbered(at)?.line;
+  for (let index = at - 1; line === undefined && index >= 0; index--) line = numbered(index)?.line;
+  return { line: line ?? anchor.line!, anchor: { line: anchor.line!, text: anchor.written ?? anchor.text } };
 }
 
 /** Lines of ***plain, coloured as the spec is: each with its line in the file, if it has one, and what the pulse does with it. */
@@ -197,21 +316,21 @@ function Coloured({ lines }: { lines: Line[] }) {
     <div className="pulse-spec-lines">
       {lines.map((line, index) => [
         skipped(index) === 1 ? (
-          <div key={`${index}-blank`} className="context">
+          <div key={`${index}-blank`} className="context" data-at={index} data-blank="">
             <span className="pulse-spec-number">{line.line! - 1}</span>
             <span className="pulse-spec-text">{"\u200b"}</span>
           </div>
         ) : skipped(index) > 1 ? (
-          <div key={`${index}-gap`} className="gap">
+          <div key={`${index}-gap`} className="gap" data-at={index}>
             ⋯
           </div>
         ) : null,
         line.kind === "gap" ? (
-          <div key={index} className="gap">
+          <div key={index} className="gap" data-at={index}>
             ⋯
           </div>
         ) : (
-          <div key={index} className={line.kind}>
+          <div key={index} className={line.kind} data-at={index}>
             <span className="pulse-spec-number">{line.line ?? ""}</span>
             <span className="pulse-spec-text">
               {line.text === ""

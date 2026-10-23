@@ -50,8 +50,11 @@ export function textOf(content) {
 export function normalise(message) {
   if (message === undefined || message === null || retriedWithoutImages(message)) return null;
   switch (message.role) {
-    case "user":
-      return { role: "user", text: textOf(message.content) };
+    case "user": {
+      // The images attached to it, as the window draws them.
+      const images = Array.isArray(message.content) ? message.content.filter((part) => part.type === "image").map((part) => `data:${part.mimeType};base64,${part.data}`) : [];
+      return { role: "user", text: textOf(message.content), ...(images.length > 0 ? { images } : {}) };
+    }
     case "assistant": {
       const parts = Array.isArray(message.content) ? message.content : [];
       return {
@@ -63,7 +66,7 @@ export function normalise(message) {
       };
     }
     case "toolResult": {
-      // What turri saw, when it was an image - the preview, as browser_screenshot took it.
+      // What turri saw, when it was an image - the preview, as browser_screenshot or terminal_screenshot took it.
       const image = Array.isArray(message.content) ? message.content.find((part) => part.type === "image") : undefined;
       return {
         role: "toolResult",

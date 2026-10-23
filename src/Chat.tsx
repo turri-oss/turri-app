@@ -1,9 +1,10 @@
 import MarkdownIt from "markdown-it";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Icon, Jellyfish, PlainName, Spinner, withPlain } from "./ui.tsx";
+import { Icon, Jellyfish, PlainMark, PlainName, Spinner, withPlain } from "./ui.tsx";
 import { keys, MAC } from "./platform.ts";
 import type { Concept } from "./types.ts";
 import type { ChatInfo } from "./chats.ts";
+import type { Attached } from "../electron/preload.ts";
 
 /** The concepts the project's ***plain can name, as turri reads them - longest first - to colour where they are said. */
 let conceptNames: string[] = [];
@@ -28,8 +29,74 @@ function fitting(concepts: Concept[], typed: string): Concept[] {
     .slice(0, 8);
 }
 
+/** The tree's files a word is the start of - of its path, or of its name in its folder - those its path starts first. */
+function filesFitting(files: string[], word: string): string[] {
+  const lower = word.toLowerCase();
+  const byPath = (file: string) => file.toLowerCase().startsWith(lower);
+  const byName = (file: string) => file.slice(file.lastIndexOf("/") + 1).toLowerCase().startsWith(lower);
+  if (lower === "") return [];
+  return files.filter((file) => file !== word && (byPath(file) || byName(file))).sort((a, b) => Number(byPath(b)) - Number(byPath(a)) || a.localeCompare(b));
+}
+
+/** The longest side and the size an attached image is sent at: a larger one is drawn smaller first, as the models take them. */
+const IMAGE_SIDE = 2000;
+const IMAGE_DATA = 4_500_000;
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+/** An image as it can be sent - drawn smaller if it is too large, as a PNG or else a JPEG - or null for one that is not. */
+async function sendable(image: { mimeType: string; data: string }): Promise<{ mimeType: string; data: string } | null> {
+  const picture = new Image();
+  picture.src = `data:${image.mimeType};base64,${image.data}`;
+  try {
+    await picture.decode();
+  } catch {
+    return null;
+  }
+  const scale = Math.min(1, IMAGE_SIDE / Math.max(picture.naturalWidth, picture.naturalHeight));
+  if (scale === 1 && image.data.length <= IMAGE_DATA) return image;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(picture.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(picture.naturalHeight * scale));
+  const drawn = canvas.getContext("2d")!;
+  drawn.drawImage(picture, 0, 0, canvas.width, canvas.height);
+  const png = canvas.toDataURL("image/png").split(",")[1]!;
+  if (png.length <= IMAGE_DATA) return { mimeType: "image/png", data: png };
+  // A JPEG has no transparency: drawn over white, not black.
+  drawn.globalCompositeOperation = "destination-over";
+  drawn.fillStyle = "#fff";
+  drawn.fillRect(0, 0, canvas.width, canvas.height);
+  for (const quality of [0.85, 0.6]) {
+    const jpeg = canvas.toDataURL("image/jpeg", quality).split(",")[1]!;
+    if (jpeg.length <= IMAGE_DATA) return { mimeType: "image/jpeg", data: jpeg };
+  }
+  return null;
+}
+
+/** An attachment with its image as it can be sent - or, an image that cannot be, by its path alone. */
+async function prepared(each: Attached): Promise<Attached> {
+  if (each.image === undefined) return each;
+  const image = await sendable(each.image);
+  return image ? { ...each, image } : { name: each.name, path: each.path };
+}
+
+/** A file dropped or pasted, attached: an image with its bytes, any other by where it is - null for one not on disk. */
+async function attachedFrom(file: File): Promise<Attached | null> {
+  const path = window.turri.pathOf(file);
+  if (IMAGE_TYPES.has(file.type)) {
+    const data = await new Promise<string>((done, failed) => {
+      const reader = new FileReader();
+      reader.onload = () => done(String(reader.result).split(",")[1] ?? "");
+      reader.onerror = () => failed(reader.error);
+      reader.readAsDataURL(file);
+    }).catch(() => "");
+    const attached = await prepared({ name: file.name || "pasted image", path, image: { mimeType: file.type, data } });
+    if (attached.image !== undefined || path !== "") return attached;
+  }
+  return path === "" ? null : { name: file.name, path };
+}
+
 export type ChatItem =
-  | { role: "user"; text: string }
+  | { role: "user"; text: string; images?: string[] }
   | { role: "assistant"; text: string; thinking?: string; tools?: Array<{ id: string; name: string; args: unknown }>; error?: string }
   | { role: "toolResult"; id: string; name: string; text: string; isError: boolean; image?: string }
   | { role: "note"; customType?: string; text: string; level?: string }
@@ -117,7 +184,9 @@ export function Chat(props: {
   commands: Array<{ name: string; description: string }>;
   /** What typing : offers: the concepts the project's ***plain can name, as turri reads them. */
   concepts: Concept[];
-  onSend: (text: string) => void;
+  /** What tab completes: the files the tree shows, relative to the project. */
+  files: string[];
+  onSend: (text: string, attached?: Attached[]) => void;
   onAbort: () => void;
   /** ctrl+c: what the chat does stopped - or, doing nothing, its draft cleared (`cleared`), or turri's session ended. */
   onInterrupt: (draft: boolean) => Promise<string>;
@@ -149,12 +218,23 @@ export function Chat(props: {
     drafts.current.set(props.chatId, text);
     setDraftNow(text);
   };
+  // What is attached to it, kept with it the same way; and whether files are being dragged over the chat to attach.
+  const [attached, setAttachedNow] = useState<Attached[]>([]);
+  const attachments = useRef(new Map<string | null, Attached[]>());
+  const setAttached = (next: Attached[]) => {
+    attachments.current.set(props.chatId, next);
+    setAttachedNow(next);
+  };
+  const [dropping, setDropping] = useState(false);
   conceptNames = props.concepts.map((concept) => concept.name).sort((a, b) => b.length - a.length);
   // Where the caret is in the message box, for the concept being typed there; the concept chosen in what is offered;
   // and where one started that escape put away.
   const [caret, setCaret] = useState(0);
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState<number | null>(null);
+  // The files tab found for the word before the caret, more than one: offered while the draft is as it was.
+  const [fileOffer, setFileOffer] = useState<{ draft: string; from: number; to: number; files: string[] } | null>(null);
+  const [fileActive, setFileActive] = useState(0);
   const question = useLingering(props.question);
   const end = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -195,6 +275,7 @@ export function Chat(props: {
   // Another chat shown: its own draft, its end in view, and the message box ready for it.
   useEffect(() => {
     setDraftNow(drafts.current.get(props.chatId) ?? "");
+    setAttachedNow(attachments.current.get(props.chatId) ?? []);
     stick.current = true;
     input.current?.focus();
   }, [props.chatId]);
@@ -214,11 +295,24 @@ export function Chat(props: {
   }
   for (const [id, state] of props.noticesOver) endings.set(id, state);
 
+  /** Files attached, once read: to the chat they were attached in, whichever is shown by then. */
+  const attach = async (coming: Promise<Array<Attached | null>>) => {
+    const chat = props.chatId;
+    const more = (await coming.catch((): Array<Attached | null> => [])).filter((each): each is Attached => each !== null);
+    if (more.length === 0) return;
+    const next = [...(attachments.current.get(chat) ?? []), ...more];
+    attachments.current.set(chat, next);
+    if (latest.current.props.chatId === chat) setAttachedNow(next);
+    input.current?.focus();
+  };
+  const hasFiles = (event: React.DragEvent) => event.dataTransfer.types.includes("Files");
+
   const send = () => {
     const text = draft.trim();
-    if (text === "") return;
-    props.onSend(text);
+    if (text === "" && attached.length === 0) return;
+    props.onSend(text, attached);
     setDraft("");
+    setAttached([]);
     setCaret(0);
     stick.current = true;
   };
@@ -253,14 +347,53 @@ export function Chat(props: {
       input.current?.setSelectionRange(at, at);
     });
   };
+  /** A file, in place of the word before the caret it completes - and a space after it, unless one follows. */
+  const takeFile = (from: number, to: number, file: string) => {
+    const after = draft.slice(to);
+    const space = /^\s/.test(after) ? "" : " ";
+    const at = from + file.length + space.length;
+    setDraft(draft.slice(0, from) + file + space + after);
+    setCaret(at);
+    setFileOffer(null);
+    requestAnimationFrame(() => {
+      input.current?.focus();
+      input.current?.setSelectionRange(at, at);
+    });
+  };
+  /** Tab: the word before the caret completed to the one file it starts, or the files it could be offered. */
+  const completeFile = () => {
+    const before = draft.slice(0, caret);
+    const from = before.search(/\S*$/);
+    const found = filesFitting(props.files, before.slice(from));
+    if (found.length === 1) takeFile(from, caret, found[0]!);
+    else if (found.length > 1) {
+      setFileOffer({ draft, from, to: caret, files: found.slice(0, 8) });
+      setFileActive(0);
+    }
+    return found.length > 0;
+  };
+  const filesOffered = fileOffer !== null && fileOffer.draft === draft && offered.length === 0 ? fileOffer.files : [];
   const statusLine = Object.values(props.statuses).filter(Boolean).join(" · ");
 
   return (
-    <aside className="chat">
+    <aside
+      className="chat"
+      onDragOver={(event) => {
+        if (!hasFiles(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        setDropping(true);
+      }}
+      onDragLeave={(event) => !event.currentTarget.contains(event.relatedTarget as Node | null) && setDropping(false)}
+      onDrop={(event) => {
+        if (!hasFiles(event)) return;
+        event.preventDefault();
+        setDropping(false);
+        void attach(Promise.all([...event.dataTransfer.files].map(attachedFrom)));
+      }}
+    >
+      {dropping && <div className="chat-drop">drop to attach to your message</div>}
       <div className="titlebar-space chat-top">
-        <span className="chat-title">
-          <Jellyfish size={22} swimming={props.busy} /> turri
-        </span>
         {props.canOpen ? <ChatTabs {...props} /> : <span className="chat-tabs-room" />}
         <button className="icon-button" onClick={props.onClose} title={`hide the chat (${keys("J")})`}>
           <Icon name="x" />
@@ -363,6 +496,36 @@ export function Chat(props: {
             ))}
           </ul>
         )}
+        {filesOffered.length > 0 && (
+          <ul className="suggestions files" role="listbox" aria-label="files">
+            {filesOffered.map((file, index) => (
+              <li
+                key={file}
+                role="option"
+                aria-selected={index === fileActive}
+                className={index === fileActive ? "on" : ""}
+                onMouseDown={(event) => (event.preventDefault(), takeFile(fileOffer!.from, fileOffer!.to, file))}
+                onMouseEnter={() => setFileActive(index)}
+              >
+                {file.endsWith(".plain") ? <PlainMark size={12} /> : <Icon name="file" size={12} />}
+                <span>{file}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {attached.length > 0 && (
+          <ul className="attachments" aria-label="attached">
+            {attached.map((each, index) => (
+              <li key={`${index}:${each.path || each.name}`} title={each.path || each.name}>
+                {each.image ? <img src={`data:${each.image.mimeType};base64,${each.image.data}`} alt="" /> : <Icon name="file" size={14} />}
+                <span>{each.name}</span>
+                <button className="icon-button" aria-label={`remove ${each.name}`} onClick={() => setAttached(attached.filter((_, at) => at !== index))}>
+                  <Icon name="x" size={11} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <textarea
           ref={input}
           rows={Math.min(8, Math.max(2, draft.split("\n").length))}
@@ -373,6 +536,13 @@ export function Chat(props: {
             setCaret(event.target.selectionStart);
           }}
           onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+          // Files pasted - a screenshot, or files copied in Finder - are attached, not typed.
+          onPaste={(event) => {
+            const files = [...event.clipboardData.files];
+            if (files.length === 0) return;
+            event.preventDefault();
+            void attach(Promise.all(files.map(attachedFrom)));
+          }}
           onKeyDown={(event) => {
             // A concept offered: the arrows choose, enter or tab takes it, escape puts the list away.
             if (offered.length > 0) {
@@ -392,6 +562,24 @@ export function Chat(props: {
                 return;
               }
             }
+            // Files offered: the same - the arrows choose, enter or tab takes one, escape puts them away.
+            if (filesOffered.length > 0) {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                setFileActive((fileActive + (event.key === "ArrowDown" ? 1 : filesOffered.length - 1)) % filesOffered.length);
+                return;
+              }
+              if ((event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) || event.key === "Tab") {
+                event.preventDefault();
+                takeFile(fileOffer!.from, fileOffer!.to, filesOffered[fileActive]!);
+                return;
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setFileOffer(null);
+                return;
+              }
+            }
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
               send();
@@ -399,7 +587,7 @@ export function Chat(props: {
             if (event.key === "Tab" && suggestions.length > 0) {
               event.preventDefault();
               setDraft(`${suggestions[0]!.name} `);
-            }
+            } else if (event.key === "Tab" && !event.shiftKey && completeFile()) event.preventDefault();
           }}
         />
         <div className="composer-bar">
@@ -409,15 +597,20 @@ export function Chat(props: {
             {props.model && <span className="chat-model" title={props.model}>{props.model.split("/").at(-1)}</span>}
           </span>
           <span className="muted small composer-status">{statusLine}</span>
-          {props.busy ? (
-            <button className="button small" onClick={props.onAbort}>
-              <Icon name="stop" size={13} /> stop
+          <span className="composer-actions">
+            <button className="icon-button" onClick={() => void attach(window.turri.attach().then((chosen) => Promise.all(chosen.map(prepared))))} title="attach files or images - or drop them on the chat" aria-label="attach files">
+              <Icon name="clip" size={15} />
             </button>
-          ) : (
-            <button className="button small primary" onClick={send} disabled={draft.trim() === ""}>
-              send <kbd>↩</kbd>
-            </button>
-          )}
+            {props.busy ? (
+              <button className="button small" onClick={props.onAbort}>
+                <Icon name="stop" size={13} /> stop
+              </button>
+            ) : (
+              <button className="button small primary" onClick={send} disabled={draft.trim() === "" && attached.length === 0}>
+                send <kbd>↩</kbd>
+              </button>
+            )}
+          </span>
         </div>
       </div>
       )}
@@ -439,7 +632,19 @@ function Message({
   onShowPulse?: (id: string) => void;
 }) {
   const [thinking, setThinking] = useState(false);
-  if (item.role === "user") return <div className="msg user">{withConcepts(item.text)}</div>;
+  if (item.role === "user")
+    return (
+      <div className="msg user">
+        {item.images && (
+          <div className="msg-images">
+            {item.images.map((image, index) => (
+              <img key={index} src={image} alt="an image attached" />
+            ))}
+          </div>
+        )}
+        {withConcepts(item.text)}
+      </div>
+    );
   if (item.role === "command") return <div className="msg user command">{item.text}</div>;
   // A pulse that ended: one line - what it was, how it ended, how long and what it cost - coloured by its kind, as the
   // work view colours it. A click opens it there, its report and its spec a click away: the chat stays a conversation.
@@ -624,7 +829,15 @@ function describeTool(name: string, args: any): string {
     case "browser_console":
       return "read the preview's console";
     case "browser_click":
-      return `clicked ${args?.ref !== undefined ? `[${args.ref}]` : (args?.selector ?? "")} in the preview`;
+      return `clicked ${args?.ref !== undefined ? `[${args.ref}]` : args?.text !== undefined ? `"${args.text}"` : args?.x !== undefined ? `at ${args.x}, ${args.y}` : (args?.selector ?? "")} in the preview`;
+    case "terminal_screenshot":
+      return "looked at the terminal";
+    case "terminal_press":
+      return `pressed ${Array.isArray(args?.keys) ? args.keys.join(", ") : "keys"} in the terminal`;
+    case "terminal_click":
+      return `clicked ${args?.text !== undefined ? `"${args.text}"` : `at row ${args?.row}, column ${args?.column}`} in the terminal`;
+    case "terminal_scroll":
+      return `scrolled ${args?.direction ?? ""} in the terminal`;
     case "browser_type":
       return `typed "${args?.text ?? ""}" in the preview`;
     default:
@@ -839,9 +1052,6 @@ function QuestionCard({ question, waiting, onAnswer }: { question: Question; wai
   return (
     <div className={`question-card ${waiting ? "waiting" : ""}`} role="dialog" aria-label={question.title}>
       <div className="question-scroll">
-        <div className="question-asks">
-          <Jellyfish size={16} swimming={false} /> turri asks
-        </div>
         <h2>{question.title}</h2>
         {question.message && (
           <div className="question-context">

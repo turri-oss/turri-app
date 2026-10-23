@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { StdlibModule } from "./types.ts";
 import { Empty, Icon, PlainMark, PlainName, Spinner } from "./ui.tsx";
+import { type Point, pointNow, relocate } from "./PulseSpec.tsx";
 
 type Token = { text: string; role: string | null };
 
@@ -19,7 +20,7 @@ const order = (a: StdlibModule, b: StdlibModule) => Number(b.stack) - Number(a.s
 export function StdlibView(props: {
   selected: string | null;
   /** Lines of the template chosen to bring into view and light for a moment, from 1: a concept's definition, clicked in the chat. */
-  reveal?: { lines: number[]; at: number };
+  reveal?: { lines: number[]; texts?: string[]; point?: Point; at: number };
   onSelect: (name: string) => void;
   onOpenSpec: (file: string) => void;
 }) {
@@ -187,15 +188,19 @@ function Links(props: { label: string; names: string[]; known: Map<string, Stdli
 }
 
 /** A template's ***plain, numbered and coloured by turri's grammar - each template it imports a link to it. */
-function Template({ text, known, onGo, reveal }: { text: string; known: Map<string, StdlibModule>; onGo: (name: string) => void; reveal?: { lines: number[]; at: number } }) {
-  // Lines shown from elsewhere: brought into view, and lit for a few seconds.
+function Template({ text, known, onGo, reveal }: { text: string; known: Map<string, StdlibModule>; onGo: (name: string) => void; reveal?: { lines: number[]; texts?: string[]; point?: Point; at: number } }) {
+  // Lines shown from elsewhere: brought into view, and lit for a few seconds - a pulse's where they are now, the line
+  // clicked in it in view.
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const linesRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (reveal === undefined || reveal.lines.length === 0) return;
-    const lines = new Set(reveal.lines.map((line) => line - 1));
+    const all = text.split("\n");
+    const { lines: then, texts, point } = reveal;
+    const lines = new Set((texts !== undefined ? relocate(all, then, texts) : then).map((line) => line - 1));
     setRevealed(lines);
-    requestAnimationFrame(() => linesRef.current?.children[Math.min(...lines)]?.scrollIntoView({ block: "center", behavior: "smooth" }));
+    const to = point !== undefined && texts !== undefined ? pointNow(all, then, texts, point) - 1 : Math.min(...lines);
+    requestAnimationFrame(() => linesRef.current?.children[to]?.scrollIntoView({ block: "center", behavior: "smooth" }));
     const timer = setTimeout(() => setRevealed(new Set()), 4000);
     return () => clearTimeout(timer);
   }, [reveal?.at, text]);

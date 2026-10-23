@@ -17,7 +17,9 @@ test.describe("regenerating what changed", () => {
     await expect(page.locator(".editor-pane .pane-header")).toContainText("1 of 1 built");
     await expect(page.locator(".hint", { hasText: "regenerate what changed" })).toHaveCount(0);
 
-    await page.getByRole("button", { name: "regenerate…" }).click();
+    // The ***plain menu's Regenerate…: the toolbar has no button for it.
+    await expect(page.getByRole("button", { name: "regenerate…" })).toHaveCount(0);
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send("menu", "regenerate-how"));
     const sheet = page.locator(".sheet.regenerate");
     await expect(sheet.locator(".option").first()).toContainText("chosen functional specs again");
     await expect(sheet.locator(".option", { hasText: "what changed" })).toHaveCount(0);
