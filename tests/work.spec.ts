@@ -59,32 +59,6 @@ test.describe("the regen view", () => {
     await expect(card.locator(".pulse-spec")).toHaveCount(0);
   });
 
-  test("opens a closed pulse on a click anywhere on its card - but not on investigate, nor closes it from its body", async ({ launched: { app, window } }) => {
-    await expect(window.locator(".chat-model")).toBeVisible();
-    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), { ...pulse(), status: "failed", error: "the tests did not pass" });
-    await window.getByRole("tab", { name: "regen" }).click();
-    const card = window.locator(".job", { hasText: "the greeting by name" });
-    const head = card.locator(".job-head");
-    // Failed while regen was not shown: showing it opens the pulse, once - closed here by its head.
-    await expect(head).toHaveAttribute("aria-expanded", "true");
-    await head.click();
-    await expect(head).toHaveAttribute("aria-expanded", "false");
-    // investigate is its own: it asks a chat, and leaves the card closed.
-    await card.getByRole("button", { name: "investigate" }).click();
-    await expect(head).toHaveAttribute("aria-expanded", "false");
-    // The line under the head, and the card's own edge, open it.
-    await card.locator(".job-outcome").click({ position: { x: 4, y: 4 } });
-    await expect(head).toHaveAttribute("aria-expanded", "true");
-    // Open, a click in its body leaves it open; its head closes it.
-    await card.locator(".job-body").click({ position: { x: 4, y: 4 } });
-    await expect(head).toHaveAttribute("aria-expanded", "true");
-    await head.click();
-    await expect(head).toHaveAttribute("aria-expanded", "false");
-    const box = (await card.boundingBox())!;
-    await window.mouse.click(box.x + box.width - 4, box.y + box.height - 3);
-    await expect(head).toHaveAttribute("aria-expanded", "true");
-  });
-
   test("opens a pulse clicked in the chat, in the regen view", async ({ launched: { app, window } }) => {
     await expect(window.locator(".chat-model")).toBeVisible();
     await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), pulse());
@@ -415,6 +389,32 @@ test.describe("the regen view", () => {
 
 test.describe("a failed pulse", () => {
   test.use({ stubModel: "silent" });
+
+  test("opens a closed pulse on a click anywhere on its card - but not on investigate, nor closes it from its body", async ({ launched: { app, window } }) => {
+    await expect(window.locator(".chat-model")).toBeVisible();
+    await app.evaluate(({ BrowserWindow }, job) => BrowserWindow.getAllWindows()[0]!.webContents.send("engine:job", job), { ...pulse(), status: "failed", error: "the tests did not pass" });
+    await window.getByRole("tab", { name: "regen" }).click();
+    const card = window.locator(".job", { hasText: "the greeting by name" });
+    const head = card.locator(".job-head");
+    // Failed while regen was not shown: showing it opens the pulse, once - closed here by its head.
+    await expect(head).toHaveAttribute("aria-expanded", "true");
+    await head.click();
+    await expect(head).toHaveAttribute("aria-expanded", "false");
+    // investigate is its own: it asks a chat, and leaves the card closed.
+    await card.getByRole("button", { name: "investigate" }).click();
+    await expect(head).toHaveAttribute("aria-expanded", "false");
+    // The line under the head, and the card's own edge, open it.
+    await card.locator(".job-outcome").click({ position: { x: 4, y: 4 } });
+    await expect(head).toHaveAttribute("aria-expanded", "true");
+    // Open, a click in its body leaves it open; its head closes it.
+    await card.locator(".job-body").click({ position: { x: 4, y: 4 } });
+    await expect(head).toHaveAttribute("aria-expanded", "true");
+    await head.click();
+    await expect(head).toHaveAttribute("aria-expanded", "false");
+    const box = (await card.boundingBox())!;
+    await window.mouse.click(box.x + box.width - 4, box.y + box.height - 3);
+    await expect(head).toHaveAttribute("aria-expanded", "true");
+  });
 
   test("offers only investigate, which asks a chat of its own why it failed", async ({ launched: { app, window, requests } }) => {
     test.skip(!(await offers(window)).chats, "the turri running has one chat");
