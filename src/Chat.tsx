@@ -77,6 +77,10 @@ export function Chat(props: {
   onShowChat: (id: string) => void;
   onCloseChat: (id: string) => void;
   items: ChatItem[];
+  /** What was said while turri answered, waiting for its turn to end: shown at once, after it. */
+  queued: string[];
+  /** What waited when its turn was stopped: put back in the message box, before what is typed there. */
+  restored: { text: string; at: number } | null;
   streaming: ChatItem | null;
   busy: boolean;
   working: string | null;
@@ -128,7 +132,7 @@ export function Chat(props: {
 
   useEffect(() => {
     if (stick.current) end.current?.scrollIntoView({ block: "end" });
-  }, [props.items, props.streaming, props.question?.id]);
+  }, [props.items, props.queued, props.streaming, props.question?.id]);
 
   // ctrl+c, as in turri's terminal, wherever the focus is while the chat is open - but in the preview's terminal, whose
   // shell it is: a question asked declined - each one, however many in a row, the turn going on; with none, what the
@@ -150,6 +154,13 @@ export function Chat(props: {
     window.addEventListener("keydown", pressed, true);
     return () => window.removeEventListener("keydown", pressed, true);
   }, []);
+
+  useEffect(() => {
+    if (props.restored === null) return;
+    const typed = drafts.current.get(props.chatId) ?? "";
+    setDraft(typed.trim() === "" ? props.restored.text : `${props.restored.text}\n\n${typed}`);
+    input.current?.focus();
+  }, [props.restored?.at]);
 
   // Another chat shown: its own draft, its end in view, and the message box ready for it.
   useEffect(() => {
@@ -228,7 +239,7 @@ export function Chat(props: {
         }}
       >
         {/* Nothing said yet - notes aside, such as a new project's config - so how to begin is shown. */}
-        {props.items.every((item) => item.role === "note") && !props.streaming && (
+        {props.items.every((item) => item.role === "note") && !props.streaming && props.queued.length === 0 && (
           <div className="chat-empty">
             <Jellyfish size={110} lifecycle />
             <p>tell turri what you want to build, or what to change. it writes the <PlainName /> with you, then regenerates the code from it.</p>
@@ -263,6 +274,12 @@ export function Chat(props: {
             <Jellyfish size={20} /> {props.working ?? "thinking"}
           </div>
         )}
+        {props.queued.map((text, index) => (
+          <div key={index} className="msg user queued">
+            {withConcepts(text)}
+            <span className="queued-note">waiting - turri has not read this yet</span>
+          </div>
+        ))}
         <div ref={end} />
       </div>
       {props.progress && <ProgressBar progress={props.progress} />}

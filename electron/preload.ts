@@ -108,7 +108,7 @@ const api = {
   preview: {
     place: (rect: { x: number; y: number; width: number; height: number } | null) => ipcRenderer.invoke("preview:place", rect),
     open: (url: string) => ipcRenderer.invoke("preview:open", url),
-    go: (action: "back" | "forward" | "reload" | "stop" | "devtools") => ipcRenderer.invoke("preview:go", action),
+    go: (action: "back" | "forward" | "reload" | "stop" | "devtools" | "focus") => ipcRenderer.invoke("preview:go", action),
     state: () => ipcRenderer.invoke("preview:state") as Promise<PreviewState>,
   },
   /** The preview's terminal: a shell in the project's folder - opened with what it has said so far, typed into, sized. */

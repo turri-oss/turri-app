@@ -31,9 +31,10 @@ interface Options {
   /**
    * The chat on a model of the test's own, on this machine - no model called: `silent` takes each request and never
    * answers, a turn that runs until it is stopped; `asks` answers each with an ask_user call, a question numbered by the
-   * request, so each answer to one - or a decline - brings the next.
+   * request, so each answer to one - or a decline - brings the next; `replies` answers each in words, after two seconds,
+   * "reply n".
    */
-  stubModel: false | "silent" | "asks";
+  stubModel: false | "silent" | "asks" | "replies";
 }
 
 export const test = base.extend<Options & { launched: Launched; scratch: string }>({
@@ -80,7 +81,7 @@ export const test = base.extend<Options & { launched: Launched; scratch: string 
 });
 
 /** A model provider of the test's own, in pi's models.json - the project's harness-model (see `stubModel`). */
-async function modelStub(scratch: string, project: string, mode: "silent" | "asks") {
+async function modelStub(scratch: string, project: string, mode: "silent" | "asks" | "replies") {
   const requests: string[] = [];
   const server = createServer((request, response) => {
     let body = "";
@@ -89,10 +90,14 @@ async function modelStub(scratch: string, project: string, mode: "silent" | "ask
       requests.push(body);
       response.writeHead(200, { "content-type": "text/event-stream" });
       if (mode === "silent") return void response.write(": thinking\n\n");
-      // An OpenAI-style stream of one tool call: ask_user, question n.
       const n = requests.length;
-      const call = { index: 0, id: `call_${n}`, type: "function", function: { name: "ask_user", arguments: JSON.stringify({ question: `question ${n}?`, options: ["yes", "no"] }) } };
       const chunk = (choice: object) => `data: ${JSON.stringify({ id: `stub-${n}`, object: "chat.completion.chunk", created: 0, model: "stub", choices: [{ index: 0, ...choice }] })}\n\n`;
+      if (mode === "replies") {
+        response.write(": thinking\n\n");
+        return void setTimeout(() => response.end(chunk({ delta: { role: "assistant", content: `reply ${n}` }, finish_reason: null }) + chunk({ delta: {}, finish_reason: "stop" }) + "data: [DONE]\n\n"), 2000);
+      }
+      // An OpenAI-style stream of one tool call: ask_user, question n.
+      const call = { index: 0, id: `call_${n}`, type: "function", function: { name: "ask_user", arguments: JSON.stringify({ question: `question ${n}?`, options: ["yes", "no"] }) } };
       response.end(chunk({ delta: { role: "assistant", tool_calls: [call] }, finish_reason: null }) + chunk({ delta: {}, finish_reason: "tool_calls" }) + "data: [DONE]\n\n");
     });
   });

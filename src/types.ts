@@ -110,6 +110,11 @@ export interface PastPulse {
   usage: Usage | null;
   error: string | null;
   failures: Failure[];
+  /** When it was queued, as the ledger has it - what its run's pulses are ordered by, the newest first. */
+  queued?: string | null;
+  /** The ***plain it regenerated, as last steered, and where its lines are - from the ledger, null for a pulse recorded before it kept them. */
+  diff?: string | null;
+  diffWhere?: Job["diffWhere"] | null;
 }
 
 /** A run of turri's in the project - a session of the app's, a chat in a terminal, a headless regenerate - and its pulses. */

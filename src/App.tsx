@@ -3,7 +3,7 @@ import "./types.ts";
 import type { Concept, Job, Pane, PastRun, Project, Spec, Status, View } from "./types.ts";
 import { Welcome } from "./Welcome.tsx";
 import { SpecView } from "./SpecView.tsx";
-import { WorkView } from "./WorkView.tsx";
+import { newestJobs, newestRuns, WorkView } from "./WorkView.tsx";
 import { PlanSheet, type Plan } from "./PlanSheet.tsx";
 import { DoctorSheet, problems, toSeeTo } from "./DoctorSheet.tsx";
 import { AuthSheet } from "./AuthSheet.tsx";
@@ -23,7 +23,10 @@ import { ConceptUses, type Followed, type Link, type Place, type Use } from "./P
 import { Empty, Icon, Jellyfish, PlainName, Spinner, TurriVersionLine, withPlain } from "./ui.tsx";
 import { Chat } from "./Chat.tsx";
 import { useChats } from "./chats.ts";
-import { keys } from "./platform.ts";
+import { keys, withMod } from "./platform.ts";
+
+/** The views, as the toolbar has them, left to right: ctrl+tab goes along them. */
+const VIEWS: View[] = ["spec", "work", "preview"];
 
 const EMPTY_STATUS: Status = { modules: [], jobs: [], planned: [] };
 
@@ -220,7 +223,7 @@ export function App() {
     setStatus(EMPTY_STATUS);
     setJobs(new Map());
     setEarlier([]);
-    void window.turri.call<PastRun[]>("earlierPulses").then(setEarlier);
+    void window.turri.call<PastRun[]>("earlierPulses").then((runs) => setEarlier(newestRuns(runs)));
     setView("spec");
     setPane(null);
     setPanes([]);
@@ -254,7 +257,7 @@ export function App() {
         say(`${done.module ?? "job"} - ${done.title}: ${done.status}`, done.status === "failed" ? "error" : "info");
         void refreshProject();
       }),
-      window.turri.on("engine:earlier", (runs: PastRun[]) => setEarlier(runs)),
+      window.turri.on("engine:earlier", (runs: PastRun[]) => setEarlier(newestRuns(runs))),
       window.turri.on("engine:incident", (incident: { job?: string; text: string }) => say(incident.text, "error")),
       window.turri.on("engine:exit", () => {
         setStopped("stopped");
@@ -341,10 +344,66 @@ export function App() {
   /** A chat closed - ⌘W, as a browser closes a tab: its conversation is gone, its pulses run on. */
   const closeChat = useCallback((id: string) => void window.turri.call("closeChat", { chat: id }).catch((error) => say(engineSaid(error), "error")), [say]);
   const showChat = useCallback((id: string) => void window.turri.call("focusChat", { chat: id }).catch(() => {}), []);
-  // ctrl+tab and ctrl+shift+tab, as in a browser: the chat after the one shown, and the one before - round from the ends.
+  /** The view to the right of the one shown, or to the left - round from the ends; stdlib, not among them, as the ***plain. */
+  const stepView = useCallback((by: 1 | -1) => setView((now) => VIEWS[(Math.max(VIEWS.indexOf(now), 0) + by + VIEWS.length) % VIEWS.length]!), []);
+  // ctrl+tab and ctrl+shift+tab, as in a browser: in the chat, the chat after the one shown and the one before; in the
+  // views, the view to the right and the one to the left - each round from the ends. Which is where the focus is, or
+  // was last clicked.
+  const inViews = useRef(false);
+  useEffect(() => {
+    const where = (event: Event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("aside.chat")) inViews.current = false;
+      else if (target?.closest("main.main")) inViews.current = true;
+    };
+    document.addEventListener("pointerdown", where, true);
+    document.addEventListener("focusin", where, true);
+    return () => (document.removeEventListener("pointerdown", where, true), document.removeEventListener("focusin", where, true));
+  }, []);
+  /** ⌥⌘←: the focus to the chat - its message box, or the question asked in its place - opened if it is hidden. */
+  const focusChat = useCallback(() => {
+    inViews.current = false;
+    setChatOpen(true);
+    requestAnimationFrame(() => document.querySelector<HTMLElement>("aside.chat .composer textarea, aside.chat .question-card button, aside.chat .question-card input, aside.chat .question-card textarea")?.focus());
+  }, []);
+  /**
+   * ⌥⌘→: the focus to the view shown - its editor, the regen list, the preview's terminal, or its page: one loaded,
+   * else its address.
+   */
+  const focusViews = useCallback(() => {
+    inViews.current = true;
+    // The first there of these, in this order - not the first in the page, a header's button.
+    const inside = () => {
+      const content = document.querySelector("main.main .content");
+      for (const what of [".xterm-helper-textarea", ".editor-pane textarea", "textarea", ".work-view", "input", "button"]) {
+        const found = content?.querySelector<HTMLElement>(what);
+        if (found) return found.focus();
+      }
+      // Nothing there to focus - an empty view: the views themselves, for ctrl+tab to go on from.
+      document.querySelector<HTMLElement>("main.main .content")?.focus();
+    };
+    if (view !== "preview" || pane !== "browser") return inside();
+    void window.turri.preview.state().then((now) => (now.url !== "" && now.error === null ? void window.turri.preview.go("focus") : inside()), inside);
+  }, [view, pane]);
+  useEffect(() => {
+    const move = (event: KeyboardEvent) => {
+      if ((event.key !== "ArrowLeft" && event.key !== "ArrowRight") || !event.altKey || !withMod(event) || event.shiftKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === "ArrowLeft") focusChat();
+      else focusViews();
+    };
+    window.addEventListener("keydown", move, true);
+    return () => window.removeEventListener("keydown", move, true);
+  }, [focusChat, focusViews]);
   useEffect(() => {
     const step = (event: KeyboardEvent) => {
-      if (event.key !== "Tab" || !event.ctrlKey || event.metaKey || event.altKey || chats.list.length < 2) return;
+      if (event.key !== "Tab" || !event.ctrlKey || event.metaKey || event.altKey) return;
+      if (inViews.current || !chatOpen) {
+        event.preventDefault();
+        return stepView(event.shiftKey ? -1 : 1);
+      }
+      if (chats.list.length < 2) return;
       event.preventDefault();
       const at = chats.list.findIndex((chat) => chat.id === chats.shownId);
       const next = chats.list[(at + (event.shiftKey ? chats.list.length - 1 : 1)) % chats.list.length]!;
@@ -353,7 +412,7 @@ export function App() {
     };
     window.addEventListener("keydown", step, true);
     return () => window.removeEventListener("keydown", step, true);
-  }, [chats.list, chats.shownId, showChat]);
+  }, [chats.list, chats.shownId, showChat, chatOpen, stepView]);
 
   const glimpse = useCallback(async () => {
     if (spec === null) return;
@@ -372,6 +431,9 @@ export function App() {
     () =>
       window.turri.on("menu", (action: string) => {
         if (action.startsWith("view:")) setView(action.slice(5) as View);
+        // ctrl+tab in the preview's page, which the window does not hear: the views, from the preview.
+        else if (action === "view-next" || action === "view-previous") (inViews.current = true, stepView(action === "view-next" ? 1 : -1));
+        else if (action === "focus-chat") focusChat();
         else if (action === "regenerate-how" && spec?.ok) setChoosing([]);
         // Regenerate What Changed: only with something changed - the menu offers it only then.
         else if (action === "regenerate" && changed) void regenerate();
@@ -398,7 +460,7 @@ export function App() {
         else if (action === "about" || action === "privacy" || action === "notices") setAbout(action);
         else if (action === "getting-started") setGuide(true);
       }),
-    [regenerate, glimpse, conform, project, spec, changed, view, pane, toggleSidebar, newChat, closeChat, chats.shownId],
+    [regenerate, glimpse, conform, project, spec, changed, view, pane, toggleSidebar, newChat, closeChat, chats.shownId, stepView, focusChat],
   );
 
   // What the person is looking at, for turri to know: the view, and the file open in it - or the preview's browser or terminal.
@@ -487,7 +549,7 @@ export function App() {
     [openLink, showConcept, say],
   );
 
-  const allJobs = useMemo(() => [...jobs.values()].sort((a, b) => b.sequence - a.sequence), [jobs]);
+  const allJobs = useMemo(() => newestJobs(jobs.values()), [jobs]);
   const runningFor = (module: string) => allJobs.find((job) => job.module === module && job.status === "running");
   const running = allJobs.filter((job) => job.status === "running");
 
@@ -589,6 +651,8 @@ export function App() {
             onShowChat={showChat}
             onCloseChat={closeChat}
             items={shownChat.items}
+            queued={shownChat.queued}
+            restored={shownChat.restored}
             streaming={shownChat.streaming}
             busy={shownChat.busy}
             working={shownChat.working}
@@ -632,7 +696,7 @@ export function App() {
               </button>
             )}
             <div className="segmented" role="tablist">
-              {(["spec", "work", "preview"] as View[]).map((name) => (
+              {VIEWS.map((name) => (
                 <button key={name} role="tab" aria-selected={view === name} className={view === name ? "on" : ""} onClick={() => setView(name)}>
                   {name === "spec" ? <PlainName /> : name === "work" ? "regen" : name}
                 </button>
@@ -662,7 +726,7 @@ export function App() {
             </div>
           </header>
 
-          <section className="content">
+          <section className="content" tabIndex={-1}>
             {view === "preview" ? (
               // A sheet over the window would be under the pane: while one is open, the pane steps aside.
               <PreviewView key={project.dir} dir={project.dir} covered={plan !== null || doctorOpen || signIn !== null || creating || choosing !== null || switching !== null || switcher || settingsOpen || projectSettingsOpen || about !== null || guide} pane={pane} panes={panes} onPane={openPane} testing={testing} />
@@ -684,6 +748,10 @@ export function App() {
                 earlier={earlier}
                 specs={project.specs}
                 focus={focusPulse}
+                onInvestigate={(failed) => {
+                  setChatOpen(true);
+                  window.turri.call("investigate", failed).catch((error) => say(engineSaid(error), "error"));
+                }}
                 onShowInSpec={(rel, lines) => {
                   const shown = project.specs.find((entry) => entry.rel === rel);
                   if (shown === undefined) return say(`${rel} is not one of the project's ***plain files now.`, "error");

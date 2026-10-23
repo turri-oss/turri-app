@@ -11,7 +11,25 @@ const RUNS_SHOWN = 3;
 const SUMMARY_WORDS = 10;
 const SUMMARY_CHARS = 70;
 
-/** A pulse's summary as its card heads with it - cut at a word, with an ellipsis - the whole of it on hover and copied. */
+/** When something was, as a number to order by: a time unknown is the oldest. */
+const at = (ts: string | null | undefined) => (ts ? Date.parse(ts) || 0 : 0);
+
+/**
+ * This session's pulses, the newest first - queued, running and done alike, by when each was queued: a new engine's
+ * pulses, numbered from 1 again, above the last one's.
+ */
+export function newestJobs(jobs: Iterable<Job>): Job[] {
+  return [...jobs].sort((a, b) => b.queuedAt - a.queuedAt || b.sequence - a.sequence);
+}
+
+/** Earlier sessions' runs, the newest first, and each run's pulses the newest first too - whatever order the ledger gives. */
+export function newestRuns(runs: PastRun[]): PastRun[] {
+  return runs
+    .map((run) => ({ ...run, pulses: [...run.pulses].sort((a, b) => at(b.queued) - at(a.queued)) }))
+    .sort((a, b) => at(b.started) - at(a.started));
+}
+
+/** A pulse's summary as its card heads with it - cut at a word, with an ellipsis - the whole of it on hover. */
 export function short(text: string): string {
   const words = text.trim().split(/\s+/);
   let cut = words.slice(0, SUMMARY_WORDS).join(" ");
@@ -20,39 +38,20 @@ export function short(text: string): string {
   return `${cut.replace(/[\s,.;:-]+$/, "")}…`;
 }
 
-/** What is copied of a pulse: its summary whole, and, for the chat, what turri looks it up by. */
-interface Copyable {
+/** A failed pulse, as a chat is asked to investigate it: what turri looks it up by, and what it said of why it failed. */
+export interface Failed {
   id: string;
-  summary: string;
   module?: string | null;
   pulse?: number | null;
   kind: string;
+  why: string;
 }
 
-/** A pulse said for the chat: its summary, then its module, number, kind and id - turri finds it by the id. */
-function forChat({ id, summary, module, pulse, kind }: Copyable): string {
-  return `${summary} (${[module, pulse !== undefined && pulse !== null ? `pulse ${pulse}` : null, kind, id].filter(Boolean).join(" · ")})`;
-}
-
-/** Copy a pulse - from its button or a right-click: the text selected in it, for the chat, its summary, or its id. */
-async function copyMenu(event: React.MouseEvent, pulse: Copyable) {
-  event.preventDefault();
-  event.stopPropagation();
-  const selected = window.getSelection()?.toString().trim() ?? "";
-  const chosen = await window.turri.popup([
-    ...(selected !== "" ? [{ id: "selection", label: "copy selection" }, { type: "separator" as const }] : []),
-    { id: "chat", label: "copy for the chat" },
-    { id: "summary", label: "copy summary" },
-    { id: "id", label: "copy pulse id" },
-  ]);
-  const text = chosen === "selection" ? selected : chosen === "chat" ? forChat(pulse) : chosen === "summary" ? pulse.summary : chosen === "id" ? pulse.id : null;
-  if (text !== null) void navigator.clipboard.writeText(text);
-}
-
-function CopyButton({ pulse }: { pulse: Copyable }) {
+/** A failed pulse's one button: a chat of its own, asked why it failed and to fix it. */
+function InvestigateButton({ failed, onInvestigate }: { failed: Failed; onInvestigate: (failed: Failed) => void }) {
   return (
-    <button className="job-copy" title="copy - for the chat, its summary, or its id" aria-label="copy" onClick={(event) => void copyMenu(event, pulse)}>
-      <Icon name="copy" size={14} />
+    <button className="link job-investigate" title="a new chat with turri, to find out why it failed and fix it" onClick={() => onInvestigate(failed)}>
+      <Icon name="spark" size={12} /> investigate
     </button>
   );
 }
@@ -67,6 +66,7 @@ export function WorkView({
   earlier,
   specs,
   onShowInSpec,
+  onInvestigate,
   focus,
 }: {
   status: Status;
@@ -75,14 +75,22 @@ export function WorkView({
   /** The project's ***plain files as they are now: a pulse's lines open in one only while they are still there. */
   specs: Spec[];
   onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void;
+  onInvestigate: (failed: Failed) => void;
   /** A pulse to bring into view and mark - one the chat says ended. */
   focus?: { id: string; at: number };
 }) {
-  const [open, setOpen] = useState<string | null>(focus?.id ?? null);
+  // Each pulse's card closed, to its head, until it is clicked open - or the chat says it ended, which opens it.
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set(focus ? [focus.id] : []));
+  const toggle = (id: string) =>
+    setOpened((now) => {
+      const next = new Set(now);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   const [runsShown, setRunsShown] = useState(RUNS_SHOWN);
   useEffect(() => {
     if (focus === undefined) return;
-    setOpen(focus.id);
+    setOpened((now) => new Set(now).add(focus.id));
     // An earlier pulse in a run not shown yet: the runs down to it are.
     const run = earlier.findIndex((entry) => entry.pulses.some((pulse) => pulse.id === focus.id));
     if (run >= runsShown) setRunsShown(run + 1);
@@ -101,7 +109,7 @@ export function WorkView({
   const total = jobs.reduce((sum, job) => sum + job.usage.cost, 0);
 
   return (
-    <div className="work-view">
+    <div className="work-view" tabIndex={-1}>
       <div className="work-list">
         {status.modules.map((module) => (
           <div key={module.module} className="module-plan">
@@ -132,7 +140,7 @@ export function WorkView({
           </div>
         )}
         {jobs.map((job) => (
-          <JobCard key={job.id} job={job} open={job.id === open} specs={specs} onShowInSpec={onShowInSpec} />
+          <JobCard key={job.id} job={job} open={opened.has(job.id)} marked={job.id === focus?.id} onToggle={() => toggle(job.id)} specs={specs} onShowInSpec={onShowInSpec} onInvestigate={onInvestigate} />
         ))}
 
         {earlier.length > 0 && <div className="sidebar-section inline">earlier sessions</div>}
@@ -145,7 +153,7 @@ export function WorkView({
               {runCost(run) && <span className="muted">· {runCost(run)}</span>}
             </div>
             {run.pulses.map((pulse) => (
-              <PastPulseCard key={pulse.id} pulse={pulse} open={pulse.id === open} />
+              <PastPulseCard key={pulse.id} pulse={pulse} open={opened.has(pulse.id)} marked={pulse.id === focus?.id} onToggle={() => toggle(pulse.id)} specs={specs} onShowInSpec={onShowInSpec} onInvestigate={onInvestigate} />
             ))}
           </div>
         ))}
@@ -159,17 +167,52 @@ export function WorkView({
   );
 }
 
-function JobCard({ job, open, specs, onShowInSpec }: { job: Job; open: boolean; specs: Spec[]; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void }) {
-  // What a pulse that ended reports, and what it found the spec does not say: each folded, to open and read - the card
-  // says how it went without them.
-  const [reading, setReading] = useState<"report" | "gaps" | null>(null);
-  const toggle = (what: "report" | "gaps") => setReading((now) => (now === what ? null : what));
+/** What a card is told of how it is shown: open or closed to its head, and marked - the pulse the chat last pointed to. */
+interface Shown {
+  open: boolean;
+  marked: boolean;
+  onToggle: () => void;
+}
+
+/**
+ * A card's head, which opens and closes it - a click, or enter or space with it focused. Not a button: its words can be
+ * selected and copied, and a click that ends a selection leaves the card as it is. With nothing to open, just the head.
+ */
+function CardHead({ open, onToggle, children }: { open: boolean; onToggle?: () => void; children: React.ReactNode }) {
+  if (onToggle === undefined) return <div className="job-head">{children}</div>;
+  return (
+    <div
+      className="job-head"
+      role="button"
+      tabIndex={0}
+      aria-expanded={open}
+      onClick={() => {
+        if ((window.getSelection()?.toString() ?? "") === "") onToggle();
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
+        event.preventDefault();
+        onToggle();
+      }}
+    >
+      <span className="job-chevron">
+        <Icon name="chevron" size={12} />
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function JobCard({ job, open, marked, onToggle, specs, onShowInSpec, onInvestigate }: Shown & { job: Job; specs: Spec[]; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void; onInvestigate: (failed: Failed) => void }) {
+  // Open, what a pulse that ended reports, and what it found the ***plain does not say - closed, its head says how it
+  // went without them. A failed one's report is not read here: investigate hands it to a chat.
   const gaps = job.specGaps.length;
   const report = job.status !== "running" && job.status !== "queued" ? (job.announce ?? job.report ?? job.error ?? "").trim() : "";
   // Its kind, coloured as the ***plain view marks it: a regenerate pulse pink, as a built functional spec; a conformance
   // pulse turri's cyan, as a conformance-tested one - two ticks when it lands.
   const kind = job.kind === "conformance" ? "conformance" : "regenerate";
-  const copyable: Copyable = { id: job.id, summary: job.title ?? job.summary, module: job.module, pulse: job.pulse, kind: job.kind };
+  const summary = job.title ?? job.summary;
+  const failed = job.status === "failed";
   const icon =
     job.status === "running" ? (
       <Spinner />
@@ -183,87 +226,103 @@ function JobCard({ job, open, specs, onShowInSpec }: { job: Job; open: boolean; 
       <Icon name="clock" />
     );
   return (
-    <div className={`job ${kind} ${job.status} ${open ? "open" : ""}`} data-id={job.id} onContextMenu={(event) => void copyMenu(event, copyable)}>
-      <div className="job-main">
-        <div className="job-head">
-          <span className={`job-icon ${job.status}`}>{icon}</span>
-          <div className="job-title">
-            <strong title={copyable.summary}>{short(copyable.summary)}</strong>
-            <span className="muted">
-              {job.module}
-              {job.pulse !== undefined ? ` · pulse ${job.pulse}` : ""} <span className="kind-tag">{job.kind}</span>
-            </span>
-          </div>
-          <div className="job-meta">
-            <span>{job.status === "queued" ? "waiting" : elapsed(job.startedAt, job.finishedAt)}</span>
-            {cost(job.usage) && <span className="muted">{cost(job.usage)}</span>}
-          </div>
-          <CopyButton pulse={copyable} />
+    <div className={`job ${kind} ${job.status} ${open ? "open" : ""} ${marked ? "marked" : ""}`} data-id={job.id}>
+      <CardHead open={open} onToggle={onToggle}>
+        <span className={`job-icon ${job.status}`}>{icon}</span>
+        <div className="job-title">
+          <strong title={summary}>{short(summary)}</strong>
+          <span className="muted">
+            {job.module}
+            {job.pulse !== undefined ? ` · pulse ${job.pulse}` : ""} <span className="kind-tag">{job.kind}</span>
+          </span>
         </div>
-        {job.status === "running" && (
-          <div className="job-live">
-            {stageOf(job) && <div className="stage">{stageOf(job)}</div>}
-            {job.now && (
-              <div className="now">
-                <span className="pulse-dot" /> {withPlain(turriSays(job.now.label))} <span className="muted">· {elapsed(job.now.since)}</span>
+        <div className="job-meta">
+          <span>{job.status === "queued" ? "waiting" : elapsed(job.startedAt, job.finishedAt)}</span>
+          {cost(job.usage) && <span className="muted">{cost(job.usage)}</span>}
+        </div>
+      </CardHead>
+      {/* Closed, a running pulse still says what it is doing now, in a line. */}
+      {!open && job.status === "running" && job.now && (
+        <div className="job-live">
+          <div className="now">
+            <span className="pulse-dot" /> {withPlain(turriSays(job.now.label))} <span className="muted">· {elapsed(job.now.since)}</span>
+          </div>
+        </div>
+      )}
+      {/* Failed, said under the head, open or closed - and investigate beside it, a chat of its own to find out why. */}
+      {failed && (
+        <div className="job-outcome failed">
+          failed
+          <InvestigateButton failed={{ id: job.id, module: job.module, pulse: job.pulse, kind: job.kind, why: report }} onInvestigate={onInvestigate} />
+        </div>
+      )}
+      {open && (
+        <div className="job-body">
+          <div className="job-main">
+            {job.status === "running" && (
+              <div className="job-live">
+                {stageOf(job) && <div className="stage">{stageOf(job)}</div>}
+                {job.now && (
+                  <div className="now">
+                    <span className="pulse-dot" /> {withPlain(turriSays(job.now.label))} <span className="muted">· {elapsed(job.now.since)}</span>
+                  </div>
+                )}
+                {job.building && <div className="building">building {withPlain(turriSays(job.building.label))}</div>}
+                <ul className="activity">
+                  {job.activity.slice(-5).map((line, index) => (
+                    <li key={index}>{withPlain(turriSays(line))}</li>
+                  ))}
+                </ul>
               </div>
             )}
-            {job.building && <div className="building">building {withPlain(turriSays(job.building.label))}</div>}
-            <ul className="activity">
-              {job.activity.slice(-5).map((line, index) => (
-                <li key={index}>{withPlain(turriSays(line))}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {(report !== "" || gaps > 0) && (
-          <div className={`job-report ${job.status}`}>
-            <div className="job-report-toggles">
-              {report !== "" && (
-                <button className="link job-report-toggle" onClick={() => toggle("report")} aria-expanded={reading === "report"}>
-                  <Icon name="chevron" size={12} /> {job.status === "failed" ? "why it failed" : "report"}
-                </button>
-              )}
-              {gaps > 0 && (
-                <button className="link job-report-toggle gaps-toggle" onClick={() => toggle("gaps")} aria-expanded={reading === "gaps"}>
-                  <Icon name="chevron" size={12} /> <span className="gaps-count">{gaps}</span> <PlainName /> gap{gaps === 1 ? "" : "s"}
-                </button>
-              )}
-            </div>
-            {reading === "report" && <Prose text={report} />}
-            {reading === "gaps" && (
-              <ul className="gaps">
-                {job.specGaps.map((gap, index) => (
-                  <li key={index}>
-                    <div>
-                      <strong>the <PlainName /> does not say:</strong> {gap.question}
-                    </div>
-                    <div className="muted">Meanwhile, the pulse assumed: {gap.assumption}</div>
-                  </li>
+            {((!failed && report !== "") || gaps > 0) && (
+              <div className={`job-report ${job.status}`}>
+                {!failed && report !== "" && (
+                  <>
+                    <div className="job-report-head">report</div>
+                    <Prose text={report} />
+                  </>
+                )}
+                {gaps > 0 && (
+                  <div className="job-report-head">
+                    <span className="gaps-count">{gaps}</span> <PlainName /> gap{gaps === 1 ? "" : "s"}
+                  </div>
+                )}
+                {gaps > 0 && (
+                  <ul className="gaps">
+                    {job.specGaps.map((gap, index) => (
+                      <li key={index}>
+                        <div>
+                          <strong>the <PlainName /> does not say:</strong> {gap.question}
+                        </div>
+                        <div className="muted">Meanwhile, the pulse assumed: {gap.assumption}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            {job.diagnosis && (
+              <div className="diagnosis">
+                <div>{job.diagnosis}</div>
+              </div>
+            )}
+            <FailureMarks failures={job.failures} />
+            {job.agents.length > 0 && (
+              <div className="agents">
+                {job.agents.map((agent) => (
+                  <span key={agent.label} className="agent-chip" title={agent.model}>
+                    {withPlain(turriSays(agent.label))} · {agent.turns} turn{agent.turns === 1 ? "" : "s"}
+                    {tokens(agent.usage) && ` · ${tokens(agent.usage)}`}
+                  </span>
                 ))}
-              </ul>
+              </div>
             )}
           </div>
-        )}
-        {job.diagnosis && (
-          <div className="diagnosis">
-            <Icon name="spark" /> <div>{job.diagnosis}</div>
-          </div>
-        )}
-        <FailureMarks failures={job.failures} />
-        {job.agents.length > 0 && (
-          <div className="agents">
-            {job.agents.map((agent) => (
-              <span key={agent.label} className="agent-chip" title={agent.model}>
-                {withPlain(turriSays(agent.label))} · {agent.turns} turn{agent.turns === 1 ? "" : "s"}
-                {tokens(agent.usage) && ` · ${tokens(agent.usage)}`}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-      {/* The ***plain it works on, in the card's right half: what it renders, or the functional spec a conformance run builds. */}
-      <PulseSpec job={job} specs={specs} onShowInSpec={onShowInSpec} />
+          {/* The ***plain it works on, in the card's right half: what it renders, or the functional spec a conformance run builds. */}
+          <PulseSpec job={job} specs={specs} onShowInSpec={onShowInSpec} />
+        </div>
+      )}
     </div>
   );
 }
@@ -283,7 +342,11 @@ function FailureMarks({ failures }: { failures: Failure[] }) {
 }
 
 /** How a run was started, as the ledger's `run.started` names it. */
-const MODES: Record<string, string> = { host: "in the app", chat: "in the terminal", regenerate: "turri regenerate, headless" };
+const MODES: Record<string, string> = {
+  host: "in the app",
+  chat: "in the terminal",
+  regenerate: "turri regenerate, headless",
+};
 
 /** When a run started: today's and yesterday's by their time, older ones by their date too. */
 function when(ts: string | null): string {
@@ -312,10 +375,15 @@ function outcome(pulse: PastPulse): string {
   return `${pulse.status}${by}${landed}`;
 }
 
-/** A pulse of an earlier session: read only - how it ended, how long, what it cost. */
-function PastPulseCard({ pulse, open }: { pulse: PastPulse; open: boolean }) {
+/**
+ * A pulse of an earlier session: read only - how it ended, how long, what it cost, a failed one with investigate beside
+ * that, and, open, the ***plain it regenerated, as the ledger keeps it, in its right half.
+ */
+function PastPulseCard({ pulse, open, marked, onToggle, specs, onShowInSpec, onInvestigate }: Shown & { pulse: PastPulse; specs: Spec[]; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void; onInvestigate: (failed: Failed) => void }) {
   const kind = pulse.kind === "conformance" ? "conformance" : "regenerate";
-  const copyable: Copyable = { id: pulse.id, summary: pulse.title ?? pulse.summary, module: pulse.module, pulse: pulse.pulse, kind: pulse.kind };
+  const summary = pulse.title ?? pulse.summary;
+  // Nothing more than its head says - no marks, no ***plain kept of it: a card that does not open.
+  const more = pulse.failures.length > 0 || (pulse.diff ?? "").trim() !== "";
   const icon =
     pulse.status === "succeeded" ? (
       <Icon name={kind === "conformance" ? "checks" : "check"} />
@@ -327,26 +395,33 @@ function PastPulseCard({ pulse, open }: { pulse: PastPulse; open: boolean }) {
       <Icon name="clock" />
     );
   return (
-    <div className={`job past ${kind} ${pulse.status} ${open ? "open" : ""}`} data-id={pulse.id} onContextMenu={(event) => void copyMenu(event, copyable)}>
-      <div className="job-main">
-        <div className="job-head">
-          <span className={`job-icon ${pulse.status}`}>{icon}</span>
-          <div className="job-title">
-            <strong title={copyable.summary}>{short(copyable.summary)}</strong>
-            <span className="muted">
-              {pulse.module ?? ""}
-              {pulse.pulse !== null ? ` · pulse ${pulse.pulse}` : ""} <span className="kind-tag">{pulse.kind}</span>
-            </span>
-          </div>
-          <div className="job-meta">
-            <span>{pulse.ms !== null ? elapsed(0, pulse.ms) : ""}</span>
-            {cost(pulse.usage ?? undefined) && <span className="muted">{cost(pulse.usage ?? undefined)}</span>}
-          </div>
-          <CopyButton pulse={copyable} />
+    <div className={`job past ${kind} ${pulse.status} ${open ? "open" : ""} ${marked ? "marked" : ""}`} data-id={pulse.id}>
+      <CardHead open={open} onToggle={more ? onToggle : undefined}>
+        <span className={`job-icon ${pulse.status}`}>{icon}</span>
+        <div className="job-title">
+          <strong title={summary}>{short(summary)}</strong>
+          <span className="muted">
+            {pulse.module ?? ""}
+            {pulse.pulse !== null ? ` · pulse ${pulse.pulse}` : ""} <span className="kind-tag">{pulse.kind}</span>
+          </span>
         </div>
-        <div className={`past-outcome ${pulse.status}`}>{outcome(pulse)}</div>
-        <FailureMarks failures={pulse.failures} />
+        <div className="job-meta">
+          <span>{pulse.ms !== null ? elapsed(0, pulse.ms) : ""}</span>
+          {cost(pulse.usage ?? undefined) && <span className="muted">{cost(pulse.usage ?? undefined)}</span>}
+        </div>
+      </CardHead>
+      <div className={`job-outcome ${pulse.status}`}>
+        {outcome(pulse)}
+        {pulse.status === "failed" && <InvestigateButton failed={{ id: pulse.id, module: pulse.module, pulse: pulse.pulse, kind: pulse.kind, why: pulse.error ?? "" }} onInvestigate={onInvestigate} />}
       </div>
+      {open && more && (
+        <div className="job-body">
+          <div className="job-main">
+            <FailureMarks failures={pulse.failures} />
+          </div>
+          <PulseSpec job={{ diff: pulse.diff ?? undefined, diffWhere: pulse.diffWhere ?? undefined }} specs={specs} onShowInSpec={onShowInSpec} />
+        </div>
+      )}
     </div>
   );
 }

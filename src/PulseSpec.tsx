@@ -61,7 +61,7 @@ export function relocate(all: string[], lines: number[], texts: string[]): numbe
 }
 
 /** The functional spec a conformance run builds, as its label says it: `frontend functionality 2 of 5`. */
-function buildingOf(job: Job): { frid: string; text: string } | null {
+function buildingOf(job: Pick<Job, "building">): { frid: string; text: string } | null {
   const named = /functionality (\S+) of/.exec(job.building?.label ?? "");
   return named && job.building?.text ? { frid: named[1]!, text: job.building.text } : null;
 }
@@ -83,6 +83,8 @@ export function turriSays(text: string): string {
     .replace(/\bthe spec changed inside what it regenerates\b/gi, "the ***plain was edited while it ran")
     .replace(/\b(once|whenever|until|when) the spec changes\b/gi, "$1 the ***plain is edited")
     .replace(/\ba spec change does not start it\b/gi, "editing the ***plain does not start it")
+    // A codebase up to date: built, or regenerated, from ***plain as it is.
+    .replace(/\bfrom the spec as it is\b/gi, "from ***plain as it is")
     .replace(/\s+(for )?(a |the )?spec change\b/gi, "")
     .replace(/\bspec change\s*/gi, "")
     .replace(/\s{2,}/g, " ")
@@ -101,7 +103,7 @@ export function stageOf(job: Job): string | undefined {
  * lights them while it runs - or, for a conformance run, the functional spec it builds. Each file's part opens in the
  * spec, its lines lit there.
  */
-export function PulseSpec({ job, specs, onShowInSpec }: { job: Job; specs: Spec[]; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void }) {
+export function PulseSpec({ job, specs, onShowInSpec }: { job: Pick<Job, "diff" | "diffWhere" | "building">; specs: Spec[]; onShowInSpec: (file: string, lines: Array<{ line: number; text: string }>) => void }) {
   const files = job.diff?.trim() ? filesOf(job.diff, job.diffWhere) : [];
   const building = buildingOf(job);
   // None yet - a pulse being planned - or none at all: the card says what the pulse does without it.

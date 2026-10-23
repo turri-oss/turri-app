@@ -14,6 +14,10 @@ export type ChatInfo = {
 /** What the window keeps of each chat: what it said, what it is doing, and what it asks. */
 export type ChatState = {
   items: ChatItem[];
+  /** What the person said while turri answered, waiting for its turn to end. */
+  queued: string[];
+  /** What waited, its turn stopped: back in the message box - `at` tells one from the next. */
+  restored: { text: string; at: number } | null;
   streaming: ChatItem | null;
   busy: boolean;
   working: string | null;
@@ -25,9 +29,9 @@ export type ChatState = {
   stats: ChatStats | null;
 };
 
-const EMPTY: ChatState = { items: [], streaming: null, busy: false, working: null, tools: new Map(), statuses: {}, questions: [], progress: null, model: null, stats: null };
+const EMPTY: ChatState = { items: [], queued: [], restored: null, streaming: null, busy: false, working: null, tools: new Map(), statuses: {}, questions: [], progress: null, model: null, stats: null };
 
-type History = { messages: ChatItem[]; model: string | null; stats: ChatStats; questions: Question[] };
+type History = { messages: ChatItem[]; queued?: string[]; model: string | null; stats: ChatStats; questions: Question[] };
 
 /**
  * turri's chats in the window: each one's state, kept whether it is shown or not - a hidden chat goes on working, and
@@ -51,10 +55,10 @@ export function useChats({ onAsk, onError }: { onAsk: () => void; onError: (text
   const load = useCallback(
     (id: string) =>
       void window.turri.call<History>("chatHistory", { chat: id }).then(
-        ({ messages, model, stats, questions }) => {
+        ({ messages, queued = [], model, stats, questions }) => {
           const notes = after.current.get(id) ?? [];
           after.current.delete(id);
-          update(id, () => ({ items: [...messages, ...notes], model, stats, questions }));
+          update(id, () => ({ items: [...messages, ...notes], queued, model, stats, questions }));
         },
         () => {},
       ),
@@ -87,6 +91,8 @@ export function useChats({ onAsk, onError }: { onAsk: () => void; onError: (text
         setStates((all) => new Map([...all].filter(([id]) => open.has(id))));
       }),
       on<ChatItem>("chat:message", (id, item) => update(id, (state) => ({ items: [...state.items, item] }))),
+      on<{ texts: string[] }>("chat:queued", (id, { texts }) => update(id, () => ({ queued: texts }))),
+      on<{ text: string }>("chat:restore", (id, { text }) => update(id, () => ({ restored: { text, at: Date.now() } }))),
       on<ChatItem | null>("chat:streaming", (id, item) => update(id, () => ({ streaming: item }))),
       on<{ busy: boolean }>("chat:busy", (id, { busy }) => update(id, (state) => ({ busy, working: busy ? state.working : null }))),
       on<{ text: string | null }>("chat:working", (id, { text }) => update(id, () => ({ working: text }))),

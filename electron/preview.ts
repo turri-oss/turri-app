@@ -61,6 +61,19 @@ export function createPreview({ windowOf, send }: { windowOf: () => BrowserWindo
     const made = new WebContentsView({ webPreferences: { partition: `turri-preview-${++sessions}`, sandbox: true, contextIsolation: true } });
     const page = made.webContents;
     made.setBackgroundColor("#ffffff");
+    // ctrl+tab and ctrl+shift+tab in the page: the window's, to the view after the preview and the one before - the
+    // window's own keys never reach it while the page has the focus.
+    // ⌥⌘← and ⌥⌘→ (ctrl+alt on Linux) too: the focus to the chat, or kept in the views.
+    page.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown") return;
+      const tab = input.key === "Tab" && input.control && !input.meta && !input.alt;
+      const arrow = (input.key === "ArrowLeft" || input.key === "ArrowRight") && input.alt && (process.platform === "darwin" ? input.meta : input.control);
+      if (!tab && !arrow) return;
+      event.preventDefault();
+      if (arrow && input.key === "ArrowRight") return;
+      windowOf()?.webContents.focus();
+      send("menu", arrow ? "focus-chat" : input.shift ? "view-previous" : "view-next");
+    });
     page.on("did-start-loading", tell);
     page.on("did-stop-loading", tell);
     page.on("page-title-updated", tell);
@@ -123,10 +136,11 @@ export function createPreview({ windowOf, send }: { windowOf: () => BrowserWindo
     tell();
   }
 
-  function go(action: "back" | "forward" | "reload" | "stop" | "devtools") {
+  function go(action: "back" | "forward" | "reload" | "stop" | "devtools" | "focus") {
     const page = view?.webContents;
     if (page === undefined) return;
-    if (action === "back") page.navigationHistory.goBack();
+    if (action === "focus") page.focus();
+    else if (action === "back") page.navigationHistory.goBack();
     else if (action === "forward") page.navigationHistory.goForward();
     else if (action === "stop") page.stop();
     else if (action === "devtools") page.openDevTools({ mode: "detach" });

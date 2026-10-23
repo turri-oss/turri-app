@@ -251,6 +251,54 @@ test.describe("a turn at work", () => {
     }
     expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
   });
+
+  test("shows what is said meanwhile at once, waiting, and runs a slash command at once", async ({ launched: { window, requests } }) => {
+    // Its placeholder says otherwise while turri answers: the box by where it is.
+    const box = window.locator(".composer textarea");
+    await box.fill("hello");
+    await box.press("Enter");
+    await expect(window.locator(".composer-bar button", { hasText: "stop" })).toBeVisible();
+    await expect.poll(() => requests.length).toBe(1);
+    await box.fill("and then this");
+    await box.press("Enter");
+    const waiting = window.locator(".msg.user.queued");
+    await expect(waiting).toContainText("and then this");
+    await expect(waiting).toContainText("waiting - turri has not read this yet");
+    // A command turri's extension runs is not held for the turn: it runs, as in the terminal.
+    await box.fill("/stdlib");
+    await box.press("Enter");
+    await expect(window.locator(".chat-body")).toContainText("The plain standard library");
+    await expect(waiting).toHaveCount(1);
+    expect(requests.length, "nothing more sent to the model while it answers").toBe(1);
+    // Stopped, it is not heard: put back in the message box, as pi's terminal puts it back in its editor.
+    await box.fill("still typing");
+    await window.locator(".composer-bar button", { hasText: "stop" }).click();
+    await expect(waiting).toHaveCount(0);
+    await expect(box).toHaveValue("and then this\n\nstill typing");
+  });
+});
+
+test.describe("a turn that ends", () => {
+  test.use({ stubModel: "replies" });
+
+  test("hears what was said meanwhile, which turns from waiting to said, after its reply", async ({ launched: { window, requests } }) => {
+    const box = window.locator(".composer textarea");
+    await box.fill("hello");
+    await box.press("Enter");
+    await expect.poll(() => requests.length).toBe(1);
+    await box.fill("and then this");
+    await box.press("Enter");
+    const waiting = window.locator(".msg.user.queued", { hasText: "and then this" });
+    await expect(waiting).toBeVisible();
+    // Heard once the reply is written: said, after it, and the model asked again.
+    await expect(waiting).toHaveCount(0, { timeout: 10_000 });
+    const said = window.locator(".chat-body .msg.user:not(.queued)", { hasText: "and then this" });
+    await expect(said).toHaveCount(1);
+    await expect.poll(() => requests.length).toBe(2);
+    const order = await window.locator(".chat-body .msg").evaluateAll((all) => all.map((each) => each.textContent?.trim() ?? ""));
+    expect(order.indexOf("reply 1")).toBeGreaterThan(order.indexOf("hello"));
+    expect(order.indexOf("and then this")).toBeGreaterThan(order.indexOf("reply 1"));
+  });
 });
 
 test.describe("turri's questions", () => {

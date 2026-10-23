@@ -193,6 +193,12 @@ function followChat({ id, session, harnessModel, emit, sendWhole, onStep }) {
     return { percent: usage?.percent ?? null, tokens: usage?.tokens ?? null, contextWindow: usage?.contextWindow ?? null, cost, spent: tokens.total };
   };
   const tellStats = () => emit("chat:stats", stats());
+  /** What waited to be heard, when the turn is stopped: never heard, but put back in the message box, as pi's terminal puts it back in its editor. */
+  const restore = () => {
+    const { steering, followUp } = session.clearQueue();
+    const texts = [...steering, ...followUp];
+    if (texts.length > 0) emit("chat:restore", { text: texts.join("\n\n") });
+  };
   session.subscribe((event) => {
     switch (event.type) {
       case "agent_start":
@@ -224,6 +230,10 @@ function followChat({ id, session, harnessModel, emit, sendWhole, onStep }) {
         emit("chat:tool", { id: event.toolCallId, name: event.toolName, running: false, isError: event.isError === true });
         onStep?.();
         break;
+      case "queue_update":
+        // What was said while it answered, waiting for its turn to end: shown at once, as pi's terminal shows it.
+        emit("chat:queued", { texts: [...event.steering, ...event.followUp] });
+        break;
       case "entry_appended": {
         // What the extension puts in the chat outside a turn: a slash command's echo and outcome, a job's announcement.
         const item = entryItem(event.entry);
@@ -237,15 +247,18 @@ function followChat({ id, session, harnessModel, emit, sendWhole, onStep }) {
     id,
     session,
     history: () => session.messages.flatMap((message) => [normalise(message)].flat()).filter(Boolean),
+    /** What was said while it answered and it has not heard yet: it hears each after its turn. */
+    queued: () => [...session.getSteeringMessages(), ...session.getFollowUpMessages()],
     /**
-     * Say something to turri: a slash command runs at once; while it is answering, it hears it after its turn. /login
+     * Say something to turri: a slash command runs at once, even while it is answering, as in pi's terminal; anything
+     * else said while it answers waits, and it hears it after its turn. /login
      * and /logout are pi's terminal's alone - typed here they would go to the model as words - so they open the
      * window's sign-in sheet instead, on the provider named if one is.
      */
     send: (text) => {
       const signIn = /^\/(?:login|logout)(?:\s+(\S+))?\s*$/.exec(text.trim());
       if (signIn !== null) return sendWhole("auth:open", { provider: signIn[1] ?? null });
-      const run = session.isStreaming ? session.followUp(text) : session.prompt(text);
+      const run = session.prompt(text, { streamingBehavior: "followUp" });
       Promise.resolve(run).catch((error) => emit("chat:notify", { level: "error", text: error instanceof Error ? error.message : String(error) }));
     },
     /**
@@ -266,7 +279,11 @@ function followChat({ id, session, harnessModel, emit, sendWhole, onStep }) {
       const command = session.extensionRunner.getRegisteredCommands().find((each) => each.invocationName === name);
       return (await command?.getArgumentCompletions?.(prefix)) ?? [];
     },
-    abort: () => session.abort(),
+    abort: async () => {
+      await session.abort();
+      restore();
+    },
+    restore,
     onHarnessModel,
     model: () => (session.model ? `${session.model.provider}/${session.model.id}` : null),
     stats,
@@ -287,6 +304,9 @@ function entryItem(entry) {
       return { role: "job", id: data.id, summary: data.summary, status: data.incomplete ? "incomplete" : data.status, duration: data.duration, spent: data.spent, text: data.text };
     case "turri_history":
       return { role: "note", customType: entry.customType, text: `History of ${data.module}\n\n\`\`\`\n${data.text}\n\`\`\`` };
+    case "turri_skill_message":
+      // Said while a skill ran, and read by the skill's own agent: the person's message, where it was heard.
+      return { role: "user", text: data.text };
     case "turri_btw":
       return { role: "note", customType: entry.customType, text: `**By the way:** ${data.question}\n\n${data.answer}` };
     case "turri_exchange":

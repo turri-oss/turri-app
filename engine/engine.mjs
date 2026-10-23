@@ -171,7 +171,7 @@ function readEarlier() {
   emit("earlier", earlier);
 }
 
-/** A pulse of an earlier session, as its card says it: what it was, how it ended, how long it ran, what it cost. */
+/** A pulse of an earlier session, as its card says it: what it was, how it ended, how long it ran, what it cost, and the ***plain it worked on. */
 function pastPulse(view, failed) {
   const { queued, started, finished } = view;
   return {
@@ -190,6 +190,10 @@ function pastPulse(view, failed) {
     usage: finished?.usage ?? null,
     error: finished?.error ?? null,
     failures: failed,
+    queued: queued?.ts ?? null,
+    // The ***plain it regenerated, as last steered, from the ledger's job.diff - none for a pulse recorded before it.
+    diff: view.diff?.diff ?? null,
+    diffWhere: view.diff?.where ?? null,
   };
 }
 
@@ -826,6 +830,18 @@ function conform({ file, frids }) {
 }
 
 /**
+ * A failed pulse investigated, from its card: a chat of its own - beside the others, shown - asked to find out why it
+ * failed, explain it and fix what needs fixing, with what the pulse said of it. On a turri with one chat, that chat.
+ */
+async function investigate({ id, module, pulse, kind, why }) {
+  const chat = session.canOpen ? await openChat() : undefined;
+  const which = [module, pulse !== undefined && pulse !== null ? `pulse ${pulse}` : null, kind, id].filter(Boolean).join(" · ");
+  const said = typeof why === "string" && why.trim() !== "" ? `\n\nWhy it failed, as the pulse reported it:\n\n${why.trim()}` : "";
+  chatOf(chat).send(`Investigate the pulse that failed (${which}): find out why it failed, explain it to me, and fix what needs fixing so it can succeed.${said}`);
+  return true;
+}
+
+/**
  * The window's view and the file open in it - or, in the preview, its browser or terminal - as the person moves about:
  * told to turri at its next turn.
  */
@@ -894,11 +910,11 @@ async function configChoices({ typed }) {
   return items.map((item) => item.value.slice(item.value.indexOf(" ") + 1)).filter((value) => value !== "unset");
 }
 
-/** A chat as the window draws it: what was said in it, its model, how full it is, and what it asks now. */
+/** A chat as the window draws it: what was said in it and what waits to be heard, its model, how full it is, and what it asks now. */
 function chatHistory({ chat }) {
   const shown = chatOf(chat);
   const asking = [...questions.values()].filter((question) => question.chat === shown.id).map((question) => question.asked);
-  return { messages: shown.history(), model: shown.model(), stats: shown.stats(), questions: asking };
+  return { messages: shown.history(), queued: shown.queued(), model: shown.model(), stats: shown.stats(), questions: asking };
 }
 
 /** The chats, in their order: each its id, title, what it is doing and whether it is the one shown. */
@@ -957,6 +973,7 @@ async function interruptChat({ chat, draft }) {
   const shown = chatOf(chat);
   if (draft === true && !busy(shown.session)) return "cleared";
   const did = await session.interrupt(shown.id);
+  if (did === "stopped") shown.restore();
   if (did === "ended") emit("ended", null);
   return did;
 }
@@ -1000,7 +1017,7 @@ async function doctor({ models = false, dir = projectDir }) {
 
 // ---------- the wire ----------
 
-const methods = { ...auth, chats, openChat, closeChat, focusChat, interruptChat, declineQuestion, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, readFile, writeFile, stdlib, stdlibKinds, plainLinks, concepts, conceptDefinition, linkedResource, conceptBeingTyped, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, glimpse, earlierPulses, sendChat, abortChat, chatHistory, commands, answer, doctor };
+const methods = { ...auth, chats, openChat, closeChat, focusChat, interruptChat, declineQuestion, look, open, vendors, initConfig, summary, projectSettings, configChoices, listFiles, readFile, writeFile, stdlib, stdlibKinds, plainLinks, concepts, conceptDefinition, linkedResource, conceptBeingTyped, readSpec, writeSpec, highlightSpec, status: statusNow, regenerate, conform, investigate, glimpse, earlierPulses, sendChat, abortChat, chatHistory, commands, answer, doctor };
 
 // What the window may ask before a project is open: to open one, to start a new one, whether the machine is ready, or to
 // sign in to the model providers.
